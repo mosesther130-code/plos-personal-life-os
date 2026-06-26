@@ -13,6 +13,8 @@ from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr
 from typing import List, Optional, Dict, Any
 import uuid
+import time
+import json
 from datetime import datetime, timezone, timedelta
 import bcrypt
 import jwt as pyjwt
@@ -4781,7 +4783,524 @@ TypeScript, React, Next.js, Node.js, Python, Go, PostgreSQL, Redis, AWS (ECS, RD
     return {"ok": True, "message": "Demo data seeded"}
 
 
-# ----------------------------- Health check ----------------------------
+# ====================================================================
+# TRAVEL ADVISOR MODULE
+# ====================================================================
+COUNTRY_FLAG = {
+    "PH": "🇵🇭", "JP": "🇯🇵", "FR": "🇫🇷", "DE": "🇩🇪", "BE": "🇧🇪",
+    "KR": "🇰🇷", "TH": "🇹🇭", "VN": "🇻🇳", "AU": "🇦🇺", "CA": "🇨🇦",
+    "GB": "🇬🇧", "IT": "🇮🇹", "ES": "🇪🇸", "MX": "🇲🇽", "CH": "🇨🇭",
+    "NL": "🇳🇱", "SE": "🇸🇪", "SG": "🇸🇬", "ID": "🇮🇩", "IN": "🇮🇳",
+    "CN": "🇨🇳", "RU": "🇷🇺", "UA": "🇺🇦", "BR": "🇧🇷", "ZA": "🇿🇦",
+    "KE": "🇰🇪", "NG": "🇳🇬", "CM": "🇨🇲", "AE": "🇦🇪", "IL": "🇮🇱",
+    "US": "🇺🇸",
+}
+
+TRAVEL_ADVISORIES: List[Dict[str, Any]] = [
+    {"country": "Philippines", "country_code": "PH", "level": 2, "summary": "Exercise Increased Caution", "notes": "Exercise increased caution in Mindanao (especially Sulu Archipelago and Marawi City) due to crime, terrorism, civil unrest, and kidnapping."},
+    {"country": "Japan", "country_code": "JP", "level": 1, "summary": "Exercise Normal Precautions", "notes": "Standard precautions for transit hubs and crowded areas."},
+    {"country": "France", "country_code": "FR", "level": 2, "summary": "Exercise Increased Caution", "notes": "Pickpocket activity high in Paris tourist areas (Metro, Champs-Élysées, Louvre)."},
+    {"country": "Germany", "country_code": "DE", "level": 2, "summary": "Exercise Increased Caution", "notes": "Threat of terrorism in major cities and transit hubs."},
+    {"country": "Belgium", "country_code": "BE", "level": 2, "summary": "Exercise Increased Caution", "notes": "Brussels — additional security around EU/NATO areas."},
+    {"country": "South Korea", "country_code": "KR", "level": 1, "summary": "Exercise Normal Precautions", "notes": "Stay alert near DMZ; otherwise low risk."},
+    {"country": "Thailand", "country_code": "TH", "level": 1, "summary": "Exercise Normal Precautions", "notes": "Higher caution in southern provinces near Malaysia border."},
+    {"country": "Vietnam", "country_code": "VN", "level": 1, "summary": "Exercise Normal Precautions", "notes": "Watch petty theft in tourist hot spots."},
+    {"country": "Australia", "country_code": "AU", "level": 1, "summary": "Exercise Normal Precautions", "notes": "Bushfire risk in dry seasons."},
+    {"country": "Canada", "country_code": "CA", "level": 1, "summary": "Exercise Normal Precautions", "notes": "Wildfire/smoke advisories during summer."},
+    {"country": "United Kingdom", "country_code": "GB", "level": 2, "summary": "Exercise Increased Caution", "notes": "Terrorism risk in metropolitan London."},
+    {"country": "Italy", "country_code": "IT", "level": 2, "summary": "Exercise Increased Caution", "notes": "Pickpocketing in Rome/Milan; terrorism risk in transit hubs."},
+    {"country": "Spain", "country_code": "ES", "level": 2, "summary": "Exercise Increased Caution", "notes": "Pickpocketing especially in Barcelona, Madrid."},
+    {"country": "Mexico", "country_code": "MX", "level": 2, "summary": "Exercise Increased Caution", "notes": "State-level advisories: avoid Tamaulipas, Colima, Guerrero, Michoacán, Sinaloa, Zacatecas (Level 4)."},
+    {"country": "Switzerland", "country_code": "CH", "level": 1, "summary": "Exercise Normal Precautions", "notes": "Generally very safe."},
+    {"country": "Netherlands", "country_code": "NL", "level": 2, "summary": "Exercise Increased Caution", "notes": "Petty theft and bicycle-related incidents in central Amsterdam."},
+    {"country": "Sweden", "country_code": "SE", "level": 2, "summary": "Exercise Increased Caution", "notes": "Recent uptick in gang-related violence in Stockholm suburbs."},
+    {"country": "Singapore", "country_code": "SG", "level": 1, "summary": "Exercise Normal Precautions", "notes": "Strict local laws — follow them carefully."},
+    {"country": "Indonesia", "country_code": "ID", "level": 2, "summary": "Exercise Increased Caution", "notes": "Terrorism, natural disasters, civil unrest in Papua."},
+    {"country": "India", "country_code": "IN", "level": 2, "summary": "Exercise Increased Caution", "notes": "Avoid Jammu and Kashmir, India-Pakistan border, Manipur (Level 4)."},
+    {"country": "China", "country_code": "CN", "level": 3, "summary": "Reconsider Travel", "notes": "Arbitrary enforcement of local laws, exit bans, wrongful detentions."},
+    {"country": "Russia", "country_code": "RU", "level": 4, "summary": "Do Not Travel", "notes": "Ongoing war, harassment of US citizens, terrorism, mobilization."},
+    {"country": "Ukraine", "country_code": "UA", "level": 4, "summary": "Do Not Travel", "notes": "Active armed conflict and Russian invasion."},
+    {"country": "Brazil", "country_code": "BR", "level": 2, "summary": "Exercise Increased Caution", "notes": "Crime in major cities; avoid favelas."},
+    {"country": "South Africa", "country_code": "ZA", "level": 2, "summary": "Exercise Increased Caution", "notes": "Violent crime in urban centers; civil unrest possible."},
+    {"country": "Kenya", "country_code": "KE", "level": 2, "summary": "Exercise Increased Caution", "notes": "Avoid northeastern counties (Level 3)."},
+    {"country": "Nigeria", "country_code": "NG", "level": 3, "summary": "Reconsider Travel", "notes": "Crime, terrorism, kidnapping, maritime crime."},
+    {"country": "Cameroon", "country_code": "CM", "level": 2, "summary": "Exercise Increased Caution", "notes": "Avoid Northwest/Southwest regions and Far North (Level 4)."},
+    {"country": "United Arab Emirates", "country_code": "AE", "level": 1, "summary": "Exercise Normal Precautions", "notes": "Be aware of regional missile activity."},
+    {"country": "Israel", "country_code": "IL", "level": 4, "summary": "Do Not Travel", "notes": "Armed conflict and terrorism throughout the region."},
+]
+ADVISORY_BY_CODE = {a["country_code"]: a for a in TRAVEL_ADVISORIES}
+
+ATL_MNL_FLIGHTS = [
+    {"flight_id": "ke-cheapest", "label": "Cheapest", "airline": "Korean Air", "route": "ATL → ICN → MNL", "stops": 1,
+     "duration": "22h 40m", "price_usd": 687, "departs": "11:30 PM",
+     "deeplink": "https://www.google.com/flights?hl=en#flt=ATL.MNL"},
+    {"flight_id": "jl-fastest", "label": "Fastest", "airline": "Japan Airlines", "route": "ATL → NRT → MNL", "stops": 1,
+     "duration": "19h 55m", "price_usd": 894, "departs": "12:25 PM",
+     "deeplink": "https://www.google.com/flights?hl=en#flt=ATL.MNL"},
+    {"flight_id": "pr-bestvalue", "label": "Best Value", "airline": "Philippine Airlines", "route": "ATL → LAX → MNL", "stops": 1,
+     "duration": "23h 15m", "price_usd": 742, "departs": "07:50 AM", "extras": "Checked bag included",
+     "deeplink": "https://www.google.com/flights?hl=en#flt=ATL.MNL"},
+]
+
+MANILA_HOTELS = [
+    {"hotel_id": "marriott-mnl", "name": "Marriott Manila", "area": "Pasay City — near MNL Airport",
+     "price_per_night_usd": 89, "stars": 4, "perks": "Free airport shuttle · business center",
+     "deeplink": "https://www.booking.com/searchresults.html?ss=Manila"},
+    {"hotel_id": "seda-vertis", "name": "Seda Vertis North", "area": "Quezon City — Business district",
+     "price_per_night_usd": 65, "stars": 4, "perks": "Business facilities · gym",
+     "deeplink": "https://www.booking.com/searchresults.html?ss=Manila"},
+    {"hotel_id": "redplanet-mal", "name": "Red Planet Manila", "area": "Malate — Historic district",
+     "price_per_night_usd": 38, "stars": 3, "perks": "Budget · walking distance to old town",
+     "deeplink": "https://www.booking.com/searchresults.html?ss=Manila"},
+]
+
+TRAVEL_DEALS_SEED = [
+    {"deal_id": "deal-atl-mnl", "type": "price_drop", "origin_code": "ATL", "destination_code": "MNL",
+     "destination_name": "Manila, Philippines", "country_code": "PH",
+     "current_price_usd": 687, "average_price_usd": 838, "discount_pct": 18,
+     "expires_in_days": 3, "tag": "Good time to book",
+     "deeplink": "https://www.google.com/flights?hl=en#flt=ATL.MNL"},
+    {"deal_id": "deal-atl-cdg", "type": "flight", "origin_code": "ATL", "destination_code": "CDG",
+     "destination_name": "Paris, France", "country_code": "FR",
+     "current_price_usd": 542, "average_price_usd": 720, "discount_pct": 25,
+     "expires_in_days": 9, "tag": "NATO / Europe corridor",
+     "deeplink": "https://www.google.com/flights?hl=en#flt=ATL.CDG"},
+    {"deal_id": "deal-atl-nrt", "type": "flight", "origin_code": "ATL", "destination_code": "NRT",
+     "destination_name": "Tokyo, Japan", "country_code": "JP",
+     "current_price_usd": 698, "average_price_usd": 905, "discount_pct": 23,
+     "expires_in_days": 14, "tag": "ADB Manila via Tokyo routing",
+     "deeplink": "https://www.google.com/flights?hl=en#flt=ATL.NRT"},
+]
+
+DEFAULT_CHECKLIST_ITEMS = [
+    {"key": "passport_valid", "label": "Passport valid for at least 6 months beyond travel dates", "auto": True},
+    {"key": "visa", "label": "Visa obtained or confirmed not required", "auto": False},
+    {"key": "insurance", "label": "Travel insurance purchased", "auto": False, "note_label": "Policy #"},
+    {"key": "vaccinations", "label": "Vaccinations up to date", "auto": False},
+    {"key": "hotel", "label": "Hotel confirmed", "auto": False, "note_label": "Confirmation #"},
+    {"key": "flights", "label": "Flights booked", "auto": False, "note_label": "Booking ref"},
+    {"key": "airport_transit", "label": "Transportation from airport arranged", "auto": False},
+    {"key": "phone_plan", "label": "Local SIM or international phone plan", "auto": False, "note_label": "Plan"},
+    {"key": "currency", "label": "Currency / ATM plan confirmed", "auto": False},
+    {"key": "family_notified", "label": "Emergency contacts notified of itinerary", "auto": False},
+    {"key": "docs_cloud", "label": "Important documents photographed & stored in cloud", "auto": False},
+    {"key": "meds", "label": "Medications packed with prescriptions", "auto": False},
+    {"key": "offline_maps", "label": "PLOS offline maps downloaded for destination", "auto": False},
+]
+
+EDEN_CHECKLIST_ITEM = {"key": "eden_review", "label": "Eden Heights project tasks reviewed", "auto": False}
+
+PH_CACHED_INSIGHTS = {
+    "best_time_to_visit": "December through March is the dry, cooler season — ideal for outdoor work at Eden Heights. Avoid June–October (typhoon season) for construction or fieldwork.",
+    "visa_requirement": {
+        "required": False,
+        "type": "visa free",
+        "processing_days": 0,
+        "cost_usd": None,
+        "apply_url": "https://immigration.gov.ph/visa-extension",
+        "notes": "US passport holders get 30-day visa-free entry on arrival. Extend at the Bureau of Immigration for longer stays. Long-term options: SRRV (Special Resident Retiree's Visa) for property owners, or ACR I-Card for extended stays."
+    },
+    "vaccinations": ["Routine vaccines up to date (MMR, Tdap, Polio)", "Hepatitis A", "Hepatitis B", "Typhoid", "Japanese Encephalitis (if rural/long stay)", "Rabies (if rural work with animals)"],
+    "packing_list": {
+        "documents": ["Passport", "Printed Eden Heights title docs", "BIR & DENR papers", "USD/PHP cash + cards"],
+        "clothing": ["Lightweight breathable shirts", "Long pants for site work", "Rain jacket (typhoon season)", "Sturdy boots", "Mosquito-proof hat"],
+        "electronics": ["Universal adapter (Type A/B/C)", "Power bank", "Unlocked phone for local SIM", "Drone for site survey (declare at customs)"],
+        "health": ["DEET mosquito spray (40%+)", "Anti-diarrheal", "Rehydration salts", "Sunblock SPF 50", "First aid kit"],
+        "other": ["Small Filipino phrase guide", "Cash in small PHP bills for jeepneys/sari-sari", "Eco-construction reference notes"]
+    },
+    "dos": [
+        "Greet elders with 'po' / 'opo' suffix as sign of respect",
+        "Bring small gifts (pasalubong) when visiting family or partners",
+        "Remove shoes when entering homes",
+        "Use right hand or both hands when giving/receiving items",
+        "Smile and stay calm during traffic or delays — Filipino time is real",
+        "Tip ₱20–₱50 for service staff and ₱50–₱100 for porters"
+    ],
+    "donts": [
+        "Don't raise your voice in disputes — public 'shaming' is taken seriously",
+        "Don't point with your finger; gesture with your lips or full hand",
+        "Don't refuse food at a host's home — accept at least a small portion",
+        "Don't take photos of military or government installations",
+        "Don't discuss religion or politics with strangers",
+        "Don't flash valuables in Metro Manila — pickpockets target obvious tourists"
+    ],
+    "emergency_contacts": {
+        "police": "117 (national emergency) or 911",
+        "ambulance": "911 / Philippine Red Cross 143",
+        "us_embassy_phone": "+63 2 5301 2000",
+        "us_embassy_address": "1201 Roxas Boulevard, Ermita 1000, Manila, Philippines"
+    },
+    "local_currency": "PHP",
+    "language": "Filipino (Tagalog) & English — English widely spoken in business",
+    "time_zone": "UTC+8 (13h ahead of Atlanta EST, 12h ahead during EDT)",
+    "cultural_notes": "Philippines blends Spanish, American, and Asian influences. Family ('bayanihan') and hospitality are central. Business runs on relationships — invest time in informal chats before contracts."
+}
+
+
+class TripIn(BaseModel):
+    destination_name: str
+    city: Optional[str] = None
+    country: str
+    country_code: Optional[str] = None
+    departure_date: Optional[str] = None
+    return_date: Optional[str] = None
+    purpose: str = "leisure"  # business / leisure / eden_heights / family / conference / medical / mixed
+    status: str = "planning"  # planning / booked / completed
+    notes: Optional[str] = None
+
+
+def _normalize_trip(t: Dict[str, Any]) -> Dict[str, Any]:
+    out = {k: v for k, v in t.items() if k not in ("_id", "user_id")}
+    out["flag"] = COUNTRY_FLAG.get((t.get("country_code") or "").upper(), "🏳️")
+    if t.get("departure_date"):
+        try:
+            dep = datetime.fromisoformat(t["departure_date"].replace("Z", "+00:00"))
+            today = datetime.now(timezone.utc)
+            delta = (dep.date() - today.date()).days
+            out["days_until_departure"] = delta
+        except Exception:
+            out["days_until_departure"] = None
+    return out
+
+
+@api_router.get("/travel/advisories")
+async def list_advisories():
+    return {"advisories": TRAVEL_ADVISORIES}
+
+
+@api_router.get("/travel/advisory/{country_code}")
+async def get_advisory(country_code: str):
+    code = country_code.upper()
+    if code in ADVISORY_BY_CODE:
+        return {"cached": True, **ADVISORY_BY_CODE[code]}
+    return {
+        "cached": False,
+        "country_code": code,
+        "summary": "Advisory level not cached — tap to check travel.state.gov",
+        "deeplink": f"https://travel.state.gov/content/travel/en/traveladvisories/traveladvisories/{code.lower()}-travel-advisory.html"
+    }
+
+
+@api_router.get("/travel/deals")
+async def list_travel_deals():
+    return {"deals": TRAVEL_DEALS_SEED, "mocked": True}
+
+
+@api_router.get("/travel/flights")
+async def get_flights(origin: str = "ATL", destination: str = "MNL"):
+    if origin.upper() == "ATL" and destination.upper() == "MNL":
+        return {"flights": ATL_MNL_FLIGHTS, "origin": "ATL", "destination": "MNL", "mocked": True}
+    return {"flights": [], "origin": origin, "destination": destination, "mocked": True,
+            "message": "Seed flight data only available for ATL → MNL. Tap deep-link to search live fares."}
+
+
+@api_router.get("/travel/hotels")
+async def get_hotels(city: str = "Manila"):
+    if city.lower() in ("manila", "mnl"):
+        return {"hotels": MANILA_HOTELS, "city": "Manila", "mocked": True}
+    return {"hotels": [], "city": city, "mocked": True,
+            "message": "Seed hotel data only available for Manila. Tap deep-link to search live rates."}
+
+
+@api_router.get("/travel/trips")
+async def list_trips(user_id: str = Depends(get_current_user_id)):
+    items = await db.trips.find({"user_id": user_id}, {"_id": 0}).sort("departure_date", 1).to_list(100)
+    return {"trips": [_normalize_trip(t) for t in items]}
+
+
+@api_router.post("/travel/trips")
+async def create_trip(body: TripIn, user_id: str = Depends(get_current_user_id)):
+    now = datetime.now(timezone.utc).isoformat()
+    doc = body.dict()
+    if doc.get("country_code"):
+        doc["country_code"] = doc["country_code"].upper()
+    doc.update({"trip_id": str(uuid.uuid4()), "user_id": user_id, "created_at": now, "updated_at": now})
+    await db.trips.insert_one(doc)
+    return _normalize_trip(doc)
+
+
+@api_router.get("/travel/trips/{trip_id}")
+async def get_trip(trip_id: str, user_id: str = Depends(get_current_user_id)):
+    t = await db.trips.find_one({"trip_id": trip_id, "user_id": user_id}, {"_id": 0})
+    if not t:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    return _normalize_trip(t)
+
+
+@api_router.put("/travel/trips/{trip_id}")
+async def update_trip(trip_id: str, body: TripIn, user_id: str = Depends(get_current_user_id)):
+    existing = await db.trips.find_one({"trip_id": trip_id, "user_id": user_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    update_fields = body.dict()
+    if update_fields.get("country_code"):
+        update_fields["country_code"] = update_fields["country_code"].upper()
+    update_fields["updated_at"] = datetime.now(timezone.utc).isoformat()
+    await db.trips.update_one({"trip_id": trip_id, "user_id": user_id}, {"$set": update_fields})
+    merged = {**existing, **update_fields}
+    return _normalize_trip(merged)
+
+
+@api_router.delete("/travel/trips/{trip_id}")
+async def delete_trip(trip_id: str, user_id: str = Depends(get_current_user_id)):
+    r = await db.trips.delete_one({"trip_id": trip_id, "user_id": user_id})
+    if r.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    await db.trip_checklists.delete_one({"trip_id": trip_id, "user_id": user_id})
+    return {"ok": True}
+
+
+class InsightsRequest(BaseModel):
+    destination_name: str
+    country: str
+    country_code: Optional[str] = None
+    city: Optional[str] = None
+    departure_date: Optional[str] = None
+    return_date: Optional[str] = None
+    duration_days: Optional[int] = None
+    purpose: str = "leisure"
+    trip_id: Optional[str] = None
+    force_refresh: bool = False
+
+
+@api_router.post("/travel/insights")
+async def get_destination_insights(body: InsightsRequest, user_id: str = Depends(get_current_user_id)):
+    # If a trip_id is provided and insights already cached and not force_refresh — return cache.
+    if body.trip_id and not body.force_refresh:
+        t = await db.trips.find_one({"trip_id": body.trip_id, "user_id": user_id}, {"_id": 0})
+        if t and t.get("cached_insights"):
+            return {"insights": t["cached_insights"], "cached": True}
+
+    # Hardcoded fast path for Philippines
+    if (body.country_code or "").upper() == "PH" or "philippin" in (body.country or "").lower():
+        insights = PH_CACHED_INSIGHTS
+    else:
+        try:
+            chat = LlmChat(
+                api_key=os.environ.get("EMERGENT_LLM_KEY"),
+                session_id=f"travel_{user_id}_{int(time.time())}",
+                system_message="You are a precise travel advisor for US passport holders. Return ONLY a valid JSON object with no markdown fences and no commentary.",
+            ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+
+            duration_part = f"Trip duration: {body.duration_days} days." if body.duration_days else ""
+            prompt = (
+                f"Destination: {body.city + ', ' if body.city else ''}{body.country}. "
+                f"Trip purpose: {body.purpose}. {duration_part} "
+                "Return a JSON object with EXACTLY these keys: "
+                "best_time_to_visit (string, 2 sentences), "
+                "visa_requirement (object: required boolean, type string, processing_days int, cost_usd int|null, apply_url string|null, notes string), "
+                "vaccinations (array of strings), "
+                "packing_list (object: documents, clothing, electronics, health, other — each an array of strings; tailor to purpose & duration), "
+                "dos (array of 5-7 strings), donts (array of 5-7 strings), "
+                "emergency_contacts (object: police, ambulance, us_embassy_phone, us_embassy_address), "
+                "local_currency (3-letter ISO code), language (primary language), "
+                "time_zone (UTC offset and difference from Atlanta EST/EDT), "
+                "cultural_notes (string, 2-3 sentences). "
+                "Be specific, concise, accurate. NO markdown fences."
+            )
+            r = await chat.send_message(UserMessage(text=prompt))
+            text = r.strip()
+            # Strip code fences if model returned them
+            if text.startswith("```"):
+                text = text.split("\n", 1)[1] if "\n" in text else text
+                if text.endswith("```"):
+                    text = text.rsplit("```", 1)[0]
+                if text.startswith("json"):
+                    text = text[4:].lstrip()
+            try:
+                insights = json.loads(text)
+            except Exception:
+                # Fallback minimal scaffold
+                insights = {
+                    "best_time_to_visit": "Information unavailable — Claude returned malformed JSON.",
+                    "visa_requirement": {"required": False, "type": "check official sources", "processing_days": 0, "cost_usd": None, "apply_url": None, "notes": text[:400]},
+                    "vaccinations": [], "packing_list": {"documents": [], "clothing": [], "electronics": [], "health": [], "other": []},
+                    "dos": [], "donts": [],
+                    "emergency_contacts": {"police": "", "ambulance": "", "us_embassy_phone": "", "us_embassy_address": ""},
+                    "local_currency": "", "language": "", "time_zone": "", "cultural_notes": "",
+                }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Insights generation failed: {e}")
+
+    if body.trip_id:
+        await db.trips.update_one(
+            {"trip_id": body.trip_id, "user_id": user_id},
+            {"$set": {"cached_insights": insights, "updated_at": datetime.now(timezone.utc).isoformat()}},
+        )
+    return {"insights": insights, "cached": False}
+
+
+async def _init_checklist(trip_id: str, user_id: str, purpose: str) -> Dict[str, Any]:
+    items = [{**i, "checked": False, "note": ""} for i in DEFAULT_CHECKLIST_ITEMS]
+    if purpose == "eden_heights":
+        items.append({**EDEN_CHECKLIST_ITEM, "checked": False, "note": ""})
+    doc = {"trip_id": trip_id, "user_id": user_id, "items": items,
+           "updated_at": datetime.now(timezone.utc).isoformat()}
+    await db.trip_checklists.insert_one(doc)
+    return doc
+
+
+@api_router.get("/travel/checklist/{trip_id}")
+async def get_checklist(trip_id: str, user_id: str = Depends(get_current_user_id)):
+    t = await db.trips.find_one({"trip_id": trip_id, "user_id": user_id}, {"_id": 0})
+    if not t:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    c = await db.trip_checklists.find_one({"trip_id": trip_id, "user_id": user_id}, {"_id": 0})
+    if not c:
+        c = await _init_checklist(trip_id, user_id, t.get("purpose", "leisure"))
+        c.pop("_id", None)
+    # Apply auto-passport check
+    pp = await db.user_profile.find_one({"user_id": user_id}, {"_id": 0, "passport": 1}) or {}
+    passport = pp.get("passport") or {}
+    if passport.get("expiry_date"):
+        try:
+            expiry = datetime.fromisoformat(passport["expiry_date"]).date()
+            today = datetime.now(timezone.utc).date()
+            months = (expiry.year - today.year) * 12 + (expiry.month - today.month)
+            for it in c["items"]:
+                if it["key"] == "passport_valid":
+                    it["checked"] = months >= 6
+                    it["note"] = f"Expires {passport['expiry_date']} ({months}mo away)" if months >= 0 else f"EXPIRED {passport['expiry_date']}"
+        except Exception:
+            pass
+    return {k: v for k, v in c.items() if k != "user_id"}
+
+
+@api_router.put("/travel/checklist/{trip_id}")
+async def update_checklist(trip_id: str, body: Dict[str, Any], user_id: str = Depends(get_current_user_id)):
+    existing = await db.trip_checklists.find_one({"trip_id": trip_id, "user_id": user_id}, {"_id": 0})
+    if not existing:
+        t = await db.trips.find_one({"trip_id": trip_id, "user_id": user_id}, {"_id": 0})
+        if not t:
+            raise HTTPException(status_code=404, detail="Trip not found")
+        existing = await _init_checklist(trip_id, user_id, t.get("purpose", "leisure"))
+    items = body.get("items", existing["items"])
+    await db.trip_checklists.update_one(
+        {"trip_id": trip_id, "user_id": user_id},
+        {"$set": {"items": items, "updated_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    return {"ok": True, "items": items}
+
+
+@api_router.get("/travel/cost-estimate/{trip_id}")
+async def get_cost_estimate(trip_id: str, user_id: str = Depends(get_current_user_id)):
+    t = await db.trips.find_one({"trip_id": trip_id, "user_id": user_id}, {"_id": 0})
+    if not t:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    est = t.get("cost_estimate") or {
+        "flights": 0, "hotel_per_night": 0, "nights": 0,
+        "daily_budget": 0, "days": 0, "visa_fees": 0,
+        "insurance": 0, "misc": 0,
+    }
+    return {"estimate": est}
+
+
+@api_router.put("/travel/cost-estimate/{trip_id}")
+async def put_cost_estimate(trip_id: str, body: Dict[str, Any], user_id: str = Depends(get_current_user_id)):
+    t = await db.trips.find_one({"trip_id": trip_id, "user_id": user_id}, {"_id": 0})
+    if not t:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    est = {
+        "flights": float(body.get("flights", 0) or 0),
+        "hotel_per_night": float(body.get("hotel_per_night", 0) or 0),
+        "nights": int(body.get("nights", 0) or 0),
+        "daily_budget": float(body.get("daily_budget", 0) or 0),
+        "days": int(body.get("days", 0) or 0),
+        "visa_fees": float(body.get("visa_fees", 0) or 0),
+        "insurance": float(body.get("insurance", 0) or 0),
+        "misc": float(body.get("misc", 0) or 0),
+    }
+    await db.trips.update_one(
+        {"trip_id": trip_id, "user_id": user_id},
+        {"$set": {"cost_estimate": est, "updated_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    return {"estimate": est}
+
+
+# --- Passport (stored on user_profile.passport) ---
+class PassportIn(BaseModel):
+    passport_number: Optional[str] = None
+    issuing_country: str = "United States"
+    issue_date: Optional[str] = None
+    expiry_date: Optional[str] = None
+    nationality: str = "United States"
+    global_entry_number: Optional[str] = None
+    global_entry_expiry: Optional[str] = None
+    nexus_number: Optional[str] = None
+    other_visa: Optional[str] = None
+
+
+def _passport_status(expiry: Optional[str]) -> Dict[str, Any]:
+    if not expiry:
+        return {"level": "unknown", "color": "neutral", "label": "No passport on file"}
+    try:
+        d = datetime.fromisoformat(expiry).date()
+        today = datetime.now(timezone.utc).date()
+        months = (d.year - today.year) * 12 + (d.month - today.month) + (-1 if d.day < today.day else 0)
+        if d < today:
+            return {"level": "expired", "color": "danger", "label": "Passport expired — renew immediately at travel.state.gov/passports", "months": months}
+        if months < 6:
+            return {"level": "critical", "color": "danger", "label": "Passport renewal required before most international travel", "months": months}
+        if months < 12:
+            return {"level": "warning", "color": "warning", "label": "Passport expires soon — many countries require 6 months validity beyond travel dates", "months": months}
+        return {"level": "ok", "color": "success", "label": "Passport valid", "months": months}
+    except Exception:
+        return {"level": "unknown", "color": "neutral", "label": "Invalid expiry date"}
+
+
+@api_router.get("/travel/passport")
+async def get_passport(user_id: str = Depends(get_current_user_id)):
+    p = await db.user_profile.find_one({"user_id": user_id}, {"_id": 0}) or {}
+    passport = p.get("passport") or {"issuing_country": "United States", "nationality": "United States"}
+    return {"passport": passport, "status": _passport_status(passport.get("expiry_date"))}
+
+
+@api_router.put("/travel/passport")
+async def put_passport(body: PassportIn, user_id: str = Depends(get_current_user_id)):
+    passport = body.dict()
+    await db.user_profile.update_one(
+        {"user_id": user_id},
+        {"$set": {"passport": passport}},
+        upsert=True,
+    )
+    return {"passport": passport, "status": _passport_status(passport.get("expiry_date"))}
+
+
+# --- Philippines pinned-template ---
+@api_router.get("/travel/philippines-template")
+async def ph_template(user_id: str = Depends(get_current_user_id)):
+    # Fetch live PHP/USD rate from local rates cache via existing global tools call.
+    rate = None
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as cli:
+            r = await cli.get("https://open.er-api.com/v6/latest/USD")
+            if r.status_code == 200:
+                data = r.json()
+                rate = (data.get("rates") or {}).get("PHP")
+    except Exception:
+        rate = None
+    return {
+        "destination": {
+            "destination_name": "Manila & Bulacan",
+            "city": "Manila",
+            "country": "Philippines",
+            "country_code": "PH",
+            "flag": "🇵🇭",
+            "purpose": "eden_heights",
+        },
+        "flight_route": {"origin": "ATL", "destination": "MNL"},
+        "immigration_note": "US passport holders receive 30-day visa-free entry on arrival. For longer stays extend at the Bureau of Immigration. Long-term options: SRRV (Special Resident Retiree's Visa) for property owners, or ACR I-Card.",
+        "bulacan_note": "Bulacan province is ~1–2 hours north of Manila via NLEX (toll). No direct public transit from MNL airport to Bulacan — pre-arrange a private vehicle or Grab car.",
+        "live_rate": rate,
+        "rate_pair": "USD → PHP",
+        "advisory": ADVISORY_BY_CODE.get("PH"),
+        "cached_insights": PH_CACHED_INSIGHTS,
+    }
+
+
+# ====================================================================
+# Health check
+# ====================================================================
 @api_router.get("/")
 async def root():
     return {"status": "ok", "service": "PLOS API"}

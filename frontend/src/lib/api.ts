@@ -352,4 +352,33 @@ export const shoppingApi = {
 };
 
 // ----------------- Seed -----------------
+// ----------------- Travel Advisor -----------------
+export const travelApi = {
+  // Trips CRUD
+  listTrips: () => request<any>("/travel/trips"),
+  getTrip: (id: string) => request<any>(`/travel/trips/${id}`),
+  createTrip: (d: any) => request<any>("/travel/trips", { method: "POST", body: d }),
+  updateTrip: (id: string, d: any) => request<any>(`/travel/trips/${id}`, { method: "PUT", body: d }),
+  deleteTrip: (id: string) => request<any>(`/travel/trips/${id}`, { method: "DELETE" }),
+  // Insights (Claude consolidated)
+  insights: (d: any) => request<any>("/travel/insights", { method: "POST", body: d }),
+  // Reference data
+  advisories: () => request<any>("/travel/advisories"),
+  advisory: (code: string) => request<any>(`/travel/advisory/${code}`),
+  deals: () => request<any>("/travel/deals"),
+  flights: (origin = "ATL", destination = "MNL") => request<any>(`/travel/flights?origin=${origin}&destination=${destination}`),
+  hotels: (city = "Manila") => request<any>(`/travel/hotels?city=${encodeURIComponent(city)}`),
+  // Checklist
+  checklist: (id: string) => request<any>(`/travel/checklist/${id}`),
+  updateChecklist: (id: string, items: any[]) => request<any>(`/travel/checklist/${id}`, { method: "PUT", body: { items } }),
+  // Cost estimate
+  costEstimate: (id: string) => request<any>(`/travel/cost-estimate/${id}`),
+  updateCostEstimate: (id: string, est: any) => request<any>(`/travel/cost-estimate/${id}`, { method: "PUT", body: est }),
+  // Passport
+  passport: () => request<any>("/travel/passport"),
+  updatePassport: (d: any) => request<any>("/travel/passport", { method: "PUT", body: d }),
+  // Philippines template
+  philippinesTemplate: () => request<any>("/travel/philippines-template"),
+};
+
 export const seedDemo = () => request<any>("/seed-demo", { method: "POST" });

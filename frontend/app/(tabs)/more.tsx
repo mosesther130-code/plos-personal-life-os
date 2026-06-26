@@ -72,7 +72,7 @@ const MODULES: ModuleItem[] = [
     subtitle: "Trips, bookings, itineraries",
     icon: Plane,
     color: "#A855F7",
-    route: "/module/travel",
+    route: "/travel",
   },
   {
     key: "legal",
