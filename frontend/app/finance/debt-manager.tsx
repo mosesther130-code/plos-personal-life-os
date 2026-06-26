@@ -21,10 +21,13 @@ import {
   Snowflake,
   Sparkles,
   Calendar,
+  Plus,
+  Edit3,
 } from "lucide-react-native";
 
 import { financeApi } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
+import { EditModal, Field } from "@/src/components/EditModal";
 
 const fmtUSD = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
 
@@ -34,6 +37,33 @@ const DEBT_ICON: Record<string, any> = {
   mortgage: HomeIcon,
   auto: Car,
 };
+
+const debtFields: Field[] = [
+  { key: "lender", label: "Lender", kind: "text", placeholder: "e.g. Chase Sapphire" },
+  {
+    key: "debt_type",
+    label: "Type",
+    kind: "select",
+    options: [
+      { value: "credit_card", label: "Credit Card" },
+      { value: "student_loan", label: "Student Loan" },
+      { value: "mortgage", label: "Mortgage" },
+      { value: "auto", label: "Auto" },
+    ],
+  },
+  { key: "balance", label: "Current Balance ($)", kind: "number" },
+  { key: "apr", label: "APR (%)", kind: "number" },
+  { key: "minimum_payment", label: "Min Payment / month ($)", kind: "number" },
+  {
+    key: "payoff_strategy",
+    label: "Default Strategy",
+    kind: "select",
+    options: [
+      { value: "avalanche", label: "Avalanche" },
+      { value: "snowball", label: "Snowball" },
+    ],
+  },
+];
 
 function timelineColor(months: number | null | undefined) {
   if (months == null) return { bg: "rgba(239, 68, 68, 0.18)", text: colors.danger, label: "—" };
@@ -52,6 +82,10 @@ export default function DebtManager() {
   const [loading, setLoading] = useState(true);
   const [aiLoading, setAiLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  const [debtModal, setDebtModal] = useState<{ open: boolean; item?: any }>({
+    open: false,
+  });
 
   const load = useCallback(async (strat: "avalanche" | "snowball", extra: number) => {
     const [d, p] = await Promise.all([
@@ -81,6 +115,23 @@ export default function DebtManager() {
       setAiRec({ recommendation: "Unable to generate. Try again." });
     }
     setAiLoading(false);
+  };
+
+  const onSaveDebt = async (vals: any) => {
+    if (debtModal.item) {
+      await financeApi.updateDebt(debtModal.item.debt_id, vals);
+    } else {
+      await financeApi.createDebt(vals);
+    }
+    await load(strategy, extraMonthly);
+    setAiRec(null); // invalidate AI rec — debt set changed
+  };
+
+  const onDeleteDebt = async () => {
+    if (!debtModal.item) return;
+    await financeApi.deleteDebt(debtModal.item.debt_id);
+    await load(strategy, extraMonthly);
+    setAiRec(null);
   };
 
   const sortedDebts = useMemo(() => {
@@ -215,8 +266,25 @@ export default function DebtManager() {
         </View>
 
         {/* Debt list */}
-        <Text style={styles.sectionLabel}>Your Debts</Text>
+        <View style={styles.debtListHeader}>
+          <Text style={styles.sectionLabel}>Your Debts</Text>
+          <TouchableOpacity
+            onPress={() => setDebtModal({ open: true })}
+            style={styles.addBtn}
+            testID="add-debt-button"
+          >
+            <Plus size={14} color={colors.primaryGlow} />
+            <Text style={styles.addBtnText}>Add Debt</Text>
+          </TouchableOpacity>
+        </View>
         <View style={{ gap: spacing.md }}>
+          {sortedDebts.length === 0 && (
+            <View style={styles.emptyDebts} testID="empty-debts">
+              <Text style={styles.emptyDebtsText}>
+                No debts on file. Tap Add Debt to get started.
+              </Text>
+            </View>
+          )}
           {sortedDebts.map((d, idx) => {
             const Icon = DEBT_ICON[d.debt_type] || CreditCard;
             const perDebt = plan?.per_debt?.find(
@@ -225,9 +293,11 @@ export default function DebtManager() {
             const months = perDebt?.payoff_months_min_only;
             const pill = timelineColor(months);
             return (
-              <View
+              <TouchableOpacity
                 key={d.debt_id}
                 style={styles.debtCard}
+                onPress={() => setDebtModal({ open: true, item: d })}
+                activeOpacity={0.8}
                 testID={`debt-card-${d.debt_id}`}
               >
                 <View style={styles.debtTop}>
@@ -253,6 +323,11 @@ export default function DebtManager() {
                       {pill.label}
                     </Text>
                   </View>
+                  <Edit3
+                    color={colors.textTertiary}
+                    size={14}
+                    style={{ marginLeft: 6 }}
+                  />
                 </View>
                 <View style={styles.debtBottom}>
                   <View>
@@ -273,7 +348,7 @@ export default function DebtManager() {
                     </Text>
                   </View>
                 )}
-              </View>
+              </TouchableOpacity>
             );
           })}
         </View>
@@ -408,6 +483,26 @@ export default function DebtManager() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      <EditModal
+        visible={debtModal.open}
+        title={debtModal.item ? "Edit Debt" : "Add Debt"}
+        fields={debtFields}
+        initial={
+          debtModal.item || {
+            lender: "",
+            debt_type: "credit_card",
+            balance: 0,
+            apr: 0,
+            minimum_payment: 0,
+            payoff_strategy: "avalanche",
+          }
+        }
+        onClose={() => setDebtModal({ open: false })}
+        onSubmit={onSaveDebt}
+        onDelete={debtModal.item ? onDeleteDebt : undefined}
+        testID="debt-modal"
+      />
     </SafeAreaView>
   );
 }
@@ -487,6 +582,36 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     marginTop: spacing.sm,
   },
+
+  debtListHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  addBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: radius.sm,
+    backgroundColor: colors.primaryMuted,
+  },
+  addBtnText: {
+    color: colors.primaryGlow,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+  },
+  emptyDebts: {
+    backgroundColor: colors.surface,
+    borderColor: colors.borderSubtle,
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    padding: spacing.xl,
+    alignItems: "center",
+  },
+  emptyDebtsText: { color: colors.textTertiary, fontSize: 13 },
 
   // Debt card
   debtCard: {
