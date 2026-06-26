@@ -10,74 +10,127 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { Sparkles, MessageCircle, TrendingUp, TrendingDown } from "lucide-react-native";
+import {
+  MessageCircle,
+  Brain,
+  ChevronRight,
+  Wallet,
+  Briefcase,
+  TrendingUp,
+  CreditCard,
+  Tag,
+  Plane,
+  Scale,
+  HeartPulse,
+  Shield,
+} from "lucide-react-native";
 
 import { useAuth } from "@/src/lib/auth-context";
-import { dashboardApi, aiApi, seedDemo } from "@/src/lib/api";
+import { dashboardApi, aiApi, alertsApi, seedDemo } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
-import { Card, StatCard } from "@/src/components/Card";
-import { AdviceCard } from "@/src/components/AdviceCard";
+import { ScoreRing } from "@/src/components/ScoreRing";
+import { AlertRow } from "@/src/components/AlertRow";
 
-const fmtUSD = (n: number) =>
-  `$${Math.round(n).toLocaleString("en-US")}`;
+const fmtUSD = (n: number, compact = false) => {
+  if (compact && Math.abs(n) >= 1000) {
+    const v = n / 1000;
+    return `$${v.toFixed(v < 10 ? 1 : 0)}K`;
+  }
+  return `$${Math.round(n).toLocaleString("en-US")}`;
+};
+
+const MODULES = [
+  { key: "finance", title: "Finances", icon: Wallet, color: colors.success, route: "/(tabs)/finance" },
+  { key: "career", title: "Career", icon: Briefcase, color: colors.primaryGlow, route: "/(tabs)/career" },
+  { key: "investments", title: "Investments", icon: TrendingUp, color: "#10B981", route: "/module/investments" },
+  { key: "debt", title: "Debt", icon: CreditCard, color: colors.warning, route: "/(tabs)/finance" },
+  { key: "deals", title: "Deals", icon: Tag, color: "#EC4899", route: "/module/shopping" },
+  { key: "travel", title: "Travel", icon: Plane, color: "#A855F7", route: "/module/travel" },
+  { key: "legal", title: "Legal", icon: Scale, color: "#F59E0B", route: "/module/legal" },
+  { key: "health", title: "Health", icon: HeartPulse, color: colors.danger, route: "/module/health" },
+];
+
+function greetingFor(date: Date) {
+  const h = date.getHours();
+  if (h < 12) return "Good morning";
+  if (h < 18) return "Good afternoon";
+  return "Good evening";
+}
+
+function fmtDate(date: Date) {
+  return date.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+}
 
 export default function Home() {
   const router = useRouter();
   const { user } = useAuth();
-  const [dashboard, setDashboard] = useState<any>(null);
-  const [decisions, setDecisions] = useState<any[]>([]);
-  const [refreshing, setRefreshing] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [genLoading, setGenLoading] = useState(false);
 
-  const load = useCallback(async () => {
+  const [dashboard, setDashboard] = useState<any>(null);
+  const [advice, setAdvice] = useState<any>(null);
+  const [alerts, setAlerts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [adviceLoading, setAdviceLoading] = useState(false);
+  const [seeding, setSeeding] = useState(false);
+  const [showDeep, setShowDeep] = useState(false);
+
+  const loadDashboard = useCallback(async () => {
+    const [d, a] = await Promise.all([
+      dashboardApi.get(),
+      alertsApi.list(),
+    ]);
+    setDashboard(d);
+    setAlerts(a.alerts);
+  }, []);
+
+  const loadAdvice = useCallback(async (force = false) => {
+    setAdviceLoading(true);
     try {
-      const [d, dec] = await Promise.all([
-        dashboardApi.get(),
-        aiApi.decisions(),
-      ]);
-      setDashboard(d);
-      setDecisions(dec);
-    } catch (_e) {}
+      const r = await aiApi.dailyAdvice(force, false);
+      setAdvice(r);
+    } catch (_e) {
+      setAdvice({ summary: "Couldn't generate advice. Try again.", items: [] });
+    }
+    setAdviceLoading(false);
   }, []);
 
   useEffect(() => {
     (async () => {
       setLoading(true);
-      await load();
+      try {
+        await Promise.all([loadDashboard(), loadAdvice(false)]);
+      } catch (_e) {}
       setLoading(false);
     })();
-  }, [load]);
+  }, [loadDashboard, loadAdvice]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await load();
+    await Promise.all([loadDashboard(), loadAdvice(true)]);
     setRefreshing(false);
   };
 
-  const generateAdvice = async () => {
-    setGenLoading(true);
-    try {
-      await aiApi.advice("dashboard", "Give me one sharp action for today.");
-      await load();
-    } catch (_e) {}
-    setGenLoading(false);
-  };
-
   const onSeed = async () => {
-    setGenLoading(true);
+    setSeeding(true);
     try {
       await seedDemo();
-      await load();
+      await Promise.all([loadDashboard(), loadAdvice(true)]);
     } catch (_e) {}
-    setGenLoading(false);
+    setSeeding(false);
   };
 
-  const onAck = async (id: string) => {
-    await aiApi.ackDecision(id);
-    setDecisions((prev) =>
-      prev.map((d) => (d.decision_id === id ? { ...d, was_acted_on: true } : d))
-    );
+  const onDeeper = async () => {
+    setAdviceLoading(true);
+    try {
+      const r = await aiApi.dailyAdvice(true, true);
+      setAdvice(r);
+      setShowDeep(true);
+    } catch (_e) {}
+    setAdviceLoading(false);
   };
 
   if (loading) {
@@ -90,8 +143,20 @@ export default function Home() {
     );
   }
 
-  const cashflow = dashboard?.monthly_cashflow ?? 0;
   const score = dashboard?.financial_health_score ?? 0;
+  const surplus = dashboard?.monthly_surplus ?? 0;
+  const months = dashboard?.emergency_months ?? 0;
+  const target = dashboard?.emergency_target_months ?? 6;
+  const fundProgress = Math.min(1, months / target);
+
+  // empty-state hint
+  const hasData =
+    (dashboard?.income_count ?? 0) +
+      (dashboard?.expense_count ?? 0) +
+      (dashboard?.debt_count ?? 0) >
+    0;
+
+  const today = new Date();
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -106,126 +171,228 @@ export default function Home() {
         }
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>Good morning</Text>
-            <Text style={styles.userName}>{user?.full_name || "Welcome"}</Text>
+        {/* 1. Header */}
+        <View style={styles.header} testID="dashboard-header">
+          <View style={{ flex: 1 }}>
+            <Text style={styles.greeting}>
+              {greetingFor(today)},
+            </Text>
+            <Text style={styles.userName} numberOfLines={1}>
+              {user?.full_name?.split(" ")[0] || "Friend"}
+            </Text>
+            <Text style={styles.todayDate}>{fmtDate(today)}</Text>
           </View>
-          <TouchableOpacity
-            onPress={() => router.push("/chatbot")}
-            style={styles.chatBtn}
-            testID="open-chatbot"
-          >
-            <MessageCircle size={20} color={colors.primaryGlow} />
-          </TouchableOpacity>
+          <View style={styles.headerRight}>
+            <ScoreRing
+              score={score}
+              size={96}
+              strokeWidth={8}
+              label="Health"
+              testID="financial-health-ring"
+            />
+            <TouchableOpacity
+              onPress={() => router.push("/chatbot")}
+              style={styles.chatBtn}
+              testID="open-chatbot"
+            >
+              <MessageCircle size={18} color={colors.primaryGlow} />
+            </TouchableOpacity>
+          </View>
         </View>
 
-        {/* Hero score */}
-        <View style={styles.heroCard} testID="financial-health-hero">
-          <Text style={styles.overline}>Financial Health Score</Text>
-          <Text style={styles.heroValue}>{score}</Text>
-          <View style={styles.scoreBar}>
-            <View style={[styles.scoreBarFill, { width: `${score}%` }]} />
-          </View>
-          <View style={styles.netWorthRow}>
-            <Text style={styles.heroLabel}>Net Worth</Text>
-            <Text style={styles.heroAmount}>
-              {fmtUSD(dashboard?.net_worth ?? 0)}
+        {!hasData && (
+          <TouchableOpacity
+            style={styles.seedBanner}
+            onPress={onSeed}
+            disabled={seeding}
+            testID="seed-demo-banner"
+          >
+            {seeding ? (
+              <ActivityIndicator color={colors.primaryGlow} />
+            ) : (
+              <Text style={styles.seedText}>
+                No data yet — tap to load demo data ✨
+              </Text>
+            )}
+          </TouchableOpacity>
+        )}
+
+        {/* 2. Today's Snapshot — 2x2 grid */}
+        <Text style={styles.sectionLabel}>Today&apos;s Snapshot</Text>
+        <View style={styles.grid} testID="snapshot-grid">
+          <MetricCard
+            testID="metric-income"
+            label="Monthly Income"
+            value={fmtUSD(dashboard?.monthly_income ?? 0, true)}
+            accent={colors.success}
+          />
+          <MetricCard
+            testID="metric-expenses"
+            label="Monthly Expenses"
+            value={fmtUSD(dashboard?.monthly_expenses ?? 0, true)}
+            accent={colors.danger}
+          />
+          <MetricCard
+            testID="metric-surplus"
+            label="Monthly Surplus"
+            value={`${surplus >= 0 ? "+" : ""}${fmtUSD(surplus, true)}`}
+            accent={surplus >= 0 ? colors.success : colors.danger}
+          />
+          <MetricCard
+            testID="metric-networth"
+            label="Net Worth"
+            value={fmtUSD(dashboard?.net_worth ?? 0, true)}
+            accent={colors.primaryGlow}
+          />
+        </View>
+
+        {/* 3. Emergency Fund Runway */}
+        <View style={styles.runwayCard} testID="emergency-fund-card">
+          <View style={styles.runwayHeader}>
+            <View style={styles.runwayTitleRow}>
+              <Shield size={16} color={colors.primaryGlow} />
+              <Text style={styles.runwayTitle}>Emergency Fund Runway</Text>
+            </View>
+            <Text style={styles.runwayMonths}>
+              {months.toFixed(1)} / {target} mo
             </Text>
           </View>
-        </View>
-
-        {/* Stats grid */}
-        <View style={styles.grid}>
-          <View style={styles.gridItem}>
-            <StatCard
-              testID="stat-income"
-              label="Monthly In"
-              value={fmtUSD(dashboard?.monthly_income ?? 0)}
-              accent={colors.success}
+          <View style={styles.runwayBar}>
+            <View
+              style={[
+                styles.runwayFill,
+                {
+                  width: `${fundProgress * 100}%`,
+                  backgroundColor:
+                    fundProgress >= 1
+                      ? colors.success
+                      : fundProgress >= 0.5
+                      ? colors.warning
+                      : colors.danger,
+                },
+              ]}
             />
           </View>
-          <View style={styles.gridItem}>
-            <StatCard
-              testID="stat-expenses"
-              label="Monthly Out"
-              value={fmtUSD(dashboard?.monthly_expenses ?? 0)}
-              accent={colors.danger}
-            />
-          </View>
+          <Text style={styles.runwaySub}>
+            {fundProgress >= 1
+              ? `Fully funded — ${fmtUSD(dashboard?.emergency_fund ?? 0)} in liquid savings`
+              : `${fmtUSD(dashboard?.emergency_fund ?? 0)} saved · target ${fmtUSD(
+                  (dashboard?.monthly_expenses ?? 0) * target
+                )}`}
+          </Text>
         </View>
 
-        <Card style={{ marginTop: spacing.lg }} testID="cashflow-card">
-          <View style={styles.cashflowRow}>
-            <View>
-              <Text style={styles.cardLabel}>Monthly Cashflow</Text>
-              <Text
-                style={[
-                  styles.cashflowValue,
-                  { color: cashflow >= 0 ? colors.success : colors.danger },
-                ]}
-              >
-                {cashflow >= 0 ? "+" : ""}
-                {fmtUSD(cashflow)}
+        {/* 4. AI Daily Advice */}
+        <View style={styles.aiCard} testID="ai-daily-advice-card">
+          <View style={styles.aiHeader}>
+            <View style={styles.aiIconWrap}>
+              <Brain size={18} color={colors.primaryGlow} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.aiTitle}>AI Daily Advice</Text>
+              <Text style={styles.aiDate}>
+                {advice?.date ? `Updated ${advice.date}` : "Today"}
               </Text>
             </View>
-            {cashflow >= 0 ? (
-              <TrendingUp size={28} color={colors.success} />
-            ) : (
-              <TrendingDown size={28} color={colors.danger} />
-            )}
+            <TouchableOpacity
+              onPress={() => loadAdvice(true)}
+              disabled={adviceLoading}
+              testID="ai-advice-refresh"
+              style={styles.refreshChip}
+            >
+              <Text style={styles.refreshChipText}>Refresh</Text>
+            </TouchableOpacity>
           </View>
-        </Card>
 
-        {/* AI Section */}
-        <View style={styles.aiHeader}>
-          <Text style={styles.sectionTitle}>AI Decisions</Text>
-          <TouchableOpacity
-            onPress={generateAdvice}
-            disabled={genLoading}
-            style={styles.aiBtn}
-            testID="generate-ai-advice"
-          >
-            {genLoading ? (
-              <ActivityIndicator color={colors.primaryGlow} size="small" />
-            ) : (
-              <>
-                <Sparkles size={14} color={colors.primaryGlow} />
-                <Text style={styles.aiBtnText}>Generate</Text>
-              </>
-            )}
-          </TouchableOpacity>
+          {adviceLoading ? (
+            <View style={{ paddingVertical: spacing.xl }}>
+              <ActivityIndicator color={colors.primaryGlow} />
+            </View>
+          ) : (
+            <>
+              {advice?.summary && (
+                <Text style={styles.aiSummary}>{advice.summary}</Text>
+              )}
+              <View style={{ gap: spacing.md, marginTop: spacing.md }}>
+                {(advice?.items || []).slice(0, 3).map((item: string, i: number) => (
+                  <View key={i} style={styles.aiItem} testID={`ai-advice-item-${i}`}>
+                    <View style={styles.aiBullet}>
+                      <Text style={styles.aiBulletText}>{i + 1}</Text>
+                    </View>
+                    <Text style={styles.aiItemText}>{item}</Text>
+                  </View>
+                ))}
+              </View>
+              {showDeep && advice?.deep_analysis && (
+                <View style={styles.deepWrap} testID="deep-analysis-text">
+                  <Text style={styles.deepLabel}>DEEP ANALYSIS</Text>
+                  <Text style={styles.deepText}>{advice.deep_analysis}</Text>
+                </View>
+              )}
+              <TouchableOpacity
+                onPress={onDeeper}
+                style={styles.deeperBtn}
+                disabled={adviceLoading}
+                testID="deeper-analysis-button"
+              >
+                <Text style={styles.deeperBtnText}>
+                  {showDeep ? "Refresh deeper analysis" : "Deeper Analysis"}
+                </Text>
+                <ChevronRight color={colors.primaryGlow} size={16} />
+              </TouchableOpacity>
+            </>
+          )}
         </View>
 
-        {decisions.length === 0 ? (
-          <Card testID="empty-advice">
-            <Text style={styles.emptyText}>
-              No AI decisions yet. Tap Generate to get personalized guidance.
-            </Text>
-            <TouchableOpacity
-              onPress={onSeed}
-              style={styles.seedBtn}
-              testID="seed-demo-button"
-            >
-              <Text style={styles.seedText}>or load demo data →</Text>
-            </TouchableOpacity>
-          </Card>
-        ) : (
-          <View style={{ gap: spacing.md }}>
-            {decisions.slice(0, 5).map((d) => (
-              <AdviceCard
-                key={d.decision_id}
-                testID={`advice-${d.decision_id}`}
-                module={d.module}
-                advice={d.advice_text}
-                priority={d.priority}
-                acted={d.was_acted_on}
-                onAck={() => onAck(d.decision_id)}
-              />
-            ))}
+        {/* 5. Alerts */}
+        <View style={styles.alertsCard}>
+          <View style={styles.alertsHeader}>
+            <Text style={styles.sectionLabelInline}>Alerts</Text>
+            {alerts.length > 0 && (
+              <Text style={styles.alertsCount}>{alerts.length}</Text>
+            )}
           </View>
-        )}
+          {alerts.length === 0 ? (
+            <Text style={styles.emptyAlerts}>
+              You&apos;re all caught up. No alerts right now.
+            </Text>
+          ) : (
+            alerts.map((alert) => (
+              <AlertRow
+                key={alert.id}
+                alert={alert}
+                testID={`alert-${alert.id}`}
+                onPress={() => {
+                  if (alert.route) router.push(alert.route);
+                }}
+              />
+            ))
+          )}
+        </View>
+
+        {/* 6. Module Navigation Grid */}
+        <Text style={styles.sectionLabel}>Modules</Text>
+        <View style={styles.modulesGrid} testID="modules-grid">
+          {MODULES.map((m) => {
+            const Icon = m.icon;
+            return (
+              <TouchableOpacity
+                key={m.key}
+                style={styles.moduleTile}
+                onPress={() => router.push(m.route)}
+                activeOpacity={0.7}
+                testID={`module-tile-${m.key}`}
+              >
+                <View
+                  style={[styles.moduleIcon, { backgroundColor: `${m.color}1F` }]}
+                >
+                  <Icon color={m.color} size={20} />
+                </View>
+                <Text style={styles.moduleTitle}>{m.title}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
 
         <View style={{ height: 100 }} />
       </ScrollView>
@@ -233,134 +400,315 @@ export default function Home() {
   );
 }
 
+function MetricCard({
+  label,
+  value,
+  accent,
+  testID,
+}: {
+  label: string;
+  value: string;
+  accent: string;
+  testID?: string;
+}) {
+  return (
+    <View style={styles.metric} testID={testID}>
+      <Text style={styles.metricLabel}>{label}</Text>
+      <Text style={[styles.metricValue, { color: accent }]}>{value}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   loader: { flex: 1, alignItems: "center", justifyContent: "center" },
-  scroll: { paddingHorizontal: spacing.xl, paddingTop: spacing.lg },
+  scroll: {
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xl,
+  },
+
+  // Header
   header: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: spacing.xxl,
+    marginBottom: spacing.xl,
+    gap: spacing.lg,
   },
   greeting: {
     color: colors.textTertiary,
-    fontSize: 13,
-    letterSpacing: 1.5,
+    fontSize: 12,
+    letterSpacing: 1.2,
     textTransform: "uppercase",
   },
   userName: {
     color: colors.textPrimary,
-    fontSize: 22,
+    fontSize: 28,
     fontWeight: "600",
+    letterSpacing: -0.5,
+    marginTop: 2,
+  },
+  todayDate: {
+    color: colors.textSecondary,
+    fontSize: 13,
     marginTop: 4,
   },
+  headerRight: { alignItems: "center", gap: spacing.sm },
   chatBtn: {
-    width: 44,
-    height: 44,
+    width: 40,
+    height: 40,
     borderRadius: radius.md,
     backgroundColor: colors.primaryMuted,
     alignItems: "center",
     justifyContent: "center",
   },
-  heroCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.xl,
-    padding: spacing.xxl,
+
+  // Seed banner
+  seedBanner: {
+    backgroundColor: colors.primaryMuted,
     borderColor: colors.primaryMuted,
     borderWidth: 1,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
     alignItems: "center",
   },
-  overline: {
-    color: colors.textTertiary,
-    fontSize: 11,
-    fontWeight: "700",
-    letterSpacing: 1.8,
-    marginBottom: spacing.md,
-  },
-  heroValue: {
-    color: colors.textPrimary,
-    fontSize: 64,
-    fontWeight: "300",
-    letterSpacing: -3,
-  },
-  scoreBar: {
-    width: "100%",
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.borderSubtle,
-    marginTop: spacing.lg,
-    overflow: "hidden",
-  },
-  scoreBarFill: {
-    height: "100%",
-    backgroundColor: colors.primaryGlow,
-  },
-  netWorthRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    width: "100%",
-    marginTop: spacing.xl,
-    paddingTop: spacing.lg,
-    borderTopWidth: 1,
-    borderTopColor: colors.borderSubtle,
-  },
-  heroLabel: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    textTransform: "uppercase",
-    letterSpacing: 1.2,
-  },
-  heroAmount: { color: colors.textPrimary, fontSize: 20, fontWeight: "600" },
-  grid: {
-    flexDirection: "row",
-    marginTop: spacing.lg,
-    gap: spacing.md,
-  },
-  gridItem: { flex: 1 },
-  cardLabel: {
+  seedText: { color: colors.primaryGlow, fontWeight: "600" },
+
+  // Sections
+  sectionLabel: {
     color: colors.textTertiary,
     fontSize: 11,
     fontWeight: "700",
     letterSpacing: 1.5,
     textTransform: "uppercase",
+    marginTop: spacing.xxl,
+    marginBottom: spacing.md,
   },
-  cashflowRow: {
+  sectionLabelInline: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+
+  // 2x2 grid metric cards
+  grid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.md,
+  },
+  metric: {
+    flexBasis: "47%",
+    flexGrow: 1,
+    backgroundColor: colors.surface,
+    borderColor: colors.borderSubtle,
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+  },
+  metricLabel: {
+    color: colors.textTertiary,
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+    marginBottom: spacing.sm,
+  },
+  metricValue: { fontSize: 22, fontWeight: "700", letterSpacing: -0.5 },
+
+  // Runway
+  runwayCard: {
+    marginTop: spacing.lg,
+    backgroundColor: colors.surface,
+    borderColor: colors.borderSubtle,
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+  },
+  runwayHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    marginBottom: spacing.md,
   },
-  cashflowValue: {
-    fontSize: 26,
-    fontWeight: "700",
-    marginTop: 4,
+  runwayTitleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  runwayTitle: { color: colors.textPrimary, fontWeight: "600", fontSize: 14 },
+  runwayMonths: { color: colors.textSecondary, fontSize: 13, fontWeight: "700" },
+  runwayBar: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.borderSubtle,
+    overflow: "hidden",
+  },
+  runwayFill: { height: "100%" },
+  runwaySub: {
+    color: colors.textTertiary,
+    fontSize: 12,
+    marginTop: spacing.sm,
+  },
+
+  // AI Daily Advice
+  aiCard: {
+    marginTop: spacing.xxl,
+    backgroundColor: colors.surface,
+    borderColor: colors.primaryMuted,
+    borderWidth: 1,
+    borderRadius: radius.xl,
+    padding: spacing.xl,
   },
   aiHeader: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    marginTop: spacing.xxxl,
-    marginBottom: spacing.lg,
+    gap: spacing.md,
+    marginBottom: spacing.md,
   },
-  sectionTitle: {
+  aiIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.md,
+    backgroundColor: colors.primaryMuted,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  aiTitle: { color: colors.textPrimary, fontSize: 15, fontWeight: "700" },
+  aiDate: { color: colors.textTertiary, fontSize: 11, marginTop: 2 },
+  refreshChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: radius.sm,
+    backgroundColor: colors.primaryMuted,
+  },
+  refreshChipText: {
+    color: colors.primaryGlow,
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.8,
+  },
+  aiSummary: {
     color: colors.textPrimary,
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: "600",
+    lineHeight: 22,
   },
-  aiBtn: {
+  aiItem: {
+    flexDirection: "row",
+    gap: spacing.md,
+    alignItems: "flex-start",
+  },
+  aiBullet: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: colors.primaryMuted,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 2,
+  },
+  aiBulletText: {
+    color: colors.primaryGlow,
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  aiItemText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 20,
+    flex: 1,
+  },
+  deepWrap: {
+    marginTop: spacing.lg,
+    paddingTop: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSubtle,
+  },
+  deepLabel: {
+    color: colors.textTertiary,
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 1.5,
+    marginBottom: spacing.sm,
+  },
+  deepText: { color: colors.textSecondary, fontSize: 13, lineHeight: 20 },
+  deeperBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    justifyContent: "center",
+    gap: 4,
+    marginTop: spacing.lg,
+    paddingVertical: 10,
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.primaryMuted,
-    backgroundColor: colors.primaryMuted,
   },
-  aiBtnText: { color: colors.primaryGlow, fontWeight: "700", fontSize: 12 },
-  emptyText: { color: colors.textSecondary, lineHeight: 22 },
-  seedBtn: { marginTop: spacing.lg },
-  seedText: { color: colors.primaryGlow, fontWeight: "600" },
+  deeperBtnText: {
+    color: colors.primaryGlow,
+    fontWeight: "700",
+    fontSize: 13,
+  },
+
+  // Alerts
+  alertsCard: {
+    marginTop: spacing.xxl,
+    backgroundColor: colors.surface,
+    borderColor: colors.borderSubtle,
+    borderWidth: 1,
+    borderRadius: radius.xl,
+    overflow: "hidden",
+  },
+  alertsHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderSubtle,
+  },
+  alertsCount: {
+    color: colors.primaryGlow,
+    fontSize: 12,
+    fontWeight: "700",
+    backgroundColor: colors.primaryMuted,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    overflow: "hidden",
+  },
+  emptyAlerts: {
+    color: colors.textTertiary,
+    fontSize: 13,
+    padding: spacing.lg,
+    textAlign: "center",
+  },
+
+  // Module grid
+  modulesGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.md,
+  },
+  moduleTile: {
+    flexBasis: "22%",
+    flexGrow: 1,
+    aspectRatio: 1,
+    backgroundColor: colors.surface,
+    borderColor: colors.borderSubtle,
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+  },
+  moduleIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  moduleTitle: {
+    color: colors.textPrimary,
+    fontSize: 11,
+    fontWeight: "600",
+    textAlign: "center",
+  },
 });

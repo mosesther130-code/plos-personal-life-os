@@ -134,6 +134,14 @@ export const aiApi = {
       method: "POST",
       body: { module, context_hint: hint },
     }),
+  dailyAdvice: (force = false, deep = false) =>
+    request<{
+      summary: string;
+      items: string[];
+      deep_analysis?: string | null;
+      generated_at: string;
+      date: string;
+    }>("/ai/daily-advice", { method: "POST", body: { force, deep } }),
   chat: (message: string, session_id?: string) =>
     request<{ response: string; session_id: string }>("/chat", {
       method: "POST",
@@ -141,6 +149,12 @@ export const aiApi = {
     }),
   chatHistory: (session_id?: string) =>
     request<any[]>(`/chat/history${session_id ? `?session_id=${session_id}` : ""}`),
+};
+
+// ----------------- Alerts -----------------
+export const alertsApi = {
+  list: () =>
+    request<{ alerts: any[]; count: number }>("/alerts"),
 };
 
 // ----------------- Seed -----------------

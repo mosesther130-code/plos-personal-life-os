@@ -772,6 +772,75 @@ async def chat_history(
 
 
 # ----------------------------- Dashboard Summary -----------------------
+def compute_financial_health(
+    monthly_income: float,
+    monthly_expenses: float,
+    total_debt: float,
+    emergency_fund: float,
+    monthly_contributions: float,
+) -> Dict[str, Any]:
+    """Weighted financial health score.
+    surplus 25%, dti 25%, emergency 20%, credit_est 15%, investment_rate 15%."""
+    # Surplus ratio (0..1) — full credit at 30%+ savings rate
+    if monthly_income > 0:
+        surplus_ratio = max(0, (monthly_income - monthly_expenses) / monthly_income)
+        surplus_score = min(1.0, surplus_ratio / 0.30)
+    else:
+        surplus_score = 0
+
+    # Debt-to-income ratio — annual income vs total debt balance. <50% = good
+    if monthly_income > 0:
+        annual_income = monthly_income * 12
+        dti = total_debt / annual_income if annual_income > 0 else 99
+        # full credit if dti <= 0.5, zero if dti >= 4
+        dti_score = max(0, min(1.0, 1.0 - max(0, dti - 0.5) / 3.5))
+    else:
+        dti_score = 0
+
+    # Emergency fund coverage — months
+    if monthly_expenses > 0:
+        months_covered = emergency_fund / monthly_expenses
+    else:
+        months_covered = 0
+    ef_score = min(1.0, months_covered / 6.0)
+
+    # Credit score estimate — heuristic: assume 720 baseline, penalize if debt high
+    if monthly_income > 0:
+        dti_for_credit = (total_debt / 12) / monthly_income if monthly_income else 1
+        credit_est = max(580, 800 - int(dti_for_credit * 200))
+    else:
+        credit_est = 650
+    credit_score_norm = max(0, min(1.0, (credit_est - 580) / (850 - 580)))
+
+    # Investment contribution rate
+    if monthly_income > 0:
+        inv_rate = monthly_contributions / monthly_income
+        inv_score = min(1.0, inv_rate / 0.15)  # 15% target
+    else:
+        inv_score = 0
+
+    weighted = (
+        surplus_score * 25
+        + dti_score * 25
+        + ef_score * 20
+        + credit_score_norm * 15
+        + inv_score * 15
+    )
+    score = max(0, min(100, round(weighted)))
+
+    return {
+        "score": score,
+        "components": {
+            "surplus": round(surplus_score * 100),
+            "debt_to_income": round(dti_score * 100),
+            "emergency_fund": round(ef_score * 100),
+            "credit_estimate": credit_est,
+            "investment_rate": round(inv_score * 100),
+        },
+        "emergency_months": round(months_covered, 1),
+    }
+
+
 @api_router.get("/dashboard")
 async def dashboard(user_id: str = Depends(get_current_user_id)):
     ctx = await gather_user_context(user_id)
@@ -788,16 +857,32 @@ async def dashboard(user_id: str = Depends(get_current_user_id)):
     total_investments = sum(inv.get("balance", 0) for inv in investments)
     net_worth = total_assets + total_investments - total_debt
 
-    # simple financial health score
+    # Emergency fund = liquid assets (brokerage + any asset type "cash")
+    liquid_types = {"brokerage", "cash", "savings"}
+    emergency_fund = sum(
+        inv.get("balance", 0)
+        for inv in investments
+        if str(inv.get("type", "")).lower() in liquid_types
+    )
+    emergency_fund += sum(
+        a.get("current_value", 0)
+        for a in assets
+        if str(a.get("asset_type", "")).lower() in liquid_types
+    )
+
+    monthly_contributions = sum(
+        inv.get("contribution_monthly", 0) for inv in investments
+    )
+
+    health = compute_financial_health(
+        monthly_income,
+        monthly_expenses,
+        total_debt,
+        emergency_fund,
+        monthly_contributions,
+    )
+    score = health["score"]
     cashflow = monthly_income - monthly_expenses
-    score = 50
-    if monthly_income > 0:
-        savings_rate = cashflow / monthly_income
-        score += int(savings_rate * 50)
-    if total_debt > 0 and monthly_income > 0:
-        debt_ratio = total_debt / (monthly_income * 12)
-        score -= int(min(debt_ratio * 20, 30))
-    score = max(0, min(100, score))
 
     # persist score + net worth
     await db.user_profile.update_one(
@@ -819,11 +904,18 @@ async def dashboard(user_id: str = Depends(get_current_user_id)):
         "monthly_income": monthly_income,
         "monthly_expenses": monthly_expenses,
         "monthly_cashflow": cashflow,
+        "monthly_surplus": cashflow,
         "total_debt": total_debt,
         "total_assets": total_assets,
         "total_investments": total_investments,
+        "total_liabilities": total_debt,
         "net_worth": net_worth,
         "financial_health_score": score,
+        "score_components": health["components"],
+        "emergency_fund": emergency_fund,
+        "emergency_months": health["emergency_months"],
+        "emergency_target_months": 6,
+        "monthly_investment_contribution": monthly_contributions,
         "income_count": len(income),
         "expense_count": len(expenses),
         "debt_count": len(debts),
@@ -831,6 +923,221 @@ async def dashboard(user_id: str = Depends(get_current_user_id)):
         "investment_count": len(investments),
         "recent_ai_decisions": recent_decisions,
     }
+
+
+# ----------------------------- Alerts ---------------------------------
+@api_router.get("/alerts")
+async def get_alerts(user_id: str = Depends(get_current_user_id)):
+    """Generate dynamic alerts from user data: due payments, high-APR debts,
+    new job matches, low wellness."""
+    ctx = await gather_user_context(user_id)
+    today = now_utc()
+    alerts: List[Dict[str, Any]] = []
+
+    # Upcoming expenses due within 7 days
+    for e in ctx["expenses"] or []:
+        due = e.get("due_day_of_month", 1)
+        # next occurrence
+        next_month = today.month if today.day <= due else (today.month % 12) + 1
+        next_year = today.year if today.day <= due else (
+            today.year + (1 if today.month == 12 else 0)
+        )
+        try:
+            next_due = datetime(next_year, next_month, min(due, 28), tzinfo=timezone.utc)
+            days = (next_due - today).days
+        except Exception:
+            continue
+        if 0 <= days <= 7 and not e.get("auto_pay"):
+            alerts.append({
+                "id": f"exp-{e.get('expense_id')}",
+                "severity": "warning",
+                "icon": "credit-card",
+                "title": f"{e.get('vendor')} due in {days}d",
+                "subtitle": f"${e.get('monthly_amount'):,.0f} · {e.get('category')}",
+                "route": "/(tabs)/finance",
+                "time_label": f"{days}d",
+            })
+
+    # High-APR debts (>15%)
+    for d in ctx["debts"] or []:
+        if d.get("apr", 0) >= 15:
+            alerts.append({
+                "id": f"debt-{d.get('debt_id')}",
+                "severity": "urgent",
+                "icon": "alert-triangle",
+                "title": f"{d.get('lender')} APR is {d.get('apr')}%",
+                "subtitle": f"Balance ${d.get('balance'):,.0f} — prioritize payoff",
+                "route": "/(tabs)/finance",
+                "time_label": "now",
+            })
+
+    # New job matches (status=matched)
+    job_apps = await db.job_applications.find(
+        {"user_id": user_id, "status": "matched"}, {"_id": 0, "user_id": 0}
+    ).to_list(20)
+    for j in job_apps[:3]:
+        alerts.append({
+            "id": f"job-{j.get('application_id')}",
+            "severity": "info",
+            "icon": "briefcase",
+            "title": f"New match: {j.get('role_title')}",
+            "subtitle": f"{j.get('employer')} · {j.get('match_score')}% match",
+            "route": "/(tabs)/career",
+            "time_label": "new",
+        })
+
+    # Upcoming interviews (status=interview)
+    interview_apps = await db.job_applications.find(
+        {"user_id": user_id, "status": "interview"}, {"_id": 0, "user_id": 0}
+    ).to_list(10)
+    for j in interview_apps:
+        alerts.append({
+            "id": f"intv-{j.get('application_id')}",
+            "severity": "urgent",
+            "icon": "phone",
+            "title": f"Interview: {j.get('employer')}",
+            "subtitle": f"{j.get('role_title')} — prep required",
+            "route": "/(tabs)/career",
+            "time_label": "soon",
+        })
+
+    # Wellness low
+    health = ctx.get("health") or {}
+    wscore = health.get("wellness_checkin_score", 5)
+    if wscore <= 4:
+        alerts.append({
+            "id": "wellness-low",
+            "severity": "warning",
+            "icon": "heart-pulse",
+            "title": f"Wellness check-in low ({wscore}/10)",
+            "subtitle": "Schedule a self-care break this week",
+            "route": "/module/health",
+            "time_label": "today",
+        })
+
+    # Insurance renewal soon (within 60 days)
+    renewal = health.get("coverage_renewal_date")
+    if renewal:
+        try:
+            rd = datetime.fromisoformat(renewal.replace("Z", ""))
+            if rd.tzinfo is None:
+                rd = rd.replace(tzinfo=timezone.utc)
+            days = (rd - today).days
+            if 0 <= days <= 60:
+                alerts.append({
+                    "id": "insurance-renewal",
+                    "severity": "info",
+                    "icon": "shield",
+                    "title": f"Insurance renews in {days}d",
+                    "subtitle": health.get("insurance_type") or "Review coverage",
+                    "route": "/module/health",
+                    "time_label": f"{days}d",
+                })
+        except Exception:
+            pass
+
+    # Positive: cashflow good
+    income = sum(i.get("net_monthly", 0) for i in ctx["income_sources"] or [] if i.get("is_active"))
+    expenses_total = sum(e.get("monthly_amount", 0) for e in ctx["expenses"] or [])
+    if income > 0 and (income - expenses_total) / income > 0.30:
+        alerts.append({
+            "id": "savings-strong",
+            "severity": "good",
+            "icon": "trending-up",
+            "title": "Savings rate above 30%",
+            "subtitle": f"+${income - expenses_total:,.0f}/mo surplus",
+            "route": "/(tabs)/finance",
+            "time_label": "good",
+        })
+
+    # sort by severity
+    sev_order = {"urgent": 0, "warning": 1, "info": 2, "good": 3}
+    alerts.sort(key=lambda a: sev_order.get(a["severity"], 9))
+    return {"alerts": alerts, "count": len(alerts)}
+
+
+# ----------------------------- Daily Advice ---------------------------
+class DailyAdviceRequest(BaseModel):
+    force: bool = False
+    deep: bool = False
+
+
+@api_router.post("/ai/daily-advice")
+async def daily_advice(
+    payload: DailyAdviceRequest = DailyAdviceRequest(),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Returns today's AI Daily Advice (cached once per day, refreshes after 6 AM).
+    Returns 2-3 specific actionable bullets. If deep=True, returns longer analysis."""
+    today = now_utc().date().isoformat()
+    cache_key = f"daily-{user_id}-{today}-{'deep' if payload.deep else 'short'}"
+
+    if not payload.force:
+        cached = await db.daily_advice_cache.find_one({"key": cache_key}, {"_id": 0})
+        if cached:
+            return cached["payload"]
+
+    context = await gather_user_context(user_id)
+
+    if payload.deep:
+        instruction = (
+            "Provide a DEEP analysis (5-8 sentences) covering: top financial risk, "
+            "highest-leverage action, one career insight, one health/safety nudge. "
+            "Cite specific dollar amounts and percentages from the data."
+        )
+        prompt = f"""Today is {today}. {instruction}
+
+User context (JSON):
+{context}
+
+Respond with EXACTLY this JSON (no markdown):
+{{"summary": "<one-line headline>", "items": ["<bullet1>", "<bullet2>", "<bullet3>"], "deep_analysis": "<5-8 sentences>"}}
+"""
+    else:
+        prompt = f"""Today is {today}. Give 2-3 specific, actionable pieces of advice for TODAY.
+Each item must reference real numbers from the user's data and feel custom — not generic.
+
+User context (JSON):
+{context}
+
+Respond with EXACTLY this JSON (no markdown):
+{{"summary": "<one-line headline summarizing the day>", "items": ["<advice1>", "<advice2>", "<advice3>"]}}
+"""
+
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=f"daily-{user_id}-{today}",
+        system_message=PLOS_SYSTEM_PROMPT,
+    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+
+    response = await chat.send_message(UserMessage(text=prompt))
+    text = response.strip() if isinstance(response, str) else str(response).strip()
+
+    import json
+    import re
+
+    json_match = re.search(r"\{.*\}", text, re.DOTALL)
+    parsed: Dict[str, Any] = {}
+    if json_match:
+        try:
+            parsed = json.loads(json_match.group(0))
+        except Exception:
+            parsed = {}
+
+    result = {
+        "summary": parsed.get("summary", "Stay on plan today."),
+        "items": parsed.get("items", [text[:240]]) if not parsed.get("items") else parsed.get("items"),
+        "deep_analysis": parsed.get("deep_analysis"),
+        "generated_at": iso(now_utc()),
+        "date": today,
+    }
+
+    await db.daily_advice_cache.update_one(
+        {"key": cache_key},
+        {"$set": {"key": cache_key, "user_id": user_id, "payload": result}},
+        upsert=True,
+    )
+    return result
 
 
 # ----------------------------- Seed Demo Data --------------------------
@@ -890,6 +1197,7 @@ async def seed_demo(user_id: str = Depends(get_current_user_id)):
     assets = [
         {"asset_type": "real_estate", "name": "Primary Residence", "current_value": 485000, "purchase_value": 380000, "location": "Austin, TX", "notes": "Purchased 2020"},
         {"asset_type": "vehicle", "name": "2022 Toyota RAV4", "current_value": 24500, "purchase_value": 32000, "location": "Garage", "notes": "Paid through 2028"},
+        {"asset_type": "cash", "name": "Emergency Savings (HYSA)", "current_value": 18500, "purchase_value": 18500, "location": "Marcus by Goldman Sachs", "notes": "4.5% APY"},
     ]
     for a in assets:
         obj = Asset(**a).dict()
