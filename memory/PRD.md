@@ -42,3 +42,10 @@ Every AI call (advice + chat) gathers the user's complete data context (income, 
 - AI advice generation + chatbot
 - Settings with data management + sign out
 - Module pages for Investments, Health (full); Business/Global/Travel/Legal/Shopping (scaffolded, AI-enabled)
+
+## Iteration 10 — Business & Shopping (DONE)
+- **Business Ideas Advisor**: Hub + Ideas screen with seed/Claude-generated cards (timeline/risk tags, startup/revenue ranges, next steps, full plan modal). Eden Heights Tracker for 4-hectare / $12,000 USD Bulacan eco-resort (5-yr ROI chart, 3 phases, PH compliance checklist, edit municipality/value).
+- **Shopping & Deals Engine**: Hub with monthly savings summary. Active Deals (5 curated, dismiss with web-confirm), Utilities Review with Claude 4.5 "Find Better Rate" (Georgia Power, AT&T, DeKalb Water), Registered Products CRUD for recall monitoring.
+- Backend endpoints (`/api/business/*`, `/api/shopping/*`) and frontend screens both tested via testing_agent (iteration_10 + iteration_11 reports).
+- Cloudflare 60s proxy compatibility: trimmed Claude prompts to keep all LLM endpoints under ceiling.
+
