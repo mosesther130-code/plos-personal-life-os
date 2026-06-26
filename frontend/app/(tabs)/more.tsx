@@ -19,6 +19,7 @@ import {
   MessageCircle,
   Settings as SettingsIcon,
   ChevronRight,
+  ShieldCheck,
 } from "lucide-react-native";
 
 import { colors, spacing, radius } from "@/src/lib/theme";
@@ -33,6 +34,14 @@ type ModuleItem = {
 };
 
 const MODULES: ModuleItem[] = [
+  {
+    key: "safety-local",
+    title: "Safety & Local",
+    subtitle: "Weather, SOS, recalls, family",
+    icon: ShieldCheck,
+    color: "#22D3EE",
+    route: "/safety-local",
+  },
   {
     key: "investments",
     title: "Investments",

@@ -258,5 +258,34 @@ export const securityApi = {
     }),
 };
 
+// ----------------- Local Intelligence & Safety -----------------
+export const localApi = {
+  weather: (lat?: number, lon?: number) =>
+    request<any>(`/local/weather${lat && lon ? `?lat=${lat}&lon=${lon}` : ""}`),
+  nearby: () => request<any>("/local/nearby"),
+  gas: () => request<any>("/local/gas"),
+  recallsFood: () => request<any>("/local/recalls/food"),
+  recallsProducts: () => request<any>("/local/recalls/products"),
+  recallsVehicle: (year: number, make: string, model: string, vin?: string) =>
+    request<any>("/local/recalls/vehicle", {
+      method: "POST",
+      body: { year, make, model, vin },
+    }),
+  vehicles: () => request<{ vehicles: any[] }>("/local/vehicles"),
+  family: () => request<any>("/local/family"),
+  inviteFamily: (name: string) =>
+    request<any>("/local/family/invite", { method: "POST", body: { name } }),
+  pauseLocation: (paused: boolean) =>
+    request<any>("/local/family/pause", { method: "PUT", body: { paused } }),
+  satelliteStatus: () => request<any>("/local/satellite-status"),
+  offlineMaps: () => request<any>("/local/offline-maps"),
+  sos: (lat: number, lon: number, test_mode = false) =>
+    request<any>("/local/sos", { method: "POST", body: { lat, lon, test_mode } }),
+  updatePrefs: (data: {
+    cuisine_preference?: string;
+    google_places_api_key?: string;
+  }) => request<any>("/local/preferences", { method: "PUT", body: data }),
+};
+
 // ----------------- Seed -----------------
 export const seedDemo = () => request<any>("/seed-demo", { method: "POST" });

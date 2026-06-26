@@ -17,6 +17,7 @@ from datetime import datetime, timezone, timedelta
 import bcrypt
 import jwt as pyjwt
 from emergentintegrations.llm.chat import LlmChat, UserMessage
+import httpx
 
 # Load env
 ROOT_DIR = Path(__file__).parent
@@ -330,6 +331,51 @@ class IdentityTheftStep(BaseModel):
 
 class HIBPKeyUpdate(BaseModel):
     hibp_api_key: Optional[str] = None
+
+
+# =================== Local Intelligence & Safety Models ===================
+class FamilyMember(BaseModel):
+    member_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    initials: str
+    color: str
+    last_lat: Optional[float] = None
+    last_lon: Optional[float] = None
+    last_address: Optional[str] = None
+    last_seen: Optional[str] = None
+    is_paused: bool = False
+    avatar_url: Optional[str] = None
+
+
+class SavedVehicle(BaseModel):
+    vehicle_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    year: int
+    make: str
+    model: str
+    vin: Optional[str] = None
+    nickname: Optional[str] = None
+
+
+class SOSEvent(BaseModel):
+    event_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    lat: float
+    lon: float
+    triggered_at: str
+    test_mode: bool = False
+    notified_contacts: List[str] = []
+
+
+class CuisineUpdate(BaseModel):
+    cuisine_preference: Optional[str] = None
+    google_places_api_key: Optional[str] = None
+
+
+class VehicleRecallQuery(BaseModel):
+    year: int
+    make: str
+    model: str
+    vin: Optional[str] = None
+# =================== End Local Intelligence ===================
 
 
 # =================== End Identity & Security ===================
@@ -2927,6 +2973,525 @@ async def check_identity_theft_step(
     return {"ok": True, "completed": completed}
 
 
+# =====================================================================
+# Local Intelligence & Safety Module
+# =====================================================================
+DEFAULT_LAT = 33.7490
+DEFAULT_LON = -84.3880
+
+NWS_USER_AGENT = "PLOS (Personal Life OS, contact: support@plos.app)"
+
+
+async def _http_get_json(url: str, headers: Optional[Dict[str, str]] = None, timeout: float = 8.0):
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+        r = await client.get(url, headers=headers or {})
+        r.raise_for_status()
+        return r.json()
+
+
+# ----------------------------- Weather (NWS) -------------------------
+def _icon_from_short(short: str) -> str:
+    s = (short or "").lower()
+    if "thunder" in s or "storm" in s:
+        return "thunderstorm"
+    if "snow" in s:
+        return "snow"
+    if "rain" in s or "shower" in s:
+        return "rain"
+    if "cloud" in s and "partly" in s:
+        return "partly-cloudy"
+    if "cloud" in s:
+        return "cloudy"
+    if "fog" in s or "mist" in s:
+        return "fog"
+    if "wind" in s:
+        return "wind"
+    return "sun"
+
+
+@api_router.get("/local/weather")
+async def get_weather(
+    lat: float = DEFAULT_LAT,
+    lon: float = DEFAULT_LON,
+    user_id: str = Depends(get_current_user_id),
+):
+    """NWS real API: returns current observation + 7-day forecast + active alerts."""
+    headers = {"User-Agent": NWS_USER_AGENT, "Accept": "application/geo+json"}
+    using_default = lat == DEFAULT_LAT and lon == DEFAULT_LON
+    try:
+        points = await _http_get_json(
+            f"https://api.weather.gov/points/{lat:.4f},{lon:.4f}", headers
+        )
+        props = points.get("properties", {})
+        forecast_url = props.get("forecast")
+        hourly_url = props.get("forecastHourly")
+        relative = props.get("relativeLocation", {}).get("properties", {})
+        location_name = (
+            f"{relative.get('city','')}, {relative.get('state','')}"
+            if relative else "Atlanta, GA"
+        )
+        # Forecast (12-hour periods)
+        forecast = await _http_get_json(forecast_url, headers) if forecast_url else {}
+        periods = forecast.get("properties", {}).get("periods", [])
+
+        # Current = first hourly period if available
+        current = {}
+        if hourly_url:
+            try:
+                hourly = await _http_get_json(hourly_url, headers)
+                h = hourly.get("properties", {}).get("periods", [])
+                if h:
+                    p0 = h[0]
+                    current = {
+                        "temperature": p0.get("temperature"),
+                        "unit": p0.get("temperatureUnit", "F"),
+                        "short_forecast": p0.get("shortForecast"),
+                        "icon": _icon_from_short(p0.get("shortForecast", "")),
+                        "wind_speed": p0.get("windSpeed"),
+                        "wind_direction": p0.get("windDirection"),
+                        "humidity": (p0.get("relativeHumidity") or {}).get("value"),
+                        "updated": p0.get("startTime"),
+                    }
+            except Exception:
+                pass
+
+        if not current and periods:
+            p0 = periods[0]
+            current = {
+                "temperature": p0.get("temperature"),
+                "unit": p0.get("temperatureUnit", "F"),
+                "short_forecast": p0.get("shortForecast"),
+                "icon": _icon_from_short(p0.get("shortForecast", "")),
+                "wind_speed": p0.get("windSpeed"),
+                "wind_direction": p0.get("windDirection"),
+                "updated": p0.get("startTime"),
+                "humidity": None,
+            }
+
+        # 7-day forecast: pair day+night periods
+        daily = []
+        seen_days = set()
+        for p in periods:
+            day_name = p.get("name", "")
+            base = day_name.replace(" Night", "").strip()
+            if base in seen_days or not base or "Night" in day_name:
+                # Update prior with night low
+                if base in seen_days and "Night" in day_name:
+                    for d in daily:
+                        if d["day"] == base:
+                            d["low"] = p.get("temperature")
+                continue
+            seen_days.add(base)
+            daily.append({
+                "day": base,
+                "high": p.get("temperature"),
+                "low": p.get("temperature"),
+                "icon": _icon_from_short(p.get("shortForecast", "")),
+                "short_forecast": p.get("shortForecast"),
+                "precipitation_pct": (p.get("probabilityOfPrecipitation") or {}).get("value", 0),
+            })
+            if len(daily) >= 7:
+                break
+
+        # Active alerts
+        alerts: List[Dict[str, Any]] = []
+        try:
+            a = await _http_get_json(
+                f"https://api.weather.gov/alerts/active?point={lat:.4f},{lon:.4f}",
+                headers,
+            )
+            for f in a.get("features", []):
+                ap = f.get("properties", {})
+                alerts.append({
+                    "id": ap.get("id"),
+                    "event": ap.get("event"),
+                    "severity": ap.get("severity"),
+                    "headline": ap.get("headline"),
+                    "description": (ap.get("description") or "")[:300],
+                    "expires": ap.get("expires"),
+                })
+        except Exception:
+            pass
+
+        return {
+            "location": location_name,
+            "lat": lat,
+            "lon": lon,
+            "using_default_location": using_default,
+            "current": current,
+            "forecast": daily,
+            "alerts": alerts,
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as e:
+        return {
+            "location": "Atlanta, GA",
+            "lat": lat,
+            "lon": lon,
+            "using_default_location": using_default,
+            "error": str(e)[:200],
+            "current": {},
+            "forecast": [],
+            "alerts": [],
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+
+# ----------------------------- Nearby Services (MOCKED) --------------
+@api_router.get("/local/nearby")
+async def get_nearby(user_id: str = Depends(get_current_user_id)):
+    profile = await db.user_profile.find_one({"user_id": user_id}, {"_id": 0}) or {}
+    cuisine = (profile.get("cuisine_preference") or "Filipino").lower()
+    has_places_key = bool((profile.get("google_places_api_key") or "").strip())
+    # TODO: Replace with Google Places Nearby Search when has_places_key.
+    restaurants = [
+        {
+            "name": "Grill City Filipino BBQ",
+            "type": "restaurant",
+            "cuisine": "Filipino",
+            "distance_miles": 4.2,
+            "address": "Lithonia, GA",
+            "open_now": True,
+            "phone": None,
+        },
+    ] if "filipino" in cuisine else [
+        {
+            "name": f"Top-rated {cuisine.title()} spot",
+            "type": "restaurant",
+            "cuisine": cuisine,
+            "distance_miles": 1.6,
+            "address": "Decatur, GA",
+            "open_now": True,
+        }
+    ]
+    return {
+        "is_mocked": not has_places_key,
+        "has_places_key": has_places_key,
+        "hospitals": [
+            {
+                "name": "Grady Memorial Hospital",
+                "address": "80 Jesse Hill Jr Dr SE, Atlanta GA",
+                "distance_miles": 2.4,
+                "emergency_dept_open": True,
+                "phone": "404-616-1000",
+                "lat": 33.7490, "lon": -84.3859,
+            },
+            {
+                "name": "Emory Decatur Hospital",
+                "address": "2701 N Decatur Rd, Decatur GA",
+                "distance_miles": 3.1,
+                "emergency_dept_open": True,
+                "phone": "404-501-1000",
+                "lat": 33.7748, "lon": -84.2962,
+            },
+        ],
+        "police": [
+            {
+                "name": "DeKalb County Police Department Zone 6",
+                "distance_miles": 1.1,
+                "non_emergency_phone": "770-724-7710",
+            },
+            {
+                "name": "Stone Mountain Police Department",
+                "distance_miles": 0.8,
+                "non_emergency_phone": "770-498-8871",
+            },
+        ],
+        "restaurants": restaurants,
+        "parks": [
+            {
+                "name": "Stone Mountain Park",
+                "distance_miles": 1.2,
+                "notes": "Free entry on foot. Open 5 AM - midnight.",
+            }
+        ],
+        "traffic": [
+            {
+                "name": "I-285 East near Covington Hwy",
+                "severity": "moderate",
+                "summary": "Moderate congestion · 12 min delay",
+                "updated_min_ago": 5,
+            }
+        ],
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@api_router.put("/local/preferences")
+async def update_local_prefs(
+    payload: CuisineUpdate, user_id: str = Depends(get_current_user_id)
+):
+    updates: Dict[str, Any] = {}
+    if payload.cuisine_preference is not None:
+        updates["cuisine_preference"] = payload.cuisine_preference.strip() or "Filipino"
+    if payload.google_places_api_key is not None:
+        updates["google_places_api_key"] = (
+            payload.google_places_api_key.strip() or None
+        )
+    if updates:
+        await db.user_profile.update_one({"user_id": user_id}, {"$set": updates})
+    return {"ok": True, "updated": list(updates.keys())}
+
+
+# ----------------------------- Gas Prices (MOCKED) -------------------
+@api_router.get("/local/gas")
+async def get_gas(user_id: str = Depends(get_current_user_id)):
+    # TODO: Replace seeded prices with GasBuddy API partnership.
+    return {
+        "is_mocked": True,
+        "fuel_grade": "Regular Unleaded",
+        "stations": [
+            {
+                "name": "Murphy Express",
+                "address": "1938 Rockbridge Rd, Stone Mountain GA",
+                "price_per_gallon": 2.89,
+                "distance_miles": 0.8,
+                "brand": "Murphy",
+            },
+            {
+                "name": "QuikTrip",
+                "address": "1234 Memorial Dr, Decatur GA",
+                "price_per_gallon": 2.94,
+                "distance_miles": 1.2,
+                "brand": "QuikTrip",
+            },
+            {
+                "name": "RaceTrac",
+                "address": "5678 Covington Hwy, Decatur GA",
+                "price_per_gallon": 2.97,
+                "distance_miles": 1.6,
+                "brand": "RaceTrac",
+            },
+        ],
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+# ----------------------------- Recalls (REAL APIs) -------------------
+@api_router.get("/local/recalls/food")
+async def get_food_recalls(user_id: str = Depends(get_current_user_id)):
+    try:
+        data = await _http_get_json(
+            "https://api.fda.gov/food/enforcement.json?search=status:%22Ongoing%22&limit=5",
+            timeout=10.0,
+        )
+        items = []
+        for r in data.get("results", []):
+            items.append({
+                "recall_number": r.get("recall_number"),
+                "product_description": r.get("product_description"),
+                "reason_for_recall": r.get("reason_for_recall"),
+                "recalling_firm": r.get("recalling_firm"),
+                "recall_date": r.get("recall_initiation_date"),
+                "classification": r.get("classification"),
+                "status": r.get("status"),
+            })
+        return {"is_live": True, "source": "openFDA", "recalls": items}
+    except Exception as e:
+        return {"is_live": False, "source": "openFDA", "error": str(e)[:200], "recalls": []}
+
+
+@api_router.get("/local/recalls/products")
+async def get_product_recalls(user_id: str = Depends(get_current_user_id)):
+    try:
+        data = await _http_get_json(
+            "https://www.saferproducts.gov/RestWebServices/Recall?format=json",
+            timeout=10.0,
+        )
+        items = []
+        rows = data if isinstance(data, list) else data.get("Recalls", [])
+        for r in rows[:5]:
+            items.append({
+                "recall_id": r.get("RecallID") or r.get("RecallNumber"),
+                "title": r.get("Title"),
+                "description": (r.get("Description") or "")[:300],
+                "hazards": ", ".join([h.get("Name", "") for h in (r.get("Hazards") or [])]),
+                "manufacturers": ", ".join(
+                    [m.get("Name", "") for m in (r.get("Manufacturers") or [])]
+                ),
+                "recall_date": r.get("RecallDate"),
+                "url": r.get("URL"),
+            })
+        return {"is_live": True, "source": "CPSC SaferProducts", "recalls": items}
+    except Exception as e:
+        return {"is_live": False, "source": "CPSC", "error": str(e)[:200], "recalls": []}
+
+
+@api_router.post("/local/recalls/vehicle")
+async def get_vehicle_recalls(
+    payload: VehicleRecallQuery, user_id: str = Depends(get_current_user_id)
+):
+    try:
+        url = (
+            "https://api.nhtsa.gov/recalls/recallsByVehicle"
+            f"?make={payload.make}&model={payload.model}&modelYear={payload.year}"
+        )
+        data = await _http_get_json(url, timeout=10.0)
+        results = data.get("results") or []
+        recalls = []
+        for r in results:
+            recalls.append({
+                "campaign": r.get("NHTSACampaignNumber"),
+                "component": r.get("Component"),
+                "consequence": r.get("Consequence"),
+                "remedy": r.get("Remedy"),
+                "report_date": r.get("ReportReceivedDate"),
+                "summary": r.get("Summary"),
+            })
+        # Persist last query on the saved vehicle (if any matches)
+        if payload.vin:
+            await db.saved_vehicles.update_one(
+                {"user_id": user_id, "year": payload.year, "make": payload.make, "model": payload.model},
+                {"$set": {"vin": payload.vin}},
+                upsert=False,
+            )
+        return {
+            "is_live": True,
+            "source": "NHTSA",
+            "vehicle": {
+                "year": payload.year,
+                "make": payload.make,
+                "model": payload.model,
+                "vin": payload.vin,
+            },
+            "recall_count": len(recalls),
+            "recalls": recalls,
+        }
+    except Exception as e:
+        return {
+            "is_live": False,
+            "source": "NHTSA",
+            "error": str(e)[:200],
+            "recalls": [],
+        }
+
+
+@api_router.get("/local/vehicles")
+async def list_vehicles(user_id: str = Depends(get_current_user_id)):
+    items = await db.saved_vehicles.find({"user_id": user_id}, {"_id": 0}).to_list(20)
+    return {"vehicles": items}
+
+
+# ----------------------------- Family Tracking (MOCKED) --------------
+@api_router.get("/local/family")
+async def get_family(user_id: str = Depends(get_current_user_id)):
+    members = await db.family_members.find({"user_id": user_id}, {"_id": 0}).to_list(50)
+    profile = await db.user_profile.find_one({"user_id": user_id}, {"_id": 0}) or {}
+    return {
+        "is_mocked": True,
+        "self_paused": bool(profile.get("location_paused")),
+        "members": members,
+    }
+
+
+@api_router.post("/local/family/invite")
+async def invite_family(
+    body: Dict[str, Any], user_id: str = Depends(get_current_user_id)
+):
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Name required")
+    invite_token = str(uuid.uuid4())[:8]
+    return {
+        "ok": True,
+        "invite_link": f"https://plos.app/invite/{invite_token}",
+        "name": name,
+        "expires_in": "7 days",
+    }
+
+
+@api_router.put("/local/family/pause")
+async def pause_my_location(
+    body: Dict[str, Any], user_id: str = Depends(get_current_user_id)
+):
+    paused = bool(body.get("paused"))
+    await db.user_profile.update_one(
+        {"user_id": user_id}, {"$set": {"location_paused": paused}}
+    )
+    return {"ok": True, "paused": paused}
+
+
+# ----------------------------- Satellite Status ---------------------
+@api_router.get("/local/satellite-status")
+async def satellite_status(user_id: str = Depends(get_current_user_id)):
+    members = await db.family_members.count_documents({"user_id": user_id})
+    return {
+        "gps_satellites_acquired": 9,
+        "gps_satellites_total": 12,
+        "gps_lock": True,
+        "offline_maps": {
+            "downloaded_regions": ["Georgia, USA", "Bulacan, Philippines"],
+            "all_synced": True,
+        },
+        "satellite_messaging": {
+            "configured": False,
+            "service": None,  # "garmin_inreach" | "iphone_emergency_sos"
+        },
+        "emergency_contacts_loaded": members,
+    }
+
+
+@api_router.get("/local/offline-maps")
+async def offline_maps(user_id: str = Depends(get_current_user_id)):
+    return {
+        "is_mocked": True,
+        "regions": [
+            {
+                "id": "ga_usa",
+                "name": "Georgia, USA",
+                "size_mb": 180,
+                "status": "downloaded",
+                "last_updated": datetime.now(timezone.utc).isoformat(),
+            },
+            {
+                "id": "bulacan_ph",
+                "name": "Bulacan Province, Philippines",
+                "size_mb": 45,
+                "status": "downloaded",
+                "last_updated": datetime.now(timezone.utc).isoformat(),
+            },
+        ],
+    }
+
+
+# ----------------------------- SOS Event ----------------------------
+@api_router.post("/local/sos")
+async def log_sos(
+    body: Dict[str, Any], user_id: str = Depends(get_current_user_id)
+):
+    lat = float(body.get("lat") or 0)
+    lon = float(body.get("lon") or 0)
+    test_mode = bool(body.get("test_mode"))
+    members = await db.family_members.find({"user_id": user_id}, {"_id": 0}).to_list(50)
+    contacts = [m["name"] for m in members]
+    event = SOSEvent(
+        lat=lat,
+        lon=lon,
+        triggered_at=datetime.now(timezone.utc).isoformat(),
+        test_mode=test_mode,
+        notified_contacts=contacts,
+    ).dict()
+    event["user_id"] = user_id
+    await db.sos_events.insert_one(event)
+    return {
+        "ok": True,
+        "event_id": event["event_id"],
+        "test_mode": test_mode,
+        "notified_count": len(contacts),
+        "contacts": contacts,
+    }
+
+
+@api_router.get("/local/sos/history")
+async def list_sos(user_id: str = Depends(get_current_user_id)):
+    items = (
+        await db.sos_events.find({"user_id": user_id}, {"_id": 0})
+        .sort("triggered_at", -1)
+        .to_list(20)
+    )
+    return {"events": items}
+
+
 # ----------------------------- Seed Demo Data --------------------------
 @api_router.post("/seed-demo")
 async def seed_demo(user_id: str = Depends(get_current_user_id)):
@@ -2948,6 +3513,9 @@ async def seed_demo(user_id: str = Depends(get_current_user_id)):
         "hard_inquiries",
         "breach_records",
         "identity_theft_checklist",
+        "family_members",
+        "saved_vehicles",
+        "sos_events",
     ]:
         await db[col].delete_many({"user_id": user_id})
 
@@ -3250,6 +3818,54 @@ TypeScript, React, Next.js, Node.js, Python, Go, PostgreSQL, Redis, AWS (ECS, RD
         obj = SecurityAlert(**a).dict()
         obj["user_id"] = user_id
         await db.security_alerts.insert_one(obj)
+
+    # =========================================================
+    # Local Intelligence & Safety seed
+    # =========================================================
+    # Family members
+    family_seed = [
+        {
+            "name": "Isaac",
+            "initials": "IS",
+            "color": "#A855F7",  # purple
+            "last_lat": 33.7396,
+            "last_lon": -84.2419,
+            "last_address": "Oak View Elementary School, 4355 Flat Shoals Pkwy, Decatur GA",
+            "last_seen": (now_dt - timedelta(minutes=6)).isoformat(),
+        },
+        {
+            "name": "Ken",
+            "initials": "KN",
+            "color": "#14B8A6",  # teal
+            "last_lat": 33.7396,
+            "last_lon": -84.2419,
+            "last_address": "Oak View Elementary School, 4355 Flat Shoals Pkwy, Decatur GA",
+            "last_seen": (now_dt - timedelta(minutes=6)).isoformat(),
+        },
+    ]
+    for f in family_seed:
+        obj = FamilyMember(**f).dict()
+        obj["user_id"] = user_id
+        await db.family_members.insert_one(obj)
+
+    # Saved vehicle (NHTSA real recall query target)
+    await db.saved_vehicles.insert_one(
+        {
+            **SavedVehicle(year=2015, make="Toyota", model="RAV4", vin=None).dict(),
+            "user_id": user_id,
+        }
+    )
+
+    # User profile defaults for local module
+    await db.user_profile.update_one(
+        {"user_id": user_id},
+        {
+            "$set": {
+                "cuisine_preference": "Filipino",
+                "location_paused": False,
+            }
+        },
+    )
 
     return {"ok": True, "message": "Demo data seeded"}
 
