@@ -210,8 +210,8 @@ def test_alerts_seeded_two(client, headers):
     assert r.status_code == 200, r.text
     items = r.json()["alerts"]
     labels = [a.get("label") for a in items]
-    assert any("Eden Heights" in (l or "") for l in labels)
-    assert any("Travel to Europe" in (l or "") for l in labels)
+    assert any("Eden Heights" in (lbl or "") for lbl in labels)
+    assert any("Travel to Europe" in (lbl or "") for lbl in labels)
 
 
 def test_alert_create_validation_bad_direction(client, headers):
