@@ -125,6 +125,25 @@ export const investmentsApi = {
   create: (data: any) =>
     request<any>("/investments", { method: "POST", body: data }),
   delete: (id: string) => request(`/investments/${id}`, { method: "DELETE" }),
+  portfolio: () => request<any>("/investments/portfolio"),
+  contributionOptimizer: () =>
+    request<any>("/investments/contribution-optimizer", { method: "POST" }),
+  readinessGate: () => request<any>("/investments/readiness-gate"),
+  opportunities: () =>
+    request<any>("/investments/opportunities", { method: "POST" }),
+  marketReadiness: () => request<any>("/investments/market-readiness"),
+  socialSecurity: (data: {
+    current_age: number;
+    current_salary: number;
+    years_of_contributions: number;
+    life_expectancy: number;
+  }) =>
+    request<any>("/investments/social-security", { method: "POST", body: data }),
+  setRiskTolerance: (risk_tolerance: number) =>
+    request<any>("/profile/risk-tolerance", {
+      method: "PUT",
+      body: { risk_tolerance },
+    }),
 };
 
 // ----------------- Career -----------------

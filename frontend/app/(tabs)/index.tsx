@@ -42,7 +42,7 @@ const fmtUSD = (n: number, compact = false) => {
 const MODULES = [
   { key: "finance", title: "Finances", icon: Wallet, color: colors.success, route: "/(tabs)/finance" },
   { key: "career", title: "Career", icon: Briefcase, color: colors.primaryGlow, route: "/(tabs)/career" },
-  { key: "investments", title: "Investments", icon: TrendingUp, color: "#10B981", route: "/module/investments" },
+  { key: "investments", title: "Investments", icon: TrendingUp, color: "#10B981", route: "/investments" },
   { key: "debt", title: "Debt", icon: CreditCard, color: colors.warning, route: "/(tabs)/finance" },
   { key: "deals", title: "Deals", icon: Tag, color: "#EC4899", route: "/module/shopping" },
   { key: "travel", title: "Travel", icon: Plane, color: "#A855F7", route: "/module/travel" },

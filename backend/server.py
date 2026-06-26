@@ -943,6 +943,511 @@ async def delete_investment(
     return {"ok": True}
 
 
+# ----------------------------- Investment Analytics --------------------
+ACCOUNT_GROWTH_RATE: Dict[str, float] = {
+    "TSP": 0.07,
+    "IRA": 0.07,
+    "brokerage": 0.08,
+    "social_security": 0.0,
+    "life_insurance": 0.03,
+    "cash": 0.045,
+    "savings": 0.045,
+}
+
+
+def _project_at_65(
+    current_balance: float,
+    monthly_contribution: float,
+    annual_rate: float,
+    years: int,
+) -> float:
+    if years <= 0:
+        return current_balance + monthly_contribution * 12 * max(0, years)
+    monthly_rate = annual_rate / 12.0
+    months = years * 12
+    if monthly_rate == 0:
+        return current_balance + monthly_contribution * months
+    fv_balance = current_balance * ((1 + monthly_rate) ** months)
+    fv_contrib = monthly_contribution * (((1 + monthly_rate) ** months - 1) / monthly_rate)
+    return fv_balance + fv_contrib
+
+
+def _years_to_65(dob_iso: Optional[str]) -> int:
+    if not dob_iso:
+        return 30  # fallback
+    try:
+        dob = datetime.fromisoformat(dob_iso.replace("Z", "")).replace(tzinfo=None)
+        age = (datetime.now() - dob).days / 365.25
+        return max(0, int(65 - age))
+    except Exception:
+        return 30
+
+
+@api_router.get("/investments/portfolio")
+async def investment_portfolio(user_id: str = Depends(get_current_user_id)):
+    investments = await db.investments.find(
+        {"user_id": user_id}, {"_id": 0, "user_id": 0}
+    ).to_list(100)
+    profile = await db.user_profile.find_one({"user_id": user_id}, {"_id": 0}) or {}
+    incomes = await db.income_sources.find({"user_id": user_id}, {"_id": 0}).to_list(50)
+    annual_income = sum(i.get("net_monthly", 0) for i in incomes if i.get("is_active")) * 12
+
+    years = _years_to_65(profile.get("date_of_birth"))
+    enriched = []
+    total_balance = 0.0
+    total_projected = 0.0
+    total_monthly_contrib = 0.0
+    for inv in investments:
+        kind = str(inv.get("type", ""))
+        rate = ACCOUNT_GROWTH_RATE.get(kind, 0.06)
+        proj = _project_at_65(
+            inv.get("balance", 0), inv.get("contribution_monthly", 0), rate, years
+        )
+        # if backend already had projected_at_65 stored, prefer computed
+        inv["projected_at_65"] = round(proj, 2)
+        inv["annual_growth_rate"] = rate
+        # Simple performance trend: assume +YTD% = growth_rate * (months elapsed)/12
+        ytd_months = (datetime.now().month - 1) or 1
+        trend_pct = round(rate * (ytd_months / 12.0) * 100, 1)
+        inv["trend_pct"] = trend_pct
+        total_balance += inv.get("balance", 0)
+        total_projected += proj
+        total_monthly_contrib += inv.get("contribution_monthly", 0)
+        enriched.append(inv)
+
+    # Retirement readiness: 80% income replacement → needed corpus via 4% rule
+    needed_annual_at_retirement = annual_income * 0.80
+    needed_corpus = needed_annual_at_retirement * 25
+    score = 0
+    if needed_corpus > 0:
+        score = int(min(100, max(0, total_projected / needed_corpus * 100)))
+
+    # Extra monthly needed to close gap
+    gap = max(0, needed_corpus - total_projected)
+    extra_needed_monthly = 0
+    if gap > 0 and years > 0:
+        # solve for additional monthly given 7% return
+        r = 0.07 / 12
+        n = years * 12
+        if r > 0:
+            extra_needed_monthly = round(gap / (((1 + r) ** n - 1) / r), 2)
+
+    return {
+        "total_balance": round(total_balance, 2),
+        "total_projected_at_65": round(total_projected, 2),
+        "total_monthly_contribution": round(total_monthly_contrib, 2),
+        "years_to_65": years,
+        "needed_corpus": round(needed_corpus, 2),
+        "retirement_readiness_score": score,
+        "on_track": score >= 75,
+        "monthly_gap": extra_needed_monthly,
+        "annual_income": round(annual_income, 2),
+        "investments": enriched,
+    }
+
+
+@api_router.post("/investments/contribution-optimizer")
+async def contribution_optimizer(user_id: str = Depends(get_current_user_id)):
+    portfolio = await investment_portfolio(user_id)
+    ctx = await gather_user_context(user_id)
+    prompt = f"""User retirement portfolio analysis. Recommend whether to increase
+contributions and which account/allocation to favor.
+
+Portfolio: {portfolio}
+
+User financial context:
+- Monthly income: ${sum(i.get('net_monthly',0) for i in ctx['income_sources'] or [] if i.get('is_active'))}
+- Monthly expenses: ${sum(e.get('monthly_amount',0) for e in ctx['expenses'] or [])}
+- High-APR debts: {[d for d in ctx['debts'] if d.get('apr',0) >= 12]}
+
+Return JSON ONLY (no markdown):
+{{
+  "recommendation": "<2-3 sentences specific to user>",
+  "suggested_extra_monthly": <number>,
+  "target_account": "<TSP/IRA/brokerage/etc>",
+  "allocation_advice": "<1-2 sentences on fund allocation, e.g. G Fund vs C Fund>",
+  "employer_match_status": "<one-line on whether match is maxed>"
+}}
+"""
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=f"contrib-{user_id}",
+        system_message=PLOS_SYSTEM_PROMPT,
+    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+    response = await chat.send_message(UserMessage(text=prompt))
+    text = response if isinstance(response, str) else str(response)
+    import json
+    import re
+    m = re.search(r"\{.*\}", text, re.DOTALL)
+    parsed: Dict[str, Any] = {}
+    if m:
+        try:
+            parsed = json.loads(m.group(0))
+        except Exception:
+            parsed = {}
+    return parsed or {"recommendation": text[:300]}
+
+
+def _user_finance_snapshot(ctx: Dict[str, Any]) -> Dict[str, float]:
+    income = sum(i.get("net_monthly", 0) for i in ctx["income_sources"] or [] if i.get("is_active"))
+    expenses = sum(e.get("monthly_amount", 0) for e in ctx["expenses"] or [])
+    debt_total = sum(d.get("balance", 0) for d in ctx["debts"] or [])
+    high_apr_debt = sum(d.get("balance", 0) for d in ctx["debts"] or [] if d.get("apr", 0) >= 12)
+    cc_debt = sum(
+        d.get("balance", 0) for d in ctx["debts"] or []
+        if d.get("debt_type") == "credit_card"
+    )
+    liquid = sum(
+        inv.get("balance", 0) for inv in ctx["investments"] or []
+        if str(inv.get("type", "")).lower() in {"brokerage", "cash", "savings"}
+    )
+    liquid += sum(
+        a.get("current_value", 0) for a in ctx["assets"] or []
+        if str(a.get("asset_type", "")).lower() in {"cash", "savings"}
+    )
+    months_covered = liquid / expenses if expenses > 0 else 0
+    surplus = income - expenses
+    return {
+        "monthly_income": income,
+        "monthly_expenses": expenses,
+        "monthly_surplus": surplus,
+        "total_debt": debt_total,
+        "high_apr_debt": high_apr_debt,
+        "credit_card_debt": cc_debt,
+        "emergency_fund": liquid,
+        "emergency_months": months_covered,
+    }
+
+
+@api_router.get("/investments/readiness-gate")
+async def readiness_gate(user_id: str = Depends(get_current_user_id)):
+    ctx = await gather_user_context(user_id)
+    snap = _user_finance_snapshot(ctx)
+
+    # Deterministic checklist
+    items = []
+    # 1. Emergency fund ≥ 3 months
+    items.append({
+        "key": "emergency_fund",
+        "label": "Emergency fund ≥ 3 months of expenses",
+        "ready": snap["emergency_months"] >= 3,
+        "detail": f"{snap['emergency_months']:.1f} mo covered (need {3 - snap['emergency_months']:.1f} more)" if snap["emergency_months"] < 3 else "Met",
+    })
+    # 2. CC debt < $2000
+    items.append({
+        "key": "cc_debt",
+        "label": "Credit card debt below $2,000",
+        "ready": snap["credit_card_debt"] < 2000,
+        "detail": f"${snap['credit_card_debt']:,.0f} current — pay down ${snap['credit_card_debt']-2000:,.0f} more" if snap["credit_card_debt"] >= 2000 else "Met",
+    })
+    # 3. Positive monthly surplus
+    items.append({
+        "key": "surplus",
+        "label": "Positive monthly cashflow",
+        "ready": snap["monthly_surplus"] > 0,
+        "detail": f"${snap['monthly_surplus']:,.0f}/mo" if snap["monthly_surplus"] != 0 else "Trim expenses",
+    })
+
+    em_ready = snap["emergency_months"] >= 3
+    cc_ready = snap["credit_card_debt"] < 2000
+    surplus_ok = snap["monthly_surplus"] > 0
+
+    # Tiered opportunities
+    ready_now = []
+    blocked = []
+
+    ready_now.append({"name": "Increase TSP contribution", "type": "retirement", "min_to_start": 0})
+    ready_now.append({"name": "High-Yield Savings (HYSA, ~4.5% APY)", "type": "cash", "min_to_start": 1})
+    ready_now.append({"name": "Series I-Bonds", "type": "bonds", "min_to_start": 25})
+
+    if em_ready and cc_ready:
+        ready_now.append({"name": "Conservative index ETFs (VTI/VOO)", "type": "etf", "min_to_start": 1})
+    else:
+        blocked.append({
+            "name": "Stock index ETFs (VTI/VOO)",
+            "prerequisites": [
+                "Emergency fund ≥ 3 months" if not em_ready else None,
+                "Credit card debt < $2,000" if not cc_ready else None,
+            ],
+        })
+
+    if em_ready and cc_ready and snap["emergency_months"] >= 6 and snap["monthly_surplus"] >= 500:
+        ready_now.append({"name": "Individual stocks / sector ETFs", "type": "stock", "min_to_start": 100})
+    else:
+        blocked.append({
+            "name": "Individual stocks",
+            "prerequisites": [
+                "Emergency fund ≥ 6 months",
+                "Monthly surplus ≥ $500",
+                "No high-APR debt above $5K",
+            ],
+        })
+
+    if em_ready and cc_ready and snap["emergency_months"] >= 6 and snap["monthly_surplus"] >= 1000 and snap["high_apr_debt"] < 1000:
+        ready_now.append({"name": "Crypto (≤ 5% allocation)", "type": "crypto", "min_to_start": 100})
+    else:
+        blocked.append({
+            "name": "Crypto",
+            "prerequisites": [
+                "Emergency fund ≥ 6 months",
+                "High-APR debt < $1,000",
+                "Monthly surplus ≥ $1,000",
+            ],
+        })
+
+    # Clean None prerequisites
+    for b in blocked:
+        b["prerequisites"] = [p for p in b["prerequisites"] if p]
+
+    # Re-assessment date: when cc_debt projected to clear at min payment
+    reassess_months = 12
+    if not cc_ready and snap["credit_card_debt"] > 0:
+        # crude estimate
+        min_pay = sum(
+            d.get("minimum_payment", 0) for d in ctx["debts"] or [] if d.get("debt_type") == "credit_card"
+        )
+        if min_pay > 0:
+            reassess_months = int(min((snap["credit_card_debt"] - 2000) / min_pay + 1, 36))
+
+    return {
+        "snapshot": snap,
+        "checklist": items,
+        "ready_now": ready_now,
+        "blocked": blocked,
+        "reassessment_in_months": max(1, reassess_months),
+        "all_prereqs_met": em_ready and cc_ready and surplus_ok,
+    }
+
+
+@api_router.post("/investments/opportunities")
+async def safe_opportunities(user_id: str = Depends(get_current_user_id)):
+    ctx = await gather_user_context(user_id)
+    snap = _user_finance_snapshot(ctx)
+    gate = await readiness_gate(user_id)
+
+    # Static safe opportunities ranked by user surplus + readiness
+    base = [
+        {
+            "name": "Vanguard VOO (S&P 500 ETF)",
+            "type": "etf",
+            "risk": "low-medium",
+            "est_return_annual_pct": 8.0,
+            "min_to_start": 100,
+            "match_score": 90,
+            "instructions": [
+                "Open or use existing brokerage (Fidelity, Schwab, Vanguard)",
+                "Transfer at least $100",
+                "Buy VOO with a market order",
+                "Set up monthly recurring buy",
+            ],
+            "prereqs_met": gate["all_prereqs_met"],
+        },
+        {
+            "name": "Series I Savings Bonds",
+            "type": "bonds",
+            "risk": "very low",
+            "est_return_annual_pct": 4.3,
+            "min_to_start": 25,
+            "match_score": 85,
+            "instructions": [
+                "Visit treasurydirect.gov",
+                "Create account with SSN",
+                "Buy I-Bonds up to $10K/year",
+                "Hold ≥ 5 years to avoid interest penalty",
+            ],
+            "prereqs_met": True,
+        },
+        {
+            "name": "Marcus HYSA (high-yield savings)",
+            "type": "cash",
+            "risk": "minimal",
+            "est_return_annual_pct": 4.5,
+            "min_to_start": 1,
+            "match_score": 95 if snap["emergency_months"] < 6 else 70,
+            "instructions": [
+                "Open HYSA at Marcus, Ally, or Wealthfront",
+                "Transfer emergency fund here",
+                "Automate monthly deposit",
+            ],
+            "prereqs_met": True,
+        },
+        {
+            "name": "Increase TSP to employer-match max",
+            "type": "retirement",
+            "risk": "low",
+            "est_return_annual_pct": 7.0,
+            "min_to_start": 0,
+            "match_score": 100,  # always optimal — free money
+            "instructions": [
+                "Log into TSP.gov",
+                "Increase contribution to at least 5% (full match)",
+                "Confirm L-Fund or C-Fund allocation matches age horizon",
+            ],
+            "prereqs_met": True,
+        },
+        {
+            "name": "Backdoor Roth IRA",
+            "type": "retirement",
+            "risk": "low",
+            "est_return_annual_pct": 7.0,
+            "min_to_start": 100,
+            "match_score": 80 if gate["all_prereqs_met"] else 50,
+            "instructions": [
+                "Open Traditional + Roth IRA at Fidelity",
+                "Contribute $7K to Traditional",
+                "Immediately convert to Roth (zero tax owed)",
+            ],
+            "prereqs_met": gate["all_prereqs_met"],
+        },
+    ]
+    base.sort(key=lambda x: -x["match_score"])
+    return {"opportunities": base, "snapshot": snap}
+
+
+@api_router.get("/investments/market-readiness")
+async def market_readiness(user_id: str = Depends(get_current_user_id)):
+    ctx = await gather_user_context(user_id)
+    snap = _user_finance_snapshot(ctx)
+    profile = await db.user_profile.find_one({"user_id": user_id}, {"_id": 0}) or {}
+    risk = int(profile.get("risk_tolerance", 5))
+
+    # Stock readiness
+    stock_ready = (
+        snap["emergency_months"] >= 3
+        and snap["credit_card_debt"] < 2000
+        and snap["monthly_surplus"] > 0
+    )
+    # Crypto readiness
+    crypto_ready = (
+        stock_ready
+        and snap["emergency_months"] >= 6
+        and snap["monthly_surplus"] >= 1000
+        and snap["high_apr_debt"] < 1000
+        and risk >= 7
+    )
+
+    conditions: List[str] = []
+    if not stock_ready:
+        if snap["emergency_months"] < 3:
+            conditions.append(f"Build emergency fund to 3 months (currently {snap['emergency_months']:.1f})")
+        if snap["credit_card_debt"] >= 2000:
+            conditions.append(f"Pay credit card debt below $2K (currently ${snap['credit_card_debt']:,.0f})")
+        if snap["monthly_surplus"] <= 0:
+            conditions.append("Achieve positive monthly cashflow")
+
+    crypto_conditions: List[str] = []
+    if not crypto_ready:
+        if snap["emergency_months"] < 6:
+            crypto_conditions.append(f"Emergency fund to 6 months (currently {snap['emergency_months']:.1f})")
+        if snap["monthly_surplus"] < 1000:
+            crypto_conditions.append(f"Monthly surplus ≥ $1,000 (currently ${snap['monthly_surplus']:,.0f})")
+        if snap["high_apr_debt"] >= 1000:
+            crypto_conditions.append(f"Reduce high-APR debt below $1K (currently ${snap['high_apr_debt']:,.0f})")
+        if risk < 7:
+            crypto_conditions.append(f"Risk tolerance ≥ 7/10 (currently {risk})")
+
+    # Allocation guidance for ready users
+    allocation = None
+    if stock_ready:
+        equity_pct = 60 + (risk - 5) * 5
+        equity_pct = max(40, min(85, equity_pct))
+        bonds_pct = 100 - equity_pct - (5 if crypto_ready else 0)
+        crypto_pct = 5 if crypto_ready else 0
+        allocation = {
+            "equity_pct": equity_pct,
+            "bonds_pct": bonds_pct,
+            "crypto_pct": crypto_pct,
+        }
+
+    return {
+        "stock_ready": stock_ready,
+        "crypto_ready": crypto_ready,
+        "risk_tolerance": risk,
+        "snapshot": snap,
+        "stock_conditions_to_meet": conditions,
+        "crypto_conditions_to_meet": crypto_conditions,
+        "allocation": allocation,
+    }
+
+
+class SocialSecurityRequest(BaseModel):
+    current_age: int
+    current_salary: float
+    years_of_contributions: int
+    life_expectancy: int = 85
+
+
+@api_router.post("/investments/social-security")
+async def social_security_estimator(
+    payload: SocialSecurityRequest, user_id: str = Depends(get_current_user_id)
+):
+    # Simplified PIA: ~32% of annual salary at FRA (67), capped at SSA max
+    monthly_salary = payload.current_salary / 12.0
+    base_pia = min(monthly_salary * 0.32, 3822.0)
+    # Penalty for years short of 35
+    years_factor = min(1.0, payload.years_of_contributions / 35.0)
+    pia = base_pia * (0.6 + 0.4 * years_factor)
+
+    # Adjustments by claim age
+    at_62 = pia * 0.70
+    at_67 = pia
+    at_70 = pia * 1.24
+
+    # Lifetime totals to life_expectancy
+    def lifetime(monthly: float, start_age: int) -> float:
+        months = max(0, (payload.life_expectancy - start_age) * 12)
+        return monthly * months
+
+    lt_62 = lifetime(at_62, 62)
+    lt_67 = lifetime(at_67, 67)
+    lt_70 = lifetime(at_70, 70)
+
+    # Break-even ages — find when lifetime totals cross over
+    # Break-even 62 vs 67: solve for X where 62-X cumulative = 67-X cumulative
+    # at age X (>= 67): at_62*(X-62)*12 = at_67*(X-67)*12 → X = (67*at_67 - 62*at_62)/(at_67-at_62)
+    be_62_vs_67 = (
+        (67 * at_67 - 62 * at_62) / (at_67 - at_62) if at_67 != at_62 else 80
+    )
+    be_67_vs_70 = (
+        (70 * at_70 - 67 * at_67) / (at_70 - at_67) if at_70 != at_67 else 82
+    )
+
+    # Recommend optimal age based on life expectancy
+    options = [(62, lt_62), (67, lt_67), (70, lt_70)]
+    best_age = max(options, key=lambda x: x[1])[0]
+
+    return {
+        "monthly_at_62": round(at_62, 2),
+        "monthly_at_67": round(at_67, 2),
+        "monthly_at_70": round(at_70, 2),
+        "lifetime_at_62": round(lt_62, 2),
+        "lifetime_at_67": round(lt_67, 2),
+        "lifetime_at_70": round(lt_70, 2),
+        "break_even_62_vs_67_age": round(be_62_vs_67, 1),
+        "break_even_67_vs_70_age": round(be_67_vs_70, 1),
+        "recommended_claim_age": best_age,
+        "reasoning": (
+            f"Given life expectancy of {payload.life_expectancy}, claiming at "
+            f"{best_age} maximizes lifetime benefits."
+        ),
+    }
+
+
+class RiskToleranceUpdate(BaseModel):
+    risk_tolerance: int  # 1-10
+
+
+@api_router.put("/profile/risk-tolerance")
+async def set_risk_tolerance(
+    payload: RiskToleranceUpdate, user_id: str = Depends(get_current_user_id)
+):
+    val = max(1, min(10, payload.risk_tolerance))
+    await db.user_profile.update_one(
+        {"user_id": user_id}, {"$set": {"risk_tolerance": val}}
+    )
+    return {"risk_tolerance": val}
+
+
 # ----------------------------- Career ----------------------------------
 @api_router.get("/career", response_model=CareerProfile)
 async def get_career(user_id: str = Depends(get_current_user_id)):
