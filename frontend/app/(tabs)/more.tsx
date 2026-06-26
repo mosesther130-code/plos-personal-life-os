@@ -61,10 +61,10 @@ const MODULES: ModuleItem[] = [
   {
     key: "global",
     title: "Global Tools",
-    subtitle: "Currency, time, travel docs",
+    subtitle: "Translator + currency",
     icon: Globe,
     color: colors.primaryGlow,
-    route: "/module/global",
+    route: "/global",
   },
   {
     key: "travel",

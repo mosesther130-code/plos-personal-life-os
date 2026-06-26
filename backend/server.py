@@ -375,6 +375,49 @@ class VehicleRecallQuery(BaseModel):
     make: str
     model: str
     vin: Optional[str] = None
+
+
+# =================== Global Tools (Translator + Currency) ===================
+class TranslateRequest(BaseModel):
+    text: str
+    source_language: Optional[str] = None  # may be "auto"
+    target_language: str
+
+
+class DetectLanguageRequest(BaseModel):
+    text: str
+
+
+class TranslationRecord(BaseModel):
+    translation_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    source_language: str
+    target_language: str
+    source_text: str
+    translated_text: str
+    detected_language: Optional[str] = None
+    created_at: str
+
+
+class RateAlert(BaseModel):
+    alert_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    base: str
+    target: str
+    rate_target: float
+    direction: str = "above"  # above | below
+    label: Optional[str] = None
+    enabled: bool = True
+    status: str = "watching"  # watching | triggered
+    triggered_at: Optional[str] = None
+    created_at: str
+
+
+class RateAlertCreate(BaseModel):
+    base: str
+    target: str
+    rate_target: float
+    direction: str = "above"
+    label: Optional[str] = None
+# =================== End Global Tools ===================
 # =================== End Local Intelligence ===================
 
 
@@ -3492,6 +3535,452 @@ async def list_sos(user_id: str = Depends(get_current_user_id)):
     return {"events": items}
 
 
+# =====================================================================
+# Global Tools — Translator + Currency
+# =====================================================================
+TRANSLATOR_SYS = (
+    "You are a precise language translator. Translate the user's text "
+    "accurately and naturally into the target language. Return only the "
+    "translated text with no explanation, no preamble, and no quotation "
+    "marks. Preserve formatting, line breaks, and tone from the original."
+)
+
+SUPPORTED_LANGUAGES = [
+    "English", "Filipino", "French", "Spanish", "Japanese",
+    "Chinese Simplified", "Arabic", "German", "Korean",
+    "Hindi", "Portuguese", "Swahili",
+]
+
+QUICK_PHRASES = [
+    "Hello, how are you?",
+    "Where is the hospital?",
+    "How much does this cost?",
+    "I need help",
+    "Please call the police",
+    "Do you speak English?",
+    "Thank you very much",
+    "I am lost",
+    "Where is the nearest hotel?",
+    "I have a medical emergency",
+]
+
+PHRASE_BOOK: Dict[str, List[Dict[str, str]]] = {
+    "Emergency": [
+        {"English": "Help", "Filipino": "Tulong", "French": "Au secours",  "Spanish": "Ayuda"},
+        {"English": "Call an ambulance", "Filipino": "Tumawag ng ambulansya", "French": "Appelez une ambulance", "Spanish": "Llame a una ambulancia"},
+        {"English": "Call the police",   "Filipino": "Tumawag ng pulis",      "French": "Appelez la police",       "Spanish": "Llame a la policía"},
+        {"English": "I am injured",       "Filipino": "Nasaktan ako",          "French": "Je suis blessé",          "Spanish": "Estoy herido"},
+        {"English": "Fire",                "Filipino": "Sunog",                 "French": "Au feu",                  "Spanish": "Fuego"},
+        {"English": "I need a doctor",    "Filipino": "Kailangan ko ng doktor","French": "J'ai besoin d'un médecin","Spanish": "Necesito un médico"},
+        {"English": "I am having a heart attack", "Filipino": "Atake ako sa puso", "French": "Je fais une crise cardiaque", "Spanish": "Estoy teniendo un ataque al corazón"},
+        {"English": "I am allergic to this medication", "Filipino": "Allergic ako sa gamot na ito", "French": "Je suis allergique à ce médicament", "Spanish": "Soy alérgico a este medicamento"},
+    ],
+    "Travel": [
+        {"English": "Where is the airport?",      "Filipino": "Nasaan ang paliparan?",  "French": "Où est l'aéroport ?",     "Spanish": "¿Dónde está el aeropuerto?"},
+        {"English": "I need a taxi",               "Filipino": "Kailangan ko ng taksi",  "French": "J'ai besoin d'un taxi",   "Spanish": "Necesito un taxi"},
+        {"English": "Where is the bus station?",   "Filipino": "Nasaan ang istasyon ng bus?", "French": "Où est la gare routière ?", "Spanish": "¿Dónde está la estación de autobuses?"},
+        {"English": "I am lost",                    "Filipino": "Nawawala ako",            "French": "Je suis perdu",            "Spanish": "Estoy perdido"},
+        {"English": "How do I get to the hotel?", "Filipino": "Paano pumunta sa hotel?", "French": "Comment aller à l'hôtel ?", "Spanish": "¿Cómo llego al hotel?"},
+    ],
+    "Food": [
+        {"English": "I am vegetarian",   "Filipino": "Hindi ako kumakain ng karne","French": "Je suis végétarien",       "Spanish": "Soy vegetariano"},
+        {"English": "The check, please", "Filipino": "Yung bill, paki",              "French": "L'addition, s'il vous plaît","Spanish": "La cuenta, por favor"},
+        {"English": "Water, please",     "Filipino": "Tubig, paki",                  "French": "De l'eau, s'il vous plaît",   "Spanish": "Agua, por favor"},
+        {"English": "Spicy",              "Filipino": "Maanghang",                    "French": "Épicé",                       "Spanish": "Picante"},
+        {"English": "Delicious",          "Filipino": "Masarap",                       "French": "Délicieux",                   "Spanish": "Delicioso"},
+    ],
+    "Money": [
+        {"English": "How much does this cost?",   "Filipino": "Magkano ito?",          "French": "Combien ça coûte ?",       "Spanish": "¿Cuánto cuesta esto?"},
+        {"English": "Do you accept US dollars?",   "Filipino": "Tumatanggap kayo ng US dollars?", "French": "Acceptez-vous les dollars américains ?", "Spanish": "¿Aceptan dólares estadounidenses?"},
+        {"English": "Where is the nearest ATM?",  "Filipino": "Saan ang pinakamalapit na ATM?", "French": "Où est le distributeur le plus proche ?", "Spanish": "¿Dónde está el cajero más cercano?"},
+        {"English": "I need a receipt",            "Filipino": "Kailangan ko ng resibo",  "French": "J'ai besoin d'un reçu",     "Spanish": "Necesito un recibo"},
+        {"English": "That is too expensive",       "Filipino": "Masyadong mahal yan",     "French": "C'est trop cher",           "Spanish": "Eso es demasiado caro"},
+    ],
+    "Health": [
+        {"English": "I feel sick",        "Filipino": "Masama ang pakiramdam ko", "French": "Je me sens malade",         "Spanish": "Me siento enfermo"},
+        {"English": "I have a headache", "Filipino": "Sumasakit ang ulo ko",     "French": "J'ai mal à la tête",        "Spanish": "Tengo dolor de cabeza"},
+        {"English": "Where is the pharmacy?", "Filipino": "Nasaan ang botika?", "French": "Où est la pharmacie ?", "Spanish": "¿Dónde está la farmacia?"},
+        {"English": "I am pregnant",      "Filipino": "Buntis ako",                "French": "Je suis enceinte",         "Spanish": "Estoy embarazada"},
+        {"English": "I need water",       "Filipino": "Kailangan ko ng tubig",     "French": "J'ai besoin d'eau",         "Spanish": "Necesito agua"},
+    ],
+}
+
+SUPPORTED_CURRENCIES = [
+    {"code": "USD", "name": "US Dollar",        "flag": "🇺🇸"},
+    {"code": "PHP", "name": "Philippine Peso",  "flag": "🇵🇭"},
+    {"code": "EUR", "name": "Euro",              "flag": "🇪🇺"},
+    {"code": "GBP", "name": "British Pound",     "flag": "🇬🇧"},
+    {"code": "JPY", "name": "Japanese Yen",       "flag": "🇯🇵"},
+    {"code": "CAD", "name": "Canadian Dollar",    "flag": "🇨🇦"},
+    {"code": "AUD", "name": "Australian Dollar",  "flag": "🇦🇺"},
+    {"code": "CHF", "name": "Swiss Franc",        "flag": "🇨🇭"},
+    {"code": "CNY", "name": "Chinese Yuan",       "flag": "🇨🇳"},
+    {"code": "KRW", "name": "South Korean Won",   "flag": "🇰🇷"},
+    {"code": "NGN", "name": "Nigerian Naira",     "flag": "🇳🇬"},
+    {"code": "XAF", "name": "CFA Franc",          "flag": "🌍"},
+    {"code": "SGD", "name": "Singapore Dollar",   "flag": "🇸🇬"},
+]
+
+STATIC_MONEY_TIPS = [
+    "Use Wise or Remitly to send USD to PHP — rates are 3-5% better than bank wire and 8-12% better than Western Union. Current Wise rate for $1,000: ~₱57,100 after fees.",
+    "Use a Charles Schwab High Yield Investor Checking debit card or SoFi debit card for international ATM withdrawals — both reimburse all foreign ATM fees and use mid-market exchange rates with no markup.",
+    "Never exchange currency at airport kiosks — rates are typically 10-15% worse than mid-market. Use a local bank or accredited money changer in Bulacan instead.",
+    "USD to PHP rates have historically been strongest on Tuesdays and Wednesdays. Check your rate alert before transferring funds for the Eden Heights project.",
+    "Your Chase Amazon card has no foreign transaction fee — use it for hotel and restaurant purchases when traveling internationally to avoid the typical 3% foreign transaction fee charged by most cards.",
+]
+
+
+# ----------------------------- Translator ---------------------------
+@api_router.post("/global/translate")
+async def translate(
+    payload: TranslateRequest, user_id: str = Depends(get_current_user_id)
+):
+    if not payload.text.strip():
+        raise HTTPException(status_code=400, detail="text is required")
+    if payload.target_language not in SUPPORTED_LANGUAGES:
+        raise HTTPException(status_code=400, detail="Unsupported target language")
+
+    source = payload.source_language or "auto"
+    if source != "auto" and source not in SUPPORTED_LANGUAGES:
+        raise HTTPException(status_code=400, detail="Unsupported source language")
+
+    detected: Optional[str] = None
+    if source == "auto":
+        try:
+            det_chat = LlmChat(
+                api_key=EMERGENT_LLM_KEY,
+                session_id=f"detect-{user_id}",
+                system_message="Identify the language of the following text. Return only the language name in English, nothing else.",
+            ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+            d = await det_chat.send_message(UserMessage(text=payload.text[:500]))
+            detected = (d if isinstance(d, str) else str(d)).strip().splitlines()[0][:40]
+        except Exception:
+            detected = None
+        effective_source = detected or "Auto"
+    else:
+        effective_source = source
+
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=f"translate-{user_id}",
+        system_message=TRANSLATOR_SYS,
+    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+    prompt = (
+        f"Translate from {effective_source} to {payload.target_language}.\n\n"
+        f"Text:\n{payload.text}"
+    )
+    response = await chat.send_message(UserMessage(text=prompt))
+    translated = (response if isinstance(response, str) else str(response)).strip()
+    # Strip surrounding quotes if Claude wrapped output
+    if translated.startswith(("'", '"')) and translated.endswith(("'", '"')):
+        translated = translated[1:-1]
+
+    rec = TranslationRecord(
+        source_language=effective_source,
+        target_language=payload.target_language,
+        source_text=payload.text,
+        translated_text=translated,
+        detected_language=detected,
+        created_at=datetime.now(timezone.utc).isoformat(),
+    ).dict()
+    rec["user_id"] = user_id
+    await db.translations.insert_one(rec)
+    # Keep only last 20 per user (oldest beyond drops out of UI naturally; keep DB lean)
+    count = await db.translations.count_documents({"user_id": user_id})
+    if count > 50:
+        oldest = (
+            await db.translations.find({"user_id": user_id}, {"_id": 1})
+            .sort("created_at", 1)
+            .to_list(count - 50)
+        )
+        await db.translations.delete_many({"_id": {"$in": [o["_id"] for o in oldest]}})
+
+    rec.pop("_id", None)
+    rec.pop("user_id", None)
+    return rec
+
+
+@api_router.post("/global/detect-language")
+async def detect_language(
+    payload: DetectLanguageRequest, user_id: str = Depends(get_current_user_id)
+):
+    if not payload.text.strip():
+        raise HTTPException(status_code=400, detail="text is required")
+    try:
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"detect-{user_id}",
+            system_message="Identify the language of the following text. Return only the language name in English, nothing else.",
+        ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+        r = await chat.send_message(UserMessage(text=payload.text[:500]))
+        lang = (r if isinstance(r, str) else str(r)).strip().splitlines()[0][:40]
+        return {"language": lang}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Detect failed: {str(e)[:100]}")
+
+
+@api_router.get("/global/translations")
+async def list_translations(user_id: str = Depends(get_current_user_id)):
+    items = (
+        await db.translations.find({"user_id": user_id}, {"_id": 0, "user_id": 0})
+        .sort("created_at", -1)
+        .to_list(20)
+    )
+    return {"translations": items}
+
+
+@api_router.delete("/global/translations")
+async def clear_translations(user_id: str = Depends(get_current_user_id)):
+    res = await db.translations.delete_many({"user_id": user_id})
+    return {"ok": True, "deleted": res.deleted_count}
+
+
+@api_router.get("/global/languages")
+async def list_languages():
+    return {"languages": SUPPORTED_LANGUAGES, "quick_phrases": QUICK_PHRASES}
+
+
+@api_router.get("/global/phrase-book")
+async def phrase_book():
+    return {"categories": list(PHRASE_BOOK.keys()), "phrase_book": PHRASE_BOOK}
+
+
+# ----------------------------- Currency -----------------------------
+@api_router.get("/global/currencies")
+async def list_currencies():
+    return {"currencies": SUPPORTED_CURRENCIES}
+
+
+@api_router.get("/global/rates")
+async def get_rates(user_id: str = Depends(get_current_user_id)):
+    """Fetch live rates from ExchangeRate-API (open access, no key)."""
+    cached = await db.cached_rates.find_one({"_id": "usd"}, {"_id": 0})
+    try:
+        data = await _http_get_json("https://open.er-api.com/v6/latest/USD", timeout=8.0)
+        rates = data.get("rates") or {}
+        last_updated = data.get("time_last_update_utc") or datetime.now(timezone.utc).isoformat()
+        # Cache
+        await db.cached_rates.update_one(
+            {"_id": "usd"},
+            {"$set": {"rates": rates, "last_updated": last_updated, "is_live": True}},
+            upsert=True,
+        )
+        return {
+            "base": "USD",
+            "rates": rates,
+            "last_updated": last_updated,
+            "is_live": True,
+            "is_cached": False,
+        }
+    except Exception as e:
+        if cached:
+            return {
+                "base": "USD",
+                "rates": cached.get("rates", {}),
+                "last_updated": cached.get("last_updated"),
+                "is_live": False,
+                "is_cached": True,
+                "error": str(e)[:120],
+            }
+        # Fallback to a small seed
+        return {
+            "base": "USD",
+            "rates": {"PHP": 57.32, "EUR": 0.93, "GBP": 0.78, "JPY": 156.0,
+                      "CAD": 1.36, "AUD": 1.50, "CHF": 0.89, "CNY": 7.24,
+                      "KRW": 1370.0, "NGN": 1550.0, "XAF": 612.0, "SGD": 1.34,
+                      "USD": 1.0},
+            "last_updated": datetime.now(timezone.utc).isoformat(),
+            "is_live": False,
+            "is_cached": False,
+            "error": str(e)[:120],
+        }
+
+
+@api_router.get("/global/rate-history")
+async def rate_history(
+    base: str = "USD", target: str = "PHP", user_id: str = Depends(get_current_user_id)
+):
+    rows = (
+        await db.currency_history.find(
+            {"user_id": user_id, "base": base.upper(), "target": target.upper()},
+            {"_id": 0},
+        )
+        .sort("day", 1)
+        .to_list(60)
+    )
+    if not rows:
+        return {"base": base.upper(), "target": target.upper(), "series": []}
+    vals = [r["rate"] for r in rows]
+    return {
+        "base": base.upper(),
+        "target": target.upper(),
+        "series": rows,
+        "low": round(min(vals), 4),
+        "high": round(max(vals), 4),
+        "avg": round(sum(vals) / len(vals), 4),
+        "current": vals[-1],
+    }
+
+
+# ----------------------------- Rate Alerts --------------------------
+@api_router.get("/global/alerts")
+async def list_rate_alerts(user_id: str = Depends(get_current_user_id)):
+    items = (
+        await db.rate_alerts.find({"user_id": user_id}, {"_id": 0})
+        .sort("created_at", -1)
+        .to_list(50)
+    )
+    return {"alerts": items}
+
+
+@api_router.post("/global/alerts")
+async def create_rate_alert(
+    payload: RateAlertCreate, user_id: str = Depends(get_current_user_id)
+):
+    if payload.direction not in ("above", "below"):
+        raise HTTPException(status_code=400, detail="direction must be above or below")
+    if payload.rate_target <= 0:
+        raise HTTPException(status_code=400, detail="rate_target must be positive")
+    obj = RateAlert(
+        base=payload.base.upper(),
+        target=payload.target.upper(),
+        rate_target=float(payload.rate_target),
+        direction=payload.direction,
+        label=payload.label,
+        created_at=datetime.now(timezone.utc).isoformat(),
+    ).dict()
+    obj["user_id"] = user_id
+    await db.rate_alerts.insert_one(obj)
+    obj.pop("_id", None)
+    obj.pop("user_id", None)
+    return obj
+
+
+@api_router.put("/global/alerts/{alert_id}")
+async def update_rate_alert(
+    alert_id: str,
+    body: Dict[str, Any],
+    user_id: str = Depends(get_current_user_id),
+):
+    updates: Dict[str, Any] = {}
+    for k in ("enabled", "rate_target", "label", "direction"):
+        if k in body:
+            updates[k] = body[k]
+    res = await db.rate_alerts.update_one(
+        {"alert_id": alert_id, "user_id": user_id}, {"$set": updates}
+    )
+    if not res.matched_count:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    return {"ok": True}
+
+
+@api_router.delete("/global/alerts/{alert_id}")
+async def delete_rate_alert(
+    alert_id: str, user_id: str = Depends(get_current_user_id)
+):
+    res = await db.rate_alerts.delete_one(
+        {"alert_id": alert_id, "user_id": user_id}
+    )
+    return {"ok": True, "deleted": res.deleted_count}
+
+
+@api_router.post("/global/alerts/check")
+async def check_rate_alerts(user_id: str = Depends(get_current_user_id)):
+    rates_doc = await get_rates(user_id)
+    rates: Dict[str, float] = rates_doc.get("rates", {}) or {}
+    alerts = await db.rate_alerts.find(
+        {"user_id": user_id, "enabled": True}, {"_id": 0}
+    ).to_list(50)
+    triggered: List[Dict[str, Any]] = []
+    for a in alerts:
+        if a.get("status") == "triggered":
+            continue
+        base = a["base"]
+        target = a["target"]
+        rate = None
+        if base == "USD":
+            rate = rates.get(target)
+        elif target == "USD" and rates.get(base):
+            rate = 1.0 / rates[base]
+        elif base in rates and target in rates:
+            rate = rates[target] / rates[base]
+        if rate is None:
+            continue
+        dir_match = (
+            (a["direction"] == "above" and rate >= a["rate_target"]) or
+            (a["direction"] == "below" and rate <= a["rate_target"])
+        )
+        if dir_match:
+            now = datetime.now(timezone.utc).isoformat()
+            await db.rate_alerts.update_one(
+                {"alert_id": a["alert_id"], "user_id": user_id},
+                {"$set": {"status": "triggered", "triggered_at": now}},
+            )
+            # Log decision
+            decision = AIDecision(
+                module="global_tools",
+                priority="action",
+                advice_text=(
+                    f"Rate Alert: {base}/{target} reached {rate:.2f} — "
+                    f"{a.get('label') or 'Rate target reached'} "
+                    f"(direction={a['direction']} target={a['rate_target']})"
+                ),
+            ).dict()
+            decision["user_id"] = user_id
+            await db.ai_decisions_log.insert_one(decision)
+            triggered.append({**a, "current_rate": round(rate, 4)})
+    return {"checked": len(alerts), "triggered": triggered, "current_rates": rates_doc}
+
+
+# ----------------------------- Money Tips ---------------------------
+@api_router.get("/global/money-tips")
+async def get_money_tips(user_id: str = Depends(get_current_user_id)):
+    custom = await db.money_tips.find_one({"user_id": user_id}, {"_id": 0})
+    if custom and custom.get("tips"):
+        return {
+            "tips": custom["tips"],
+            "is_custom": True,
+            "generated_at": custom.get("generated_at"),
+        }
+    return {"tips": STATIC_MONEY_TIPS, "is_custom": False}
+
+
+@api_router.post("/global/money-tips/refresh")
+async def refresh_money_tips(user_id: str = Depends(get_current_user_id)):
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=f"money-tips-{user_id}",
+        system_message=PLOS_SYSTEM_PROMPT,
+    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+    prompt = (
+        "The user is a US-based professional with ties to the Philippines where "
+        "they are developing an eco-resort property. They regularly send money "
+        "from USD to PHP. They also travel to Europe and Southeast Asia for work. "
+        "Based on current currency market conditions, provide 5 specific, "
+        "actionable money transfer and currency management tips. Be specific "
+        "about services, fees, and strategies. Return only the 5 tips as a "
+        "numbered list (1. ... 2. ... etc) with no preamble."
+    )
+    response = await chat.send_message(UserMessage(text=prompt))
+    text = response if isinstance(response, str) else str(response)
+    import re as _re
+    tips: List[str] = []
+    for line in text.splitlines():
+        m = _re.match(r"^\s*\d+[.)]\s*(.+)$", line)
+        if m:
+            tips.append(m.group(1).strip())
+    if not tips:
+        tips = STATIC_MONEY_TIPS
+    tips = tips[:5]
+    now = datetime.now(timezone.utc).isoformat()
+    await db.money_tips.update_one(
+        {"user_id": user_id},
+        {"$set": {"user_id": user_id, "tips": tips, "generated_at": now}},
+        upsert=True,
+    )
+    return {"tips": tips, "is_custom": True, "generated_at": now}
+
+
 # ----------------------------- Seed Demo Data --------------------------
 @api_router.post("/seed-demo")
 async def seed_demo(user_id: str = Depends(get_current_user_id)):
@@ -3516,6 +4005,10 @@ async def seed_demo(user_id: str = Depends(get_current_user_id)):
         "family_members",
         "saved_vehicles",
         "sos_events",
+        "translations",
+        "rate_alerts",
+        "currency_history",
+        "money_tips",
     ]:
         await db[col].delete_many({"user_id": user_id})
 
@@ -3866,6 +4359,55 @@ TypeScript, React, Next.js, Node.js, Python, Go, PostgreSQL, Redis, AWS (ECS, RD
             }
         },
     )
+
+    # =========================================================
+    # Global Tools seed (rate alerts + 30-day currency history)
+    # =========================================================
+    alerts_seed_2 = [
+        {
+            "base": "USD", "target": "PHP", "rate_target": 58.0,
+            "direction": "above", "label": "Eden Heights Transfer Trigger",
+            "enabled": True, "status": "watching",
+            "created_at": days_ago(7),
+        },
+        {
+            "base": "USD", "target": "EUR", "rate_target": 0.95,
+            "direction": "above", "label": "Travel to Europe",
+            "enabled": True, "status": "watching",
+            "created_at": days_ago(5),
+        },
+    ]
+    for a in alerts_seed_2:
+        obj = RateAlert(**a).dict()
+        obj["user_id"] = user_id
+        await db.rate_alerts.insert_one(obj)
+
+    # 30-day USD/PHP trajectory: 56.40 -> 57.80 (day 15) -> 57.20 (day 22) -> 57.32 (day 30)
+    php_trail = [
+        56.40, 56.55, 56.70, 56.85, 56.95, 57.05, 57.10, 57.20, 57.30, 57.40,
+        57.50, 57.60, 57.70, 57.75, 57.80, 57.78, 57.70, 57.60, 57.50, 57.40,
+        57.30, 57.20, 57.18, 57.20, 57.22, 57.25, 57.28, 57.30, 57.31, 57.32,
+    ]
+    eur_trail = [
+        0.918, 0.920, 0.922, 0.921, 0.923, 0.925, 0.927, 0.929, 0.930, 0.931,
+        0.932, 0.933, 0.934, 0.935, 0.937, 0.938, 0.936, 0.934, 0.933, 0.932,
+        0.931, 0.930, 0.929, 0.929, 0.930, 0.931, 0.931, 0.930, 0.930, 0.930,
+    ]
+    ngn_trail = [
+        1480, 1490, 1500, 1510, 1515, 1520, 1525, 1530, 1535, 1540,
+        1545, 1548, 1550, 1552, 1555, 1556, 1554, 1552, 1550, 1548,
+        1546, 1545, 1544, 1544, 1545, 1546, 1547, 1548, 1549, 1550,
+    ]
+    for target, trail in [("PHP", php_trail), ("EUR", eur_trail), ("NGN", ngn_trail)]:
+        for i, rate in enumerate(trail):
+            d = (now_dt - timedelta(days=29 - i))
+            await db.currency_history.insert_one({
+                "user_id": user_id,
+                "base": "USD",
+                "target": target,
+                "day": d.strftime("%Y-%m-%d"),
+                "rate": rate,
+            })
 
     return {"ok": True, "message": "Demo data seeded"}
 

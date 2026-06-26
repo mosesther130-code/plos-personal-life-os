@@ -1,0 +1,37 @@
+{
+  "summary": "Global Tools module (Translator + Currency Exchange) tested end-to-end. Backend: NEW test_global_module.py — 25/25 PASSED + full regression 152/152 PASSED (auth, dashboard, finance, career, investments, security, local, global). Found + fixed 1 backend bug: /api/global/alerts/check returned 500 because AIDecision was constructed with non-existent fields (title/description/rationale) and missing required advice_text; rewrote to use the actual model schema. Frontend: hub shows 2 tiles, Translator returns the exact spec'd Filipino sentence 'Nasaan ang pinakamalapit na ospital? Kailangan ko ng doktor.', auto-detect badge renders, Phrase Book Emergency category shows 8 rows incl. Help/Tulong/Au secours/Ayuda and Fire/Sunog, Currency screen shows live USD=PHP 61.2976 (=> ₱61,297.64 for $1,000), 12-card multi-currency grid, SVG 30-day chart with low/high/avg/now stats (56.40/57.80/57.28/57.32), 2 seeded alerts (USD/EUR WATCHING + USD/PHP TRIGGERED), trigger banner at top, 5 seeded money tips. No React Native red screens; no deprecated packages introduced. Only console noise is the pre-existing 'shadow* props deprecated' warning on web.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_global_module.py",
+    "/app/test_reports/pytest/global_module_results.xml",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is now 4434 lines — strongly consider splitting per-module routers (local, security, global, finance) into /app/backend/routers/*.py soon; cross-module bugs like the AIDecision schema mismatch on /global/alerts/check would have been caught earlier with smaller modules.",
+    "currency.tsx is 489 lines — still readable but pushing the comfort limit; chart sub-component could be extracted.",
+    "Translator detect-language path silently swallows exceptions and falls back to 'Auto' label without logging — consider logging detect failures for observability."
+  ],
+  "updated_files": [
+    "/app/backend/server.py (fixed AIDecision construction in check_rate_alerts — was using non-existent title/description/rationale fields and missing required advice_text)",
+    "/app/backend/tests/test_global_module.py (NEW — 25 tests covering languages, phrase-book, translate validation, real Claude translate, auto-detect, detect-language, history list+clear, currencies, rates live/fallback, rate-history seed verification, seeded alerts, alert validation, full alert CRUD, /alerts/check triggers (incl ai_decision log assertion when PHP>=58), money-tips static + Claude refresh, auth guards)"
+  ],
+  "success_rate": {
+    "backend": "100% (152/152 — 25 new global + 127 prior regression)",
+    "frontend": "100% (all spec'd testIDs present, Translator+PhraseBook+Currency+Chart+Alerts+Tips all render and integrate correctly)"
+  },
+  "seed_data_creation": "Reused existing /api/seed-demo which seeds the 2 rate alerts (USD/PHP target 58 'Eden Heights Transfer Trigger' + USD/EUR target 0.95 'Travel to Europe') and 30-day currency_history for USD/PHP, USD/EUR, USD/NGN. test_global_module.py auto-runs seed-demo via module-scope autouse fixture before alerts/check test, matching the agent-to-agent note.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Global Tools endpoints live at /api/global/*. New collections: translations, rate_alerts, currency_history, cached_rates, money_tips. AIDecision model only accepts {module, advice_text, priority, was_acted_on, generated_at} — do NOT pass title/description/rationale (was the bug fixed this iteration). Frontend hub at /global with tiles hub-translator/hub-currency. Translator pickers are inline dropdowns (testIDs src-lang/tgt-lang open, then src-<Name>/tgt-<Name> to select). Phrase Book has cat-<Category> pills and pb-row-<Category>-<idx> rows. Currency screen testIDs: from-select/to-select/from-amount/conv-result/cur-swap/cur-refresh/converter-card/currency-chart/grid-<CODE>/add-alert/alert-save/dir-above/dir-below/alert-<id>/alert-del-<id>/refresh-tips/tip-<idx>/trigger-banner.",
+  "rca_of_issue": "Bug: POST /api/global/alerts/check returned 500. RCA: check_rate_alerts() built AIDecision(module=..., priority=..., title=..., description=..., rationale=...) but the AIDecision pydantic model defined in server.py (lines 529-535) only has fields {decision_id, module, advice_text, priority, was_acted_on, generated_at}. Pydantic raised ValidationError: 'advice_text Field required' on every triggered alert (always-on when live USD/PHP >= 58 per seed). Fix: replaced the AIDecision(...) constructor call to pass only the model's real fields, with the human-readable summary in advice_text. Verified: test_alerts_check_triggers_usd_php now PASSES and an ai_decisions_log entry with module=global_tools, priority=action is created when USD/PHP >= 58. Reproduction (pre-fix): curl -X POST /api/global/alerts/check with Authorization header → 500; backend logs show pydantic_core.ValidationError. Mitigation: applied + backend restarted; full regression still green."
+}

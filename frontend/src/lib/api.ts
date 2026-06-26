@@ -287,5 +287,44 @@ export const localApi = {
   }) => request<any>("/local/preferences", { method: "PUT", body: data }),
 };
 
+// ----------------- Global Tools (Translator + Currency) -----------------
+export const globalApi = {
+  languages: () =>
+    request<{ languages: string[]; quick_phrases: string[] }>("/global/languages"),
+  translate: (text: string, target_language: string, source_language?: string) =>
+    request<any>("/global/translate", {
+      method: "POST",
+      body: { text, target_language, source_language: source_language || "auto" },
+    }),
+  detect: (text: string) =>
+    request<{ language: string }>("/global/detect-language", {
+      method: "POST",
+      body: { text },
+    }),
+  translations: () => request<{ translations: any[] }>("/global/translations"),
+  clearTranslations: () =>
+    request<any>("/global/translations", { method: "DELETE" }),
+  phraseBook: () =>
+    request<{ categories: string[]; phrase_book: Record<string, any[]> }>(
+      "/global/phrase-book"
+    ),
+  currencies: () => request<{ currencies: any[] }>("/global/currencies"),
+  rates: () => request<any>("/global/rates"),
+  rateHistory: (base: string, target: string) =>
+    request<any>(`/global/rate-history?base=${base}&target=${target}`),
+  listAlerts: () => request<{ alerts: any[] }>("/global/alerts"),
+  createAlert: (data: any) =>
+    request<any>("/global/alerts", { method: "POST", body: data }),
+  updateAlert: (id: string, data: any) =>
+    request<any>(`/global/alerts/${id}`, { method: "PUT", body: data }),
+  deleteAlert: (id: string) =>
+    request<any>(`/global/alerts/${id}`, { method: "DELETE" }),
+  checkAlerts: () =>
+    request<any>("/global/alerts/check", { method: "POST" }),
+  moneyTips: () => request<any>("/global/money-tips"),
+  refreshMoneyTips: () =>
+    request<any>("/global/money-tips/refresh", { method: "POST" }),
+};
+
 // ----------------- Seed -----------------
 export const seedDemo = () => request<any>("/seed-demo", { method: "POST" });
