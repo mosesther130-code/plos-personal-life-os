@@ -1,0 +1,51 @@
+{
+  "summary": "Business Ideas Advisor + Shopping & Deals Engine tested end-to-end. Backend: 15/16 new tests PASSED via public URL (test_business_shopping.py); regression on prior modules (Global/Security/Local/Investments) = 80/80 PASS, no regressions. Frontend: login, More→Business hub (2 tiles), Ideas Advisor (5 cards render + expand next steps), Eden Heights (hero/ROI/phases/checklist all visible with 4 ha / $12,000 / Year 4 breakeven, 8 checklist items, 3 phase rows, toggle works, edit municipality 'Sta. Maria' persists via PUT and re-renders), Shopping hub (3 tiles + savings card), Deals (5 cards), Utilities (4 cards), Registered Products (add Test RAV4 succeeds, card renders) — ALL VERIFIED. TWO CRITICAL ISSUES FOUND: (1) Cloudflare proxy 502/timeout at 60s — POST /api/business/ideas/{id}/plan internally takes ~235s (returns valid 33KB plan); the public URL returns 502 'Bad Gateway' after ~60s. Same risk applies to POST /api/shopping/utilities/{id}/find-better (Claude call, similar duration). Users hitting 'View Full Business Plan' or 'Find Better Rate' will see a failure modal. (2) React Native Alert.alert on react-native-web does NOT fire onPress callbacks for action buttons — Dismiss Deal and Delete Product flows are broken in the web preview (verified: deals count 4→4, products count 1→1 after action). They will work on native iOS/Android via Expo Go but block testing AND web users.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/business/ideas/{idea_id}/plan", "issue": "Endpoint works (returns ~33KB markdown in ~235s internally) but Cloudflare proxy 502s at 60s. Need streaming response, async job + polling, or shorter Claude prompt.", "priority": "HIGH"},
+      {"endpoint": "POST /api/shopping/utilities/{utility_id}/find-better", "issue": "Same Claude-call pattern; same 60s Cloudflare timeout risk. Not stress-tested via public URL because it would just time out — but matches the failing pattern.", "priority": "HIGH"}
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "shopping/deals.tsx — dismiss handler", "issue": "Uses Alert.alert with onPress callback for Dismiss button. react-native-web's Alert.alert only renders window.alert (no button callbacks fire), so dismissing a deal does nothing on web. Use Modal or a web-friendly confirm (Platform.OS === 'web' ? window.confirm(...) : Alert.alert(...)).", "testID": "dismiss-d1..d5", "priority": "HIGH"},
+      {"component": "shopping/products.tsx — removeItem handler", "issue": "Same Alert.alert pattern in removeItem(). Delete trash icon does nothing on web preview. Same fix needed.", "testID": "del-{product_id}", "priority": "HIGH"}
+    ],
+    "integration_issues": [
+      {"flow": "Business Ideas Advisor → View Full Business Plan", "issue": "Frontend openPlan() awaits buildPlan() with no timeout/abort. Because Cloudflare returns 502 at 60s while Claude still runs ~3-4min, the modal shows 'Could not generate plan. Please retry.' Consider: (a) async-job pattern (POST returns job_id, GET polls), (b) reduce plan length / set max_tokens lower, or (c) stream tokens.", "affected_testIDs": ["plan-0", "plan-1", "plan-2"]},
+      {"flow": "Shopping → Utilities → Find Better Rate", "issue": "Same risk as plan endpoint — Claude call likely >60s.", "affected_testIDs": ["find-ga_power"]}
+    ],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "Alert.alert on web", "issue": "react-native-web Alert.alert button callbacks never fire; breaks dismiss-deal + delete-product. Reference: /app/frontend/app/shopping/deals.tsx:70-85 and /app/frontend/app/shopping/products.tsx:60-73. Use Platform.OS check or replace with a custom Modal-based confirm."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_business_shopping.py",
+    "/app/test_reports/pytest/business_shopping_results.xml"
+  ],
+  "action_items": [
+    "FIX (frontend) shopping/deals.tsx dismiss handler — replace Alert.alert with Platform-aware confirm so onPress fires on web. Same for shopping/products.tsx removeItem.",
+    "FIX (backend or frontend) Claude-call timeout: either reduce Claude prompt/max_tokens for /business/ideas/{id}/plan and /shopping/utilities/{id}/find-better, or switch to a job-id async pattern with polling. Current ~235s response time is incompatible with the 60s Cloudflare proxy timeout for users on the public URL.",
+    "Consider showing a clearer error message in the plan modal when the request times out (currently 'Could not generate plan. Please retry.' — but retrying will time out again).",
+    "Optional: split server.py (now 4735 lines) into per-module routers."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now 4735 lines — adding business+shopping made the file even larger. Strongly recommend splitting into /app/backend/routers/{business,shopping,...}.py.",
+    "DRY: SEED_BUSINESS_IDEAS, DEFAULT_EDEN_HEIGHTS, SEED_DEALS, SEED_UTILITIES inline in server.py (~100 lines) — move to /app/backend/seed/*.py.",
+    "/api/business/ideas/{idea_id}/plan and /api/shopping/utilities/{id}/find-better do synchronous Claude calls without timeout protection — should adopt async job + GET-poll pattern (already needed because Cloudflare proxy = 60s)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_business_shopping.py (NEW — 16 tests covering all Business + Shopping endpoints incl. seed verification, Claude generate-ideas live call, Eden Heights GET/PUT round-trip with persistence verification, deals total_savings≈$130 + dismiss flow, prefs GET/PUT, utilities listing, find-better live Claude call, registered-products full CRUD, name-required 400, and auth guards)"
+  ],
+  "success_rate": {
+    "backend": "94% (15/16 new — only failure is /business/ideas/{id}/plan via public URL hitting Cloudflare 60s timeout; endpoint itself works internally) + 100% regression (80/80 on prior modules)",
+    "frontend": "78% (login, navigation, business hub, ideas list+expand, Eden Heights full screen incl. edit/persist, shopping hub, deals listing, utilities listing, products add+render all work; deal-dismiss + product-delete broken on web due to Alert.alert; plan/find-better Claude flows untestable via web due to Cloudflare timeout)"
+  },
+  "seed_data_creation": "Cleared and re-verified seed data for business_ideas, eden_heights, dismissed_deals, shopping_prefs, registered_products collections via the new test. Seeds verified: 3 business ideas (Educational Consulting / Intl Financial / Eden Heights), default Eden Heights (4 ha / $12,000 / Bulacan / 3 phases / 6-point ROI / 8 checklist items), 5 deals (~$130 total savings), 4 utilities (Georgia Power, AT&T Wireless, AT&T Internet, DeKalb County Water), default shopping prefs (gas_threshold $2.85).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "New endpoints all under /api/business/* and /api/shopping/*. Two known limitations on the public URL: (1) Claude endpoints exceeding 60s fail with Cloudflare 502, (2) RN Alert.alert callbacks don't fire on react-native-web so any Alert-confirmed action button (deal dismiss, product delete) is dead on web. test_business_shopping.py auto-clears collections before each test class so it's safe to re-run. testIDs to know: hub-ideas, hub-eden, ideas-back, idea-{i}, expand-{i}, plan-{i}, plan-close, generate-ideas, eden-back, eden-edit, eden-hero, eden-roi-chart, eden-phases, eden-checklist, phase-p1..p3, check-0..7, edit-municipality, edit-value, edit-save, edit-close, hub-deals, hub-utilities, hub-products, shopping-savings-card, deals-savings, deal-d1..d5, dismiss-d1..d5, utility-ga_power|att_wireless|att_internet|dekalb_water, find-{id}, reco-close, products-add, product-{id}, del-{id}, f-name, f-brand, f-model, cat-{electronics|appliance|auto|baby|food|other}, f-save, add-close. Tab bar items in (tabs)/_layout.tsx don't have testIDs — use get_by_text('More', exact=True).last.",
+  "rca_of_issue": "Bug 1 (Cloudflare 502 on plan): /api/business/ideas/{idea_id}/plan internally completes in ~235s returning a valid 33KB markdown plan, but Cloudflare's preview proxy enforces a ~60s timeout, returning HTML 502 (Ray ID logged: a11ead977d3035c0). Reproduction: TOKEN=$(curl ... /api/auth/login); curl -X POST {PUBLIC_URL}/api/business/ideas/seed-1/plan -H 'Authorization: Bearer $TOKEN' → 502 in ~60s. Same curl against localhost:8001 → 200 + 33KB plan in ~235s. Mitigation options: (a) Reduce Claude max_tokens to keep response <60s, (b) implement job-id/polling pattern (POST starts task → return job_id immediately; GET /api/business/plans/{job_id} polls status/result), (c) stream tokens. Frontend openPlan() in ideas.tsx swallows the failure into a generic message — please surface the timeout reason. Bug 2 (Alert.alert on web): React Native's Alert.alert on react-native-web does not present button callbacks — it falls back to window.alert which only shows title/message. The onPress arrow function inside the Dismiss/Remove button objects is never invoked on web. Reproduction: open /shopping/deals on web, tap dismiss icon — no dialog, no state change, no /dismiss POST. Fix: use Platform-aware confirm: `if (Platform.OS === 'web') { if (window.confirm('Dismiss this deal?')) { await shoppingApi.dismissDeal(id); ... } } else { Alert.alert(...) }`. Affected files: /app/frontend/app/shopping/deals.tsx:70-85, /app/frontend/app/shopping/products.tsx:60-73."
+}

@@ -56,7 +56,7 @@ const MODULES: ModuleItem[] = [
     subtitle: "Side ventures & income",
     icon: Building2,
     color: colors.warning,
-    route: "/module/business",
+    route: "/business",
   },
   {
     key: "global",
@@ -88,7 +88,7 @@ const MODULES: ModuleItem[] = [
     subtitle: "Deals & smart purchases",
     icon: ShoppingBag,
     color: "#EC4899",
-    route: "/module/shopping",
+    route: "/shopping",
   },
   {
     key: "health",

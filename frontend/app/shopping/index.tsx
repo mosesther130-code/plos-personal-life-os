@@ -1,0 +1,101 @@
+// Shopping hub — routes to Deals, Utilities, Registered Products.
+import React, { useCallback, useEffect, useState } from "react";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useRouter, useFocusEffect } from "expo-router";
+import { ArrowLeft, Tag, Zap, Package, ChevronRight, Wallet } from "lucide-react-native";
+import { colors, spacing, radius } from "@/src/lib/theme";
+import { shoppingApi } from "@/src/lib/api";
+
+const fmtUSD = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
+
+export default function ShoppingHub() {
+  const router = useRouter();
+  const [summary, setSummary] = useState<{ deals: number; savings: number; products: number }>({ deals: 0, savings: 0, products: 0 });
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const [d, p] = await Promise.all([shoppingApi.deals(), shoppingApi.registered()]);
+      setSummary({
+        deals: d?.deals?.length || 0,
+        savings: d?.total_savings_this_month || 0,
+        products: p?.products?.length || 0,
+      });
+    } catch (_e) {}
+  }, []);
+
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useEffect(() => { load(); }, [load]);
+
+  const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
+
+  return (
+    <SafeAreaView style={styles.container} edges={["top"]}>
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} testID="shopping-back">
+          <ArrowLeft color={colors.textPrimary} size={20} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Shopping & Deals</Text>
+        <View style={{ width: 36 }} />
+      </View>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primaryGlow} />}
+      >
+        <View style={styles.savingsCard} testID="shopping-savings-card">
+          <View style={styles.savingsIcon}><Wallet color={colors.success} size={22} /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.savingsLabel}>POTENTIAL SAVINGS THIS MONTH</Text>
+            <Text style={styles.savingsValue}>{fmtUSD(summary.savings)}</Text>
+            <Text style={styles.savingsSub}>Across {summary.deals} active deal{summary.deals === 1 ? "" : "s"}</Text>
+          </View>
+        </View>
+
+        <TouchableOpacity style={styles.tile} onPress={() => router.push("/shopping/deals")} testID="hub-deals" activeOpacity={0.85}>
+          <View style={[styles.tileIcon, { backgroundColor: "rgba(236,72,153,0.15)" }]}><Tag color="#EC4899" size={22} /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.tileTitle}>Active Deals</Text>
+            <Text style={styles.tileSub}>{summary.deals} curated · wireless, groceries, gas, auto</Text>
+          </View>
+          <ChevronRight size={16} color={colors.textTertiary} />
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.tile} onPress={() => router.push("/shopping/utilities")} testID="hub-utilities" activeOpacity={0.85}>
+          <View style={[styles.tileIcon, { backgroundColor: "rgba(59,130,246,0.15)" }]}><Zap color={colors.primaryGlow} size={22} /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.tileTitle}>Utilities Review</Text>
+            <Text style={styles.tileSub}>Power · wireless · internet · water · Claude 4.5</Text>
+          </View>
+          <ChevronRight size={16} color={colors.textTertiary} />
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.tile} onPress={() => router.push("/shopping/products")} testID="hub-products" activeOpacity={0.85}>
+          <View style={[styles.tileIcon, { backgroundColor: "rgba(245,158,11,0.15)" }]}><Package color={colors.warning} size={22} /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.tileTitle}>Registered Products</Text>
+            <Text style={styles.tileSub}>{summary.products} tracked · auto-monitored for recalls</Text>
+          </View>
+          <ChevronRight size={16} color={colors.textTertiary} />
+        </TouchableOpacity>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.bg },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
+  backBtn: { width: 36, height: 36, borderRadius: radius.md, backgroundColor: colors.surfaceElevated, alignItems: "center", justifyContent: "center" },
+  headerTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: "700" },
+  scroll: { padding: spacing.xl, gap: spacing.md },
+  savingsCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surface, borderColor: "rgba(16,185,129,0.3)", borderWidth: 1, borderRadius: radius.lg, padding: spacing.lg },
+  savingsIcon: { width: 44, height: 44, borderRadius: radius.md, backgroundColor: "rgba(16,185,129,0.15)", alignItems: "center", justifyContent: "center" },
+  savingsLabel: { color: colors.textTertiary, fontSize: 10, fontWeight: "700", letterSpacing: 1.2 },
+  savingsValue: { color: colors.success, fontSize: 24, fontWeight: "700", marginTop: 2 },
+  savingsSub: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
+  tile: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surface, borderColor: colors.borderSubtle, borderWidth: 1, borderRadius: radius.lg, padding: spacing.lg },
+  tileIcon: { width: 44, height: 44, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
+  tileTitle: { color: colors.textPrimary, fontWeight: "700", fontSize: 15 },
+  tileSub: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
+});
