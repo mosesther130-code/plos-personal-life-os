@@ -326,5 +326,26 @@ export const globalApi = {
     request<any>("/global/money-tips/refresh", { method: "POST" }),
 };
 
+// ----------------- Business Ideas + Shopping -----------------
+export const businessApi = {
+  listIdeas: () => request<any>("/business/ideas"),
+  generateIdeas: () => request<any>("/business/ideas/generate", { method: "POST" }),
+  buildPlan: (id: string) => request<any>(`/business/ideas/${id}/plan`, { method: "POST" }),
+  edenHeights: () => request<any>("/business/eden-heights"),
+  updateEdenHeights: (data: any) => request<any>("/business/eden-heights", { method: "PUT", body: data }),
+};
+
+export const shoppingApi = {
+  deals: () => request<any>("/shopping/deals"),
+  dismissDeal: (id: string) => request<any>(`/shopping/deals/${id}/dismiss`, { method: "POST" }),
+  preferences: () => request<any>("/shopping/preferences"),
+  updatePreferences: (d: any) => request<any>("/shopping/preferences", { method: "PUT", body: d }),
+  utilities: () => request<any>("/shopping/utilities"),
+  findBetterRate: (id: string) => request<any>(`/shopping/utilities/${id}/find-better`, { method: "POST" }),
+  registered: () => request<any>("/shopping/registered-products"),
+  registerProduct: (d: any) => request<any>("/shopping/registered-products", { method: "POST", body: d }),
+  unregisterProduct: (id: string) => request<any>(`/shopping/registered-products/${id}`, { method: "DELETE" }),
+};
+
 // ----------------- Seed -----------------
 export const seedDemo = () => request<any>("/seed-demo", { method: "POST" });

@@ -3981,6 +3981,305 @@ async def refresh_money_tips(user_id: str = Depends(get_current_user_id)):
     return {"tips": tips, "is_custom": True, "generated_at": now}
 
 
+# =====================================================================
+# Business Ideas Advisor + Shopping & Deals Engine
+# =====================================================================
+SEED_BUSINESS_IDEAS = [
+    {
+        "idea_id": "seed-1",
+        "business_name": "Educational Consulting & Assessment Services",
+        "timeline_tag": "Start Now",
+        "risk_level": "Low",
+        "description": "Leverage your LearnWise platform and Georgia Milestones assessment expertise to consult for districts, charter schools, and ed-tech vendors needing curriculum-aligned assessment design.",
+        "startup_cost_range": "$0 – $500",
+        "estimated_monthly_revenue_range": "$800 – $3,000",
+        "time_to_first_revenue": "30 – 60 days",
+        "next_steps": [
+            "List 10 GA charter schools + 5 ed-tech vendors as outreach targets",
+            "Package LearnWise → 1-page service sheet (formative + summative)",
+            "Post a $99 'Standards Alignment Audit' on LinkedIn",
+            "Apply for state vendor registration",
+        ],
+        "is_seed": True,
+    },
+    {
+        "idea_id": "seed-2",
+        "business_name": "International Financial Management Consulting",
+        "timeline_tag": "3-6 Months",
+        "risk_level": "Low",
+        "description": "Productize your USAID Deputy Controller and multi-country portfolio expertise into fractional CFO + grant-compliance services for nonprofits and impact funds operating across Asia-Pacific.",
+        "startup_cost_range": "$500 – $2,000",
+        "estimated_monthly_revenue_range": "$3,500 – $6,000 per engagement",
+        "time_to_first_revenue": "60 – 120 days",
+        "next_steps": [
+            "Define 3 service tiers (Audit Prep / Grant Compliance / Fractional CFO)",
+            "Register LLC in GA + DUNS/SAM.gov",
+            "Reach out to 20 alumni from USAID network",
+            "Publish a case study on Asia-Pacific portfolio management",
+        ],
+        "is_seed": True,
+    },
+    {
+        "idea_id": "seed-3",
+        "business_name": "Eden Heights Sanctuary Resort",
+        "timeline_tag": "Long-Term",
+        "risk_level": "Moderate",
+        "description": "Eco-tourism development on your 4-hectare Bulacan property — glamping, agritourism programs, retreats, and a long-cycle agarwood (lapnisan) revenue stream.",
+        "startup_cost_range": "$8,000 – $20,000 (Phase 1)",
+        "estimated_monthly_revenue_range": "$3,300 – $7,500/mo at Year 3",
+        "time_to_first_revenue": "18 – 36 months",
+        "next_steps": [
+            "Complete boundary marking + access road (Phase 1)",
+            "File DOT accreditation + DENR ECC",
+            "Plant first 200 agarwood seedlings",
+            "Build pre-launch waitlist via Instagram/YouTube",
+        ],
+        "is_seed": True,
+    },
+]
+
+DEFAULT_DOT_CHECKLIST = [
+    "Register with Philippine Department of Tourism (DOT) for accreditation",
+    "Apply for DENR Environmental Compliance Certificate (ECC)",
+    "Register with Bureau of Internal Revenue (BIR) as tourism enterprise",
+    "Apply for Local Government Unit (LGU) business permit in Bulacan",
+    "Explore BOI incentives for tourism enterprises under the Omnibus Investments Code",
+    "Check eligibility for Land Bank of the Philippines OFW investment loan",
+    "Register with Department of Agriculture for agritourism designation",
+    "Apply for TESDA accreditation for hospitality training programs (future staff)",
+]
+
+DEFAULT_EDEN_HEIGHTS = {
+    "name": "Eden Heights Sanctuary Resort",
+    "location": "Bulacan Province, Philippines",
+    "municipality": "",
+    "size_hectares": 4.0,
+    "size_sqm": 40000,
+    "current_value_usd": 12000,
+    "concept": "Eco-resort and nature sanctuary with glamping, agritourism, and retreat experiences. Secondary revenue: agarwood (lapnisan) cultivation.",
+    "phases": [
+        {"id": "p1", "name": "Phase 1: Land Preparation", "summary": "Boundary marking, access road, basic utilities", "status": "in_progress", "target_months": 12, "cost_range": "$8,000 – $12,000"},
+        {"id": "p2", "name": "Phase 2: Eco-Resort Build", "summary": "Glamping tents, common areas, basic guest facilities", "status": "not_started", "target_months": 24, "cost_range": "$15,000 – $30,000"},
+        {"id": "p3", "name": "Phase 3: Operations & Agritourism", "summary": "Marketing launch, agritourism programs, agarwood harvest cycle", "status": "not_started", "target_months": 36, "cost_range": "$10,000 – $20,000"},
+    ],
+    "roi_series": [
+        {"year": 0, "investment_cum": 0, "revenue": 0},
+        {"year": 1, "investment_cum": 20000, "revenue": 0},
+        {"year": 2, "investment_cum": 45000, "revenue": 8000},
+        {"year": 3, "investment_cum": 60000, "revenue": 40000},
+        {"year": 4, "investment_cum": 65000, "revenue": 65000},
+        {"year": 5, "investment_cum": 70000, "revenue": 90000},
+    ],
+    "breakeven_year": 4,
+    "checklist": [{"item": item, "checked": False} for item in DEFAULT_DOT_CHECKLIST],
+}
+
+SEED_DEALS = [
+    {"deal_id": "d1", "title": "T-Mobile Magenta Plan", "description": "Switch from AT&T 2 lines", "provider": "T-Mobile", "category": "wireless", "savings_usd": 45, "savings_label": "Save $35–$55/month vs AT&T", "expires_in_days": 30},
+    {"deal_id": "d2", "title": "Costco Gas — Regular Unleaded", "description": "Costco Wholesale, 3650 Venture Dr, Duluth GA", "provider": "Costco", "category": "gas", "savings_usd": 20, "savings_label": "$2.74/gal · save $0.15–$0.23 vs nearby (membership req.)", "expires_in_days": None, "distance_miles": 8.2},
+    {"deal_id": "d3", "title": "Kroger Weekly Filipino Pantry Sale", "description": "Jasmine rice 25lb $18.99 (reg $24.99), Datu Puti vinegar, Silver Swan soy", "provider": "Kroger Decatur", "category": "groceries", "savings_usd": 25.95, "savings_label": "Up to 24% off", "expires_in_days": 5},
+    {"deal_id": "d4", "title": "Toyota of Decatur — Synthetic Oil Change + Inspection", "description": "Valid for 2015 RAV4 · $89.95 (reg $129.95)", "provider": "Toyota of Decatur", "category": "auto_service", "savings_usd": 40, "savings_label": "Save $40", "expires_in_days": 14},
+    {"deal_id": "d5", "title": "Georgia Power Budget Billing", "description": "Level monthly payments to avoid seasonal spikes", "provider": "Georgia Power", "category": "utility", "savings_usd": 0, "savings_label": "Est. $15–$30/mo savings in summer peak", "expires_in_days": None},
+]
+
+SEED_UTILITIES = [
+    {"id": "ga_power", "provider": "Georgia Power", "category": "electricity", "current_plan": "Standard Rate Schedule", "current_rate": "$0.1265/kWh", "last_bill": 145.00, "claude_prompt": "Compare Georgia Power residential electricity rates and programs available in DeKalb County Georgia. Suggest the best rate schedule or program for a household with average monthly usage of approximately 1,147 kWh and a monthly bill of $145. Include Budget Billing, Time of Use rates, and any available bill assistance programs. Return specific estimated annual savings for each option."},
+    {"id": "att_wireless", "provider": "AT&T Wireless", "category": "wireless", "current_plan": "AT&T Unlimited Starter (2 lines)", "current_rate": "$120/month", "last_bill": 128.00, "claude_prompt": "Compare wireless plans for 2 lines in Atlanta Georgia as of 2026. The user currently pays $120/month on AT&T Unlimited Starter. Compare T-Mobile, Verizon, Mint Mobile, Visible, and Cricket Wireless for 2-line plans with similar or better coverage. Return the top 3 alternatives with monthly cost, contract terms, and estimated annual savings."},
+    {"id": "att_internet", "provider": "AT&T Internet", "category": "internet", "current_plan": "AT&T Fiber 300", "current_rate": "$75/month", "last_bill": 75.00, "claude_prompt": "Compare home internet providers available in Stone Mountain Georgia 30087 zip code. User currently pays $75/month for AT&T Fiber 300 Mbps. Compare Xfinity, Google Fiber, Comcast, and any other available providers. Return alternatives with speed, price, contract terms, and estimated annual savings."},
+    {"id": "dekalb_water", "provider": "DeKalb County Water", "category": "water", "current_plan": "Residential Metered", "current_rate": "$60/month avg", "last_bill": 67.00, "claude_prompt": "DeKalb County water is a municipal utility with no alternative providers. Suggest specific water conservation measures and programs available through DeKalb County Water and Sewer that could reduce a residential water bill from $60/month. Include leak detection advice, conservation rebates, and low-income assistance programs."},
+]
+
+
+# ----------------------------- Business Ideas -----------------------
+@api_router.get("/business/ideas")
+async def list_ideas(user_id: str = Depends(get_current_user_id)):
+    items = await db.business_ideas.find({"user_id": user_id}, {"_id": 0}).sort("created_at", 1).to_list(50)
+    if not items:
+        return {"ideas": SEED_BUSINESS_IDEAS, "is_seed": True}
+    return {"ideas": items, "is_seed": False}
+
+
+@api_router.post("/business/ideas/generate")
+async def generate_ideas(user_id: str = Depends(get_current_user_id)):
+    profile = await db.user_profile.find_one({"user_id": user_id}, {"_id": 0}) or {}
+    career = await db.career_profile.find_one({"user_id": user_id}, {"_id": 0}) or {}
+    debts = await db.debts.find({"user_id": user_id}, {"_id": 0}).to_list(50)
+    cc = sum(d.get("balance", 0) for d in debts if d.get("debt_type") == "credit_card")
+    sl = sum(d.get("balance", 0) for d in debts if d.get("debt_type") == "student_loan")
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=f"biz-ideas-{user_id}",
+        system_message="You are a business strategist. Return only valid JSON arrays.",
+    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+    prompt = (
+        f"The user is {profile.get('full_name','Moses Ndifon')}, a {career.get('current_title','Department Coordinator')} "
+        f"at {career.get('current_employer','Georgia State University Perimeter College')} with a background as USAID Deputy Controller "
+        "managing multi-country foreign assistance portfolios across Asia-Pacific. MBA (West Georgia), BBA Accounting (Morehead State). "
+        f"Monthly surplus ~$920. Credit card debt ~${cc:.0f} (4 cards), student loans ~${sl:.0f}. "
+        "Owns a 4-hectare eco-resort property in Bulacan Philippines valued ~$12,000 USD. Built LearnWise K-12 assessment platform. "
+        "Generate 5 personalized business ideas leveraging his skills, assets, situation. "
+        "For each return: business_name, timeline_tag (Start Now / 3-6 Months / Long-Term), risk_level (Low / Moderate / High), "
+        "description (2-3 sentences), startup_cost_range, estimated_monthly_revenue_range, time_to_first_revenue, "
+        "next_steps (array of 4 specific immediate actions). Return as valid JSON array only with no preamble."
+    )
+    response = await chat.send_message(UserMessage(text=prompt))
+    text = response if isinstance(response, str) else str(response)
+    import json as _json
+    import re as _re
+    m = _re.search(r"\[.*\]", text, _re.DOTALL)
+    ideas: List[Dict[str, Any]] = []
+    if m:
+        try:
+            ideas = _json.loads(m.group(0))
+        except Exception:
+            ideas = []
+    if not ideas:
+        ideas = [{**i, "is_seed": False} for i in SEED_BUSINESS_IDEAS]
+    now = datetime.now(timezone.utc).isoformat()
+    await db.business_ideas.delete_many({"user_id": user_id})
+    for i, idea in enumerate(ideas[:5]):
+        doc = {**idea, "idea_id": str(uuid.uuid4()), "user_id": user_id, "created_at": now, "order": i, "is_seed": False}
+        await db.business_ideas.insert_one(doc)
+    return {"ideas": ideas[:5], "is_seed": False, "generated_at": now}
+
+
+@api_router.post("/business/ideas/{idea_id}/plan")
+async def build_plan(idea_id: str, user_id: str = Depends(get_current_user_id)):
+    idea = await db.business_ideas.find_one({"idea_id": idea_id, "user_id": user_id}, {"_id": 0})
+    if not idea:
+        # Try seed
+        idea = next((i for i in SEED_BUSINESS_IDEAS if i["idea_id"] == idea_id), None)
+    if not idea:
+        raise HTTPException(status_code=404, detail="Idea not found")
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=f"biz-plan-{user_id}-{idea_id[:6]}",
+        system_message=PLOS_SYSTEM_PROMPT,
+    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+    prompt = (
+        f"Write a complete business plan for {idea.get('business_name')} tailored to Moses Ndifon's specific situation: "
+        "GSU Perimeter College employee, USAID financial management background, MBA, located in Stone Mountain Georgia, "
+        "monthly surplus of $920, ties to Philippines. Structure with these exact sections: "
+        "Executive Summary, Market Opportunity and Target Customers, Operations Plan, Financial Projections (Year 1, Year 2, Year 3), "
+        "Startup Cost Breakdown, Risk Assessment and Mitigation, First 30 Days Action Plan. "
+        "Be specific with dollar amounts, timelines, and actionable steps. Use markdown headers."
+    )
+    r = await chat.send_message(UserMessage(text=prompt))
+    plan_text = r if isinstance(r, str) else str(r)
+    return {"idea_id": idea_id, "business_name": idea.get("business_name"), "plan": plan_text}
+
+
+# ----------------------------- Eden Heights -------------------------
+@api_router.get("/business/eden-heights")
+async def get_eden_heights(user_id: str = Depends(get_current_user_id)):
+    doc = await db.eden_heights.find_one({"user_id": user_id}, {"_id": 0})
+    if not doc:
+        return DEFAULT_EDEN_HEIGHTS
+    return doc
+
+
+@api_router.put("/business/eden-heights")
+async def update_eden_heights(body: Dict[str, Any], user_id: str = Depends(get_current_user_id)):
+    existing = await db.eden_heights.find_one({"user_id": user_id}, {"_id": 0}) or {**DEFAULT_EDEN_HEIGHTS}
+    for k in ("municipality", "size_hectares", "current_value_usd", "concept", "phases", "checklist"):
+        if k in body:
+            existing[k] = body[k]
+    existing["user_id"] = user_id
+    await db.eden_heights.update_one({"user_id": user_id}, {"$set": existing}, upsert=True)
+    return {"ok": True}
+
+
+# ----------------------------- Shopping -----------------------------
+DEFAULT_SHOPPING_PREFS = {
+    "utility_monitors": {"georgia_power": True, "att_wireless": True, "att_internet": True, "dekalb_water": True},
+    "groceries": ["Kroger", "Costco", "Aldi"],
+    "gas_threshold": 2.85,
+    "categories": ["wireless", "groceries", "gas", "auto_service", "utility"],
+    "frequency": "daily_digest",
+}
+
+
+@api_router.get("/shopping/deals")
+async def list_deals(user_id: str = Depends(get_current_user_id)):
+    dismissed = await db.dismissed_deals.find({"user_id": user_id}, {"_id": 0}).to_list(50)
+    dismissed_ids = {d["deal_id"] for d in dismissed}
+    active = [d for d in SEED_DEALS if d["deal_id"] not in dismissed_ids]
+    total_savings = sum(float(d.get("savings_usd") or 0) for d in active)
+    return {"deals": active, "total_savings_this_month": round(total_savings, 2), "dismissed_count": len(dismissed_ids)}
+
+
+@api_router.post("/shopping/deals/{deal_id}/dismiss")
+async def dismiss_deal(deal_id: str, user_id: str = Depends(get_current_user_id)):
+    await db.dismissed_deals.update_one(
+        {"user_id": user_id, "deal_id": deal_id},
+        {"$set": {"user_id": user_id, "deal_id": deal_id, "dismissed_at": datetime.now(timezone.utc).isoformat()}},
+        upsert=True,
+    )
+    return {"ok": True}
+
+
+@api_router.get("/shopping/preferences")
+async def get_shopping_prefs(user_id: str = Depends(get_current_user_id)):
+    doc = await db.shopping_prefs.find_one({"user_id": user_id}, {"_id": 0, "user_id": 0})
+    return doc or DEFAULT_SHOPPING_PREFS
+
+
+@api_router.put("/shopping/preferences")
+async def update_shopping_prefs(body: Dict[str, Any], user_id: str = Depends(get_current_user_id)):
+    await db.shopping_prefs.update_one({"user_id": user_id}, {"$set": {**body, "user_id": user_id}}, upsert=True)
+    return {"ok": True}
+
+
+@api_router.get("/shopping/utilities")
+async def list_utilities(user_id: str = Depends(get_current_user_id)):
+    return {"utilities": SEED_UTILITIES}
+
+
+@api_router.post("/shopping/utilities/{utility_id}/find-better")
+async def find_better_rate(utility_id: str, user_id: str = Depends(get_current_user_id)):
+    u = next((x for x in SEED_UTILITIES if x["id"] == utility_id), None)
+    if not u:
+        raise HTTPException(status_code=404, detail="Utility not found")
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=f"util-{user_id}-{utility_id}",
+        system_message=PLOS_SYSTEM_PROMPT,
+    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+    r = await chat.send_message(UserMessage(text=u["claude_prompt"]))
+    text = r if isinstance(r, str) else str(r)
+    return {"utility_id": utility_id, "provider": u["provider"], "recommendation": text}
+
+
+@api_router.get("/shopping/registered-products")
+async def list_registered(user_id: str = Depends(get_current_user_id)):
+    items = await db.registered_products.find({"user_id": user_id}, {"_id": 0}).to_list(50)
+    return {"products": items}
+
+
+@api_router.post("/shopping/registered-products")
+async def register_product(body: Dict[str, Any], user_id: str = Depends(get_current_user_id)):
+    if not body.get("name"):
+        raise HTTPException(status_code=400, detail="name required")
+    obj = {
+        "product_id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "name": body["name"],
+        "category": body.get("category", "other"),
+        "brand": body.get("brand"),
+        "model": body.get("model"),
+        "registered_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.registered_products.insert_one(obj)
+    obj.pop("_id", None)
+    return obj
+
+
+@api_router.delete("/shopping/registered-products/{product_id}")
+async def unregister_product(product_id: str, user_id: str = Depends(get_current_user_id)):
+    await db.registered_products.delete_one({"product_id": product_id, "user_id": user_id})
+    return {"ok": True}
+
+
 # ----------------------------- Seed Demo Data --------------------------
 @api_router.post("/seed-demo")
 async def seed_demo(user_id: str = Depends(get_current_user_id)):
