@@ -201,13 +201,19 @@ export const aiApi = {
       generated_at: string;
       date: string;
     }>("/ai/daily-advice", { method: "POST", body: { force, deep } }),
-  chat: (message: string, session_id?: string) =>
+  chat: (message: string, session_id?: string, mode?: string) =>
     request<{ response: string; session_id: string }>("/chat", {
       method: "POST",
-      body: { message, session_id },
+      body: { message, session_id, mode },
     }),
   chatHistory: (session_id?: string) =>
     request<any[]>(`/chat/history${session_id ? `?session_id=${session_id}` : ""}`),
+  conversations: () => request<{ conversations: any[] }>("/chatbot/conversations"),
+  deleteConversation: (session_id: string) =>
+    request<any>(`/chatbot/conversations/${encodeURIComponent(session_id)}`, { method: "DELETE" }),
+  clearAllConversations: () => request<any>("/chatbot/conversations", { method: "DELETE" }),
+  searchMessages: (q: string) => request<{ results: any[] }>(`/chatbot/search?q=${encodeURIComponent(q)}`),
+  quickActions: () => request<{ prompts: string[] }>("/chatbot/quick-actions"),
 };
 
 // ----------------- Alerts -----------------

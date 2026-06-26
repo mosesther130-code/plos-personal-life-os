@@ -551,6 +551,7 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
+    mode: Optional[str] = None  # general | legal | financial | career | travel
 
 
 class ChatResponse(BaseModel):
@@ -2135,10 +2136,42 @@ Respond with EXACTLY this JSON format (no markdown, no preamble):
 
 
 # ----------------------------- Chatbot ---------------------------------
+MODE_OVERLAYS: Dict[str, str] = {
+    "legal": (
+        "MODE: LEGAL ADVISOR. Focus on US legal frameworks for the user's situation "
+        "(GA tenant law, employment/at-will doctrine, debt collection / FDCPA, immigration). "
+        "ALWAYS end your response with: '⚖️ This is general legal information, not legal advice. "
+        "For specific matters, consult a licensed attorney in your jurisdiction.'"
+    ),
+    "financial": (
+        "MODE: FINANCIAL PLANNER. Provide concrete numerical analysis using the user's real data. "
+        "Show calculations (interest, amortization, IRR/NPV) step-by-step. Use tables/bullets. "
+        "Prefer Roth IRA / 457(b) / index-fund recommendations consistent with the user's risk profile."
+    ),
+    "career": (
+        "MODE: CAREER COACH. Focus on resume optimization, interview prep, salary negotiation, "
+        "and career trajectory. Tailor advice to USAID / GSU Perimeter / LearnWise background and "
+        "target roles. Offer to draft resume bullets, cover letters, or LinkedIn copy."
+    ),
+    "travel": (
+        "MODE: TRAVEL PLANNER. Help with destination research, visa requirements, packing lists, "
+        "and itinerary building. Be specific about US passport rules and country-by-country entry. "
+        "Reference the user's saved trips when relevant."
+    ),
+}
+
+
+def _conversation_title(text: str) -> str:
+    t = (text or "").strip().splitlines()[0]
+    return (t[:60] + "…") if len(t) > 60 else (t or "New conversation")
+
+
 @api_router.post("/chat", response_model=ChatResponse)
 async def chat(payload: ChatRequest, user_id: str = Depends(get_current_user_id)):
     session_id = payload.session_id or f"chat-{user_id}-{uuid.uuid4()}"
     context = await gather_user_context(user_id)
+    mode = (payload.mode or "general").lower()
+    overlay = MODE_OVERLAYS.get(mode, "")
 
     # persist user message
     await db.chat_messages.insert_one({
@@ -2146,13 +2179,31 @@ async def chat(payload: ChatRequest, user_id: str = Depends(get_current_user_id)
         "session_id": session_id,
         "role": "user",
         "content": payload.message,
+        "mode": mode,
         "created_at": iso(now_utc()),
     })
 
-    system = (
-        PLOS_SYSTEM_PROMPT
-        + f"\n\nThe user's full data context (use it to answer):\n{context}"
-    )
+    # Upsert conversation metadata
+    title_doc = await db.chat_conversations.find_one({"user_id": user_id, "session_id": session_id})
+    if not title_doc:
+        await db.chat_conversations.insert_one({
+            "user_id": user_id,
+            "session_id": session_id,
+            "title": _conversation_title(payload.message),
+            "mode": mode,
+            "created_at": iso(now_utc()),
+            "last_message_at": iso(now_utc()),
+        })
+    else:
+        await db.chat_conversations.update_one(
+            {"user_id": user_id, "session_id": session_id},
+            {"$set": {"last_message_at": iso(now_utc()), "mode": mode}},
+        )
+
+    system = PLOS_SYSTEM_PROMPT
+    if overlay:
+        system = system + "\n\n" + overlay
+    system = system + f"\n\nThe user's full data context (use it to answer):\n{context}"
 
     chat_client = LlmChat(
         api_key=EMERGENT_LLM_KEY,
@@ -2172,10 +2223,95 @@ async def chat(payload: ChatRequest, user_id: str = Depends(get_current_user_id)
         "session_id": session_id,
         "role": "assistant",
         "content": response_text,
+        "mode": mode,
         "created_at": iso(now_utc()),
     })
 
+    await db.chat_conversations.update_one(
+        {"user_id": user_id, "session_id": session_id},
+        {"$set": {"last_message_at": iso(now_utc())}},
+    )
+
     return ChatResponse(response=response_text, session_id=session_id)
+
+
+@api_router.get("/chatbot/conversations")
+async def list_conversations(user_id: str = Depends(get_current_user_id)):
+    # Backfill: ensure any orphan chat_messages have a corresponding conversation row
+    distinct_sessions = await db.chat_messages.distinct("session_id", {"user_id": user_id})
+    known = {c["session_id"] async for c in db.chat_conversations.find({"user_id": user_id}, {"session_id": 1})}
+    for sid in distinct_sessions:
+        if sid not in known:
+            first = await db.chat_messages.find_one(
+                {"user_id": user_id, "session_id": sid, "role": "user"},
+                sort=[("created_at", 1)],
+            )
+            last = await db.chat_messages.find_one(
+                {"user_id": user_id, "session_id": sid},
+                sort=[("created_at", -1)],
+            )
+            await db.chat_conversations.insert_one({
+                "user_id": user_id,
+                "session_id": sid,
+                "title": _conversation_title((first or {}).get("content", "")),
+                "mode": (first or {}).get("mode", "general"),
+                "created_at": (first or {}).get("created_at", iso(now_utc())),
+                "last_message_at": (last or {}).get("created_at", iso(now_utc())),
+            })
+
+    rows = await db.chat_conversations.find(
+        {"user_id": user_id}, {"_id": 0, "user_id": 0}
+    ).sort("last_message_at", -1).to_list(50)
+    # Add message_count
+    out = []
+    for r in rows:
+        count = await db.chat_messages.count_documents({"user_id": user_id, "session_id": r["session_id"]})
+        r["message_count"] = count
+        out.append(r)
+    return {"conversations": out}
+
+
+@api_router.delete("/chatbot/conversations/{session_id}")
+async def delete_conversation(session_id: str, user_id: str = Depends(get_current_user_id)):
+    await db.chat_messages.delete_many({"user_id": user_id, "session_id": session_id})
+    await db.chat_conversations.delete_one({"user_id": user_id, "session_id": session_id})
+    return {"ok": True}
+
+
+@api_router.delete("/chatbot/conversations")
+async def clear_all_conversations(user_id: str = Depends(get_current_user_id)):
+    msg_r = await db.chat_messages.delete_many({"user_id": user_id})
+    conv_r = await db.chat_conversations.delete_many({"user_id": user_id})
+    return {"ok": True, "messages_deleted": msg_r.deleted_count, "conversations_deleted": conv_r.deleted_count}
+
+
+@api_router.get("/chatbot/search")
+async def search_messages(q: str, user_id: str = Depends(get_current_user_id)):
+    if not q or len(q.strip()) < 2:
+        return {"results": []}
+    # Case-insensitive regex search across content
+    import re as _re
+    pattern = _re.escape(q.strip())
+    cursor = db.chat_messages.find(
+        {"user_id": user_id, "content": {"$regex": pattern, "$options": "i"}},
+        {"_id": 0, "user_id": 0},
+    ).sort("created_at", -1).limit(50)
+    items = await cursor.to_list(50)
+    return {"results": items}
+
+
+@api_router.get("/chatbot/quick-actions")
+async def quick_actions():
+    return {"prompts": [
+        "Analyze my finances today",
+        "Am I on track for retirement?",
+        "Should I refinance my mortgage?",
+        "What job should I apply to next?",
+        "How do I improve my credit score?",
+        "What business should I start?",
+        "Is my debt payoff plan optimal?",
+        "Review my investment strategy",
+    ]}
 
 
 @api_router.get("/chat/history")
