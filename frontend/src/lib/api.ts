@@ -216,5 +216,47 @@ export const alertsApi = {
     request<{ alerts: any[]; count: number }>("/alerts"),
 };
 
+// ----------------- Identity & Security -----------------
+export const securityApi = {
+  overview: () => request<any>("/security/overview"),
+  listBrokers: () => request<{ brokers: any[] }>("/security/brokers"),
+  rescanBrokers: () =>
+    request<any>("/security/brokers/rescan", { method: "POST" }),
+  optOut: (broker_id: string) =>
+    request<{ broker_id: string; letter: string; submitted_at: string }>(
+      `/security/brokers/${broker_id}/opt-out`,
+      { method: "POST" }
+    ),
+  optOutLetter: (broker_id: string) =>
+    request<{ broker: string; letter: string }>(
+      `/security/brokers/${broker_id}/opt-out-letter`
+    ),
+  credit: () => request<any>("/security/credit"),
+  updateCredit: (scores: {
+    equifax?: number;
+    transunion?: number;
+    experian?: number;
+  }) => request<any>("/security/credit", { method: "PUT", body: scores }),
+  refreshCreditTip: () =>
+    request<any>("/security/credit/refresh-tip", { method: "POST" }),
+  breaches: () => request<any>("/security/breach"),
+  scanBreach: () =>
+    request<any>("/security/breach/scan", { method: "POST" }),
+  resolveBreach: (breach_id: string) =>
+    request<any>(`/security/breach/${breach_id}/resolve`, { method: "POST" }),
+  setHibpKey: (hibp_api_key: string) =>
+    request<any>("/profile/hibp-key", {
+      method: "PUT",
+      body: { hibp_api_key },
+    }),
+  identityTheftGuide: () =>
+    request<{ steps: any[] }>("/security/identity-theft-guide"),
+  checkIdentityStep: (step_id: string, completed: boolean) =>
+    request<any>("/security/identity-theft-guide/check", {
+      method: "POST",
+      body: { step_id, completed },
+    }),
+};
+
 // ----------------- Seed -----------------
 export const seedDemo = () => request<any>("/seed-demo", { method: "POST" });

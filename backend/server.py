@@ -252,6 +252,89 @@ class InvestmentUpdate(BaseModel):
     notes: Optional[str] = None
 
 
+# =================== Identity & Security Models ===================
+class SecurityAlert(BaseModel):
+    alert_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    severity: str  # critical | warning | notice | resolved
+    title: str
+    description: str
+    action_type: Optional[str] = None  # opt_out | dispute | review | freeze | change_pw
+    action_payload: Optional[Dict[str, Any]] = None
+    related_id: Optional[str] = None  # broker_id, breach_id, etc.
+    created_at: str
+    resolved_at: Optional[str] = None
+
+
+class DataBroker(BaseModel):
+    broker_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    domain: str
+    status: str  # clear | scanning | pii_found | opt_out_pending | removed
+    data_exposed: List[str] = []
+    opt_out_available: bool = True
+    opt_out_submitted_at: Optional[str] = None
+    removal_confirmed_at: Optional[str] = None
+    last_scanned_at: Optional[str] = None
+    next_rescan_at: Optional[str] = None
+    opt_out_url: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class CreditScore(BaseModel):
+    bureau: str  # equifax | transunion | experian
+    current_score: int
+    previous_score: int
+    last_updated: str
+    is_demo: bool = True
+
+
+class CreditScoresUpdate(BaseModel):
+    equifax: Optional[int] = None
+    transunion: Optional[int] = None
+    experian: Optional[int] = None
+
+
+class BureauScoreHistory(BaseModel):
+    bureau: str
+    score: int
+    month: str  # YYYY-MM
+
+
+class HardInquiry(BaseModel):
+    inquiry_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    bureau: str
+    creditor: str
+    inquired_at: str
+    expected_drop_off: Optional[str] = None
+
+
+class BreachRecord(BaseModel):
+    breach_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    email: str
+    breach_name: str
+    breach_date: str
+    data_types_exposed: List[str] = []
+    recommended_action: str
+    status: str = "active"  # active | mitigated | resolved
+    is_demo: bool = True
+
+
+class IdentityTheftStep(BaseModel):
+    step_id: str
+    title: str
+    description: str
+    links: List[Dict[str, str]] = []
+    completed: bool = False
+    completed_at: Optional[str] = None
+
+
+class HIBPKeyUpdate(BaseModel):
+    hibp_api_key: Optional[str] = None
+
+
+# =================== End Identity & Security ===================
+
+
 class CareerProfile(BaseModel):
     career_id: str
     current_title: Optional[str] = None
@@ -2388,6 +2471,462 @@ Respond with EXACTLY this JSON (no markdown):
     return result
 
 
+# =====================================================================
+# Identity & Security Module
+# =====================================================================
+SECURITY_BROKERS_LIST = [
+    "Spokeo", "Intelius", "WhitePages", "BeenVerified", "Radaris",
+    "PeopleFinder", "MyLife", "Truthfinder", "Checkr", "ZabaSearch",
+    "PeopleLooker",
+]
+
+
+def _security_health_score(
+    brokers: List[dict],
+    breaches: List[dict],
+    inquiries: List[dict],
+    scores: List[dict],
+) -> int:
+    """Compute security health (0-100). See PRD formula."""
+    score = 100
+    pii_found = sum(1 for b in brokers if b.get("status") == "pii_found")
+    score -= 15 * pii_found
+    active_breaches = sum(1 for b in breaches if b.get("status") == "active")
+    score -= 20 * active_breaches
+    # Hard inquiries in the last 30 days
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    recent_inq = sum(1 for i in inquiries if (i.get("inquired_at") or "") >= cutoff)
+    score -= 10 * recent_inq
+    if any((s.get("current_score") or 0) < 670 for s in scores):
+        score -= 15
+    removed = sum(1 for b in brokers if b.get("status") == "removed")
+    score += 10 * removed
+    return max(0, min(100, score))
+
+
+def _threat_score(
+    brokers: List[dict],
+    breaches: List[dict],
+    inquiries: List[dict],
+    scores: List[dict],
+) -> float:
+    """0-10 scale (higher = worse)."""
+    t = 0.0
+    t += sum(1 for b in brokers if b.get("status") == "pii_found")
+    t += sum(1 for b in breaches if b.get("status") == "active")
+    if any((s.get("current_score") or 0) < 670 for s in scores):
+        t += 1
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    t += 0.5 * sum(1 for i in inquiries if (i.get("inquired_at") or "") >= cutoff)
+    return round(min(10.0, t), 1)
+
+
+async def _get_user_address(user_id: str) -> Dict[str, str]:
+    profile = await db.user_profile.find_one({"user_id": user_id}, {"_id": 0}) or {}
+    return {
+        "full_name": profile.get("full_name", "PLOS User"),
+        "email": profile.get("email", ""),
+        "location_primary": profile.get("location_primary", "United States"),
+    }
+
+
+def _opt_out_letter(broker_name: str, user: Dict[str, str]) -> str:
+    """Generate a formal opt-out / removal request letter for a broker."""
+    today = datetime.now(timezone.utc).strftime("%B %d, %Y")
+    return f"""{today}
+
+To: {broker_name} Privacy Team
+Subject: Personal Information Removal Request (CCPA / Right to Delete)
+
+To Whom It May Concern,
+
+Pursuant to applicable consumer privacy laws (CCPA, CPRA, and similar state
+statutes), I am formally requesting that {broker_name} remove all personal
+information associated with the following individual from your databases,
+public search results, and any third-party syndication partners:
+
+   Full Name:  {user.get("full_name", "")}
+   Email:      {user.get("email", "")}
+   Location:   {user.get("location_primary", "")}
+
+This request applies to any and all listings indexed under variations of
+the above name and address, including associated phone numbers, relatives,
+employment data, and historical addresses.
+
+Please confirm completion in writing within 45 days. If my information
+reappears on any partner or syndicated site, I expect proactive remediation
+under your stated privacy policy.
+
+Thank you,
+{user.get("full_name", "")}
+"""
+
+
+# ----------------------------- Security Overview ---------------------
+@api_router.get("/security/overview")
+async def security_overview(user_id: str = Depends(get_current_user_id)):
+    brokers = await db.data_brokers.find({"user_id": user_id}, {"_id": 0}).to_list(50)
+    breaches = await db.breach_records.find({"user_id": user_id}, {"_id": 0}).to_list(50)
+    scores = await db.credit_scores.find({"user_id": user_id}, {"_id": 0}).to_list(10)
+    inquiries = await db.hard_inquiries.find({"user_id": user_id}, {"_id": 0}).to_list(50)
+    alerts = (
+        await db.security_alerts.find({"user_id": user_id}, {"_id": 0})
+        .sort("created_at", -1)
+        .to_list(50)
+    )
+    active_alerts = [
+        a for a in alerts if a.get("severity") in ("critical", "warning")
+    ]
+
+    stats = {
+        "brokers_with_data": sum(1 for b in brokers if b.get("status") == "pii_found"),
+        "opt_outs_pending": sum(
+            1 for b in brokers if b.get("status") == "opt_out_pending"
+        ),
+        "confirmed_removals": sum(1 for b in brokers if b.get("status") == "removed"),
+        "active_breaches": sum(1 for b in breaches if b.get("status") == "active"),
+    }
+    return {
+        "threat_score": _threat_score(brokers, breaches, inquiries, scores),
+        "security_health_score": _security_health_score(brokers, breaches, inquiries, scores),
+        "active_threats_count": len(active_alerts),
+        "stats": stats,
+        "alerts": alerts[:15],
+        "top_brokers": brokers[:6],
+    }
+
+
+# ----------------------------- Data Brokers --------------------------
+@api_router.get("/security/brokers")
+async def list_brokers(user_id: str = Depends(get_current_user_id)):
+    items = await db.data_brokers.find({"user_id": user_id}, {"_id": 0}).to_list(200)
+    return {"brokers": items}
+
+
+@api_router.post("/security/brokers/rescan")
+async def rescan_brokers(user_id: str = Depends(get_current_user_id)):
+    """
+    Demo: bumps last_scanned_at for all brokers; resolves any 'scanning' rows
+    by leaving them in their seeded state. (Optery integration is a future TODO.)
+    """
+    # TODO: Replace seeded scan results with Optery API
+    # (https://optery.com/api) or DeleteMe integration — $129/yr plan
+    now = datetime.now(timezone.utc).isoformat()
+    res = await db.data_brokers.update_many(
+        {"user_id": user_id}, {"$set": {"last_scanned_at": now}}
+    )
+    return {"ok": True, "scanned": res.modified_count, "scanned_at": now}
+
+
+@api_router.post("/security/brokers/{broker_id}/opt-out")
+async def submit_opt_out(broker_id: str, user_id: str = Depends(get_current_user_id)):
+    broker = await db.data_brokers.find_one(
+        {"broker_id": broker_id, "user_id": user_id}, {"_id": 0}
+    )
+    if not broker:
+        raise HTTPException(status_code=404, detail="Broker not found")
+    if not broker.get("opt_out_available"):
+        raise HTTPException(status_code=400, detail="Opt-out not available for this broker")
+    user = await _get_user_address(user_id)
+    letter = _opt_out_letter(broker["name"], user)
+    now = datetime.now(timezone.utc).isoformat()
+    await db.data_brokers.update_one(
+        {"broker_id": broker_id, "user_id": user_id},
+        {"$set": {"status": "opt_out_pending", "opt_out_submitted_at": now}},
+    )
+    # Log security alert
+    alert = SecurityAlert(
+        severity="notice",
+        title=f"Opt-out submitted to {broker['name']}",
+        description="Removal request sent. Expect confirmation in 3-10 business days.",
+        action_type="review",
+        related_id=broker_id,
+        created_at=now,
+    ).dict()
+    alert["user_id"] = user_id
+    await db.security_alerts.insert_one(alert)
+    return {"ok": True, "broker_id": broker_id, "letter": letter, "submitted_at": now}
+
+
+@api_router.get("/security/brokers/{broker_id}/opt-out-letter")
+async def get_opt_out_letter(broker_id: str, user_id: str = Depends(get_current_user_id)):
+    broker = await db.data_brokers.find_one(
+        {"broker_id": broker_id, "user_id": user_id}, {"_id": 0}
+    )
+    if not broker:
+        raise HTTPException(status_code=404, detail="Broker not found")
+    user = await _get_user_address(user_id)
+    return {"broker": broker["name"], "letter": _opt_out_letter(broker["name"], user)}
+
+
+# ----------------------------- Credit Monitoring ---------------------
+@api_router.get("/security/credit")
+async def get_credit(user_id: str = Depends(get_current_user_id)):
+    scores = await db.credit_scores.find({"user_id": user_id}, {"_id": 0}).to_list(10)
+    history = (
+        await db.credit_history.find({"user_id": user_id}, {"_id": 0})
+        .sort("month", 1)
+        .to_list(200)
+    )
+    inquiries = (
+        await db.hard_inquiries.find({"user_id": user_id}, {"_id": 0})
+        .sort("inquired_at", -1)
+        .to_list(50)
+    )
+    tip_doc = await db.credit_tips.find_one({"user_id": user_id}, {"_id": 0})
+    is_demo = any(s.get("is_demo") for s in scores)
+    return {
+        "scores": scores,
+        "history": history,
+        "hard_inquiries": inquiries,
+        "tip": tip_doc.get("tip") if tip_doc else None,
+        "tip_generated_at": tip_doc.get("generated_at") if tip_doc else None,
+        "is_demo": is_demo,
+    }
+
+
+@api_router.put("/security/credit")
+async def update_credit(
+    payload: CreditScoresUpdate, user_id: str = Depends(get_current_user_id)
+):
+    """Manual entry: lets the user replace seed scores with real ones."""
+    now = datetime.now(timezone.utc).isoformat()
+    updated = []
+    for bureau, score in [
+        ("equifax", payload.equifax),
+        ("transunion", payload.transunion),
+        ("experian", payload.experian),
+    ]:
+        if score is None:
+            continue
+        if score < 300 or score > 850:
+            raise HTTPException(
+                status_code=400, detail=f"{bureau} score must be 300-850"
+            )
+        existing = await db.credit_scores.find_one(
+            {"user_id": user_id, "bureau": bureau}, {"_id": 0}
+        )
+        prev = existing.get("current_score") if existing else score
+        await db.credit_scores.update_one(
+            {"user_id": user_id, "bureau": bureau},
+            {
+                "$set": {
+                    "bureau": bureau,
+                    "current_score": int(score),
+                    "previous_score": int(prev),
+                    "last_updated": now,
+                    "is_demo": False,
+                    "user_id": user_id,
+                }
+            },
+            upsert=True,
+        )
+        updated.append(bureau)
+    return {"ok": True, "updated": updated}
+
+
+@api_router.post("/security/credit/refresh-tip")
+async def refresh_credit_tip(user_id: str = Depends(get_current_user_id)):
+    """Generate a Claude-powered, data-grounded improvement tip."""
+    scores = await db.credit_scores.find({"user_id": user_id}, {"_id": 0}).to_list(10)
+    debts = await db.debts.find({"user_id": user_id}, {"_id": 0}).to_list(50)
+    if not scores:
+        raise HTTPException(status_code=400, detail="No credit scores on file")
+
+    cc_debts = [d for d in debts if d.get("debt_type") == "credit_card"]
+    total_balance = sum(d.get("balance", 0) for d in cc_debts)
+    # Utilization estimate using minimum_payment * 28 as a proxy for credit limit
+    est_limit = sum((d.get("minimum_payment", 0) or 0) * 28 for d in cc_debts) or 1
+    utilization = (total_balance / est_limit) * 100
+
+    prompt = f"""You are PLOS, a financial co-pilot. Given the user's credit data,
+return ONE specific, actionable tip to raise their score the most THIS MONTH.
+
+Current scores:
+{chr(10).join(f"- {s['bureau'].title()}: {s['current_score']} (was {s['previous_score']})" for s in scores)}
+
+Credit cards:
+{chr(10).join(f"- {d.get('lender')}: balance ${d.get('balance')}, APR {d.get('apr')}%, min ${d.get('minimum_payment')}" for d in cc_debts) or "- (no CC data)"}
+
+Estimated overall utilization: {utilization:.1f}%
+
+Reply ONLY with JSON:
+{{"tip": "<2-3 sentence specific action with a dollar amount and an expected point gain range>",
+  "target_lender": "<lender name or null>",
+  "expected_gain_points": "<like 22-35>"
+}}
+"""
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=f"credit-tip-{user_id}",
+        system_message=PLOS_SYSTEM_PROMPT,
+    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+    response = await chat.send_message(UserMessage(text=prompt))
+    text = response if isinstance(response, str) else str(response)
+    import json as _json
+    import re as _re
+    m = _re.search(r"\{.*\}", text, _re.DOTALL)
+    parsed: Dict[str, Any] = {}
+    if m:
+        try:
+            parsed = _json.loads(m.group(0))
+        except Exception:
+            parsed = {"tip": text[:400]}
+    else:
+        parsed = {"tip": text[:400]}
+    now = datetime.now(timezone.utc).isoformat()
+    await db.credit_tips.update_one(
+        {"user_id": user_id},
+        {"$set": {"user_id": user_id, "tip": parsed, "generated_at": now}},
+        upsert=True,
+    )
+    return {"ok": True, "tip": parsed, "generated_at": now}
+
+
+# ----------------------------- Breach Monitoring ---------------------
+@api_router.get("/security/breach")
+async def list_breaches(user_id: str = Depends(get_current_user_id)):
+    items = await db.breach_records.find({"user_id": user_id}, {"_id": 0}).to_list(50)
+    profile = await db.user_profile.find_one({"user_id": user_id}, {"_id": 0}) or {}
+    has_hibp_key = bool((profile.get("hibp_api_key") or "").strip())
+    is_demo = any(b.get("is_demo") for b in items) and not has_hibp_key
+    return {
+        "breaches": items,
+        "is_demo": is_demo,
+        "has_hibp_key": has_hibp_key,
+        "checked_email": profile.get("email"),
+    }
+
+
+@api_router.post("/security/breach/scan")
+async def scan_breach(user_id: str = Depends(get_current_user_id)):
+    """
+    DEMO MODE: returns seeded breach data. When the user adds an HIBP API key
+    via PUT /api/profile/hibp-key the endpoint switches to a live HIBP lookup.
+    """
+    profile = await db.user_profile.find_one({"user_id": user_id}, {"_id": 0}) or {}
+    has_hibp_key = bool((profile.get("hibp_api_key") or "").strip())
+    if has_hibp_key:
+        # TODO: Implement live HIBP call when has_hibp_key is true.
+        pass
+    return await list_breaches(user_id)
+
+
+@api_router.post("/security/breach/{breach_id}/resolve")
+async def resolve_breach(
+    breach_id: str, user_id: str = Depends(get_current_user_id)
+):
+    res = await db.breach_records.update_one(
+        {"breach_id": breach_id, "user_id": user_id},
+        {"$set": {"status": "resolved"}},
+    )
+    if not res.matched_count:
+        raise HTTPException(status_code=404, detail="Breach not found")
+    return {"ok": True}
+
+
+@api_router.put("/profile/hibp-key")
+async def set_hibp_key(
+    payload: HIBPKeyUpdate, user_id: str = Depends(get_current_user_id)
+):
+    await db.user_profile.update_one(
+        {"user_id": user_id},
+        {"$set": {"hibp_api_key": (payload.hibp_api_key or "").strip() or None}},
+    )
+    return {"ok": True, "has_key": bool(payload.hibp_api_key)}
+
+
+# ----------------------------- Identity Theft Guide -----------------
+def _default_identity_theft_steps(lenders: List[str]) -> List[Dict[str, Any]]:
+    lender_links = (
+        ", ".join(lenders[:4]) if lenders else "your bank, credit card, and lender"
+    )
+    return [
+        {
+            "step_id": "freeze_credit",
+            "title": "Freeze your credit at all 3 bureaus",
+            "description": "Place a security freeze with Equifax, TransUnion, and Experian. This is free and the single most powerful action.",
+            "links": [
+                {"label": "Equifax Freeze", "url": "https://www.equifax.com/personal/credit-report-services/credit-freeze/"},
+                {"label": "TransUnion Freeze", "url": "https://www.transunion.com/credit-freeze"},
+                {"label": "Experian Freeze", "url": "https://www.experian.com/freeze/center.html"},
+            ],
+        },
+        {
+            "step_id": "ftc_report",
+            "title": "File an FTC Identity Theft report",
+            "description": "IdentityTheft.gov walks you through filing and generates an official recovery plan + affidavit.",
+            "links": [{"label": "IdentityTheft.gov", "url": "https://www.identitytheft.gov/"}],
+        },
+        {
+            "step_id": "police_report",
+            "title": "File a local police report",
+            "description": "Visit your local precinct (e.g. DeKalb County Police Department in DeKalb County, GA) with: photo ID, FTC affidavit, proof of address, and evidence of fraud.",
+            "links": [
+                {"label": "DeKalb County Police", "url": "https://www.dekalbcountyga.gov/police"}
+            ],
+        },
+        {
+            "step_id": "contact_financial",
+            "title": "Contact your financial institutions",
+            "description": f"Call the fraud department on {lender_links}. Freeze affected accounts and request new card numbers.",
+            "links": [],
+        },
+        {
+            "step_id": "change_passwords",
+            "title": "Change passwords on all breached accounts",
+            "description": "Use a password manager. Rotate any account that uses a breached email, starting with primary email + financial logins.",
+            "links": [{"label": "Open Breach Monitor", "url": "plos://security/breach"}],
+        },
+        {
+            "step_id": "fraud_alert",
+            "title": "Place a fraud alert",
+            "description": "A fraud alert (free, lasts 1 year) requires lenders to verify your identity before opening credit. Unlike a freeze, it doesn't block applications — useful if you still need new credit yourself.",
+            "links": [{"label": "What's the difference?", "url": "https://www.consumer.ftc.gov/articles/what-do-if-youre-victim-identity-theft"}],
+        },
+    ]
+
+
+@api_router.get("/security/identity-theft-guide")
+async def get_identity_theft_guide(user_id: str = Depends(get_current_user_id)):
+    debts = await db.debts.find({"user_id": user_id}, {"_id": 0}).to_list(50)
+    lenders = list({d.get("lender") for d in debts if d.get("lender")})
+    steps = _default_identity_theft_steps(lenders)
+    state = await db.identity_theft_checklist.find_one(
+        {"user_id": user_id}, {"_id": 0}
+    ) or {"completed": {}}
+    completed_map: Dict[str, str] = state.get("completed", {})
+    for s in steps:
+        if s["step_id"] in completed_map:
+            s["completed"] = True
+            s["completed_at"] = completed_map[s["step_id"]]
+    return {"steps": steps}
+
+
+@api_router.post("/security/identity-theft-guide/check")
+async def check_identity_theft_step(
+    body: Dict[str, Any], user_id: str = Depends(get_current_user_id)
+):
+    step_id = body.get("step_id")
+    completed = bool(body.get("completed", True))
+    if not step_id:
+        raise HTTPException(status_code=400, detail="step_id required")
+    state = await db.identity_theft_checklist.find_one(
+        {"user_id": user_id}, {"_id": 0}
+    ) or {"completed": {}}
+    completed_map: Dict[str, str] = state.get("completed", {})
+    if completed:
+        completed_map[step_id] = datetime.now(timezone.utc).isoformat()
+    else:
+        completed_map.pop(step_id, None)
+    await db.identity_theft_checklist.update_one(
+        {"user_id": user_id},
+        {"$set": {"user_id": user_id, "completed": completed_map}},
+        upsert=True,
+    )
+    return {"ok": True, "completed": completed}
+
+
 # ----------------------------- Seed Demo Data --------------------------
 @api_router.post("/seed-demo")
 async def seed_demo(user_id: str = Depends(get_current_user_id)):
@@ -2401,6 +2940,14 @@ async def seed_demo(user_id: str = Depends(get_current_user_id)):
         "investments",
         "job_applications",
         "ai_decisions_log",
+        "data_brokers",
+        "security_alerts",
+        "credit_scores",
+        "credit_history",
+        "credit_tips",
+        "hard_inquiries",
+        "breach_records",
+        "identity_theft_checklist",
     ]:
         await db[col].delete_many({"user_id": user_id})
 
@@ -2548,6 +3095,161 @@ TypeScript, React, Next.js, Node.js, Python, Go, PostgreSQL, Redis, AWS (ECS, RD
         obj = AIDecision(**d).dict()
         obj["user_id"] = user_id
         await db.ai_decisions_log.insert_one(obj)
+
+    # =========================================================
+    # Identity & Security seed
+    # =========================================================
+    now_dt = datetime.now(timezone.utc)
+    now_iso = now_dt.isoformat()
+
+    def days_ago(n: int) -> str:
+        return (now_dt - timedelta(days=n)).isoformat()
+
+    # 1) Data brokers — exact seed per PRD
+    brokers_seed = [
+        {"name": "Spokeo", "domain": "spokeo.com", "status": "pii_found",
+         "data_exposed": ["full name", "current address", "phone number", "employer"],
+         "opt_out_available": True,
+         "opt_out_url": "https://www.spokeo.com/optout",
+         "last_scanned_at": days_ago(2)},
+        {"name": "Intelius", "domain": "intelius.com", "status": "pii_found",
+         "data_exposed": ["phone number", "previous addresses", "relatives"],
+         "opt_out_available": True,
+         "opt_out_url": "https://suppression.peopleconnect.us/login",
+         "last_scanned_at": days_ago(2)},
+        {"name": "WhitePages", "domain": "whitepages.com", "status": "opt_out_pending",
+         "data_exposed": ["name", "address", "phone"],
+         "opt_out_available": True,
+         "opt_out_submitted_at": days_ago(8),
+         "notes": "Expected removal: 3-10 business days",
+         "last_scanned_at": days_ago(2)},
+        {"name": "BeenVerified", "domain": "beenverified.com", "status": "removed",
+         "data_exposed": [], "opt_out_available": True,
+         "removal_confirmed_at": days_ago(15),
+         "next_rescan_at": days_ago(-30),
+         "last_scanned_at": days_ago(15)},
+        {"name": "Radaris", "domain": "radaris.com", "status": "removed",
+         "data_exposed": [], "opt_out_available": True,
+         "removal_confirmed_at": days_ago(20),
+         "last_scanned_at": days_ago(20)},
+        {"name": "PeopleFinder", "domain": "peoplefinder.com", "status": "scanning",
+         "data_exposed": [], "opt_out_available": True,
+         "last_scanned_at": now_iso},
+        {"name": "MyLife", "domain": "mylife.com", "status": "pii_found",
+         "data_exposed": ["name", "age", "address", "possible associates"],
+         "opt_out_available": True,
+         "opt_out_url": "https://www.mylife.com/ccpa",
+         "last_scanned_at": days_ago(2)},
+        {"name": "Truthfinder", "domain": "truthfinder.com", "status": "pii_found",
+         "data_exposed": ["name", "address history", "phone"],
+         "opt_out_available": True,
+         "opt_out_url": "https://www.truthfinder.com/opt-out/",
+         "last_scanned_at": days_ago(2)},
+        {"name": "Checkr", "domain": "checkr.com", "status": "clear",
+         "data_exposed": [], "opt_out_available": True,
+         "last_scanned_at": days_ago(2)},
+        {"name": "ZabaSearch", "domain": "zabasearch.com", "status": "clear",
+         "data_exposed": [], "opt_out_available": True,
+         "last_scanned_at": days_ago(2)},
+        {"name": "PeopleLooker", "domain": "peoplelooker.com", "status": "scanning",
+         "data_exposed": [], "opt_out_available": True,
+         "last_scanned_at": now_iso},
+    ]
+    for b in brokers_seed:
+        obj = DataBroker(**b).dict()
+        obj["user_id"] = user_id
+        await db.data_brokers.insert_one(obj)
+
+    # 2) Credit scores (demo)
+    credit_seed = [
+        {"bureau": "equifax", "current_score": 672, "previous_score": 680, "is_demo": True},
+        {"bureau": "transunion", "current_score": 681, "previous_score": 678, "is_demo": True},
+        {"bureau": "experian", "current_score": 668, "previous_score": 668, "is_demo": True},
+    ]
+    for c in credit_seed:
+        obj = {**c, "user_id": user_id, "last_updated": now_iso}
+        await db.credit_scores.insert_one(obj)
+
+    # 3) Credit history (6 months, gradual climb 645 → current per bureau)
+    # Simulated upward trajectory
+    history_traj = {
+        "equifax":     [645, 651, 658, 665, 680, 672],
+        "transunion":  [648, 655, 662, 670, 678, 681],
+        "experian":    [642, 649, 655, 661, 668, 668],
+    }
+    for bureau, trail in history_traj.items():
+        for offset, score in enumerate(reversed(trail)):
+            month_dt = now_dt.replace(day=1) - timedelta(days=30 * offset)
+            await db.credit_history.insert_one({
+                "user_id": user_id,
+                "bureau": bureau,
+                "score": score,
+                "month": month_dt.strftime("%Y-%m"),
+            })
+
+    # 4) Hard inquiry — recent Chase Sapphire inquiry (correlates with -8 on Equifax)
+    await db.hard_inquiries.insert_one({
+        "inquiry_id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "bureau": "equifax",
+        "creditor": "Chase Sapphire",
+        "inquired_at": days_ago(12),
+        "expected_drop_off": days_ago(-(365 * 2)),
+    })
+
+    # 5) Breach records (DEMO)
+    profile = await db.user_profile.find_one({"user_id": user_id}, {"_id": 0}) or {}
+    email = profile.get("email") or "user@example.com"
+    breaches_seed = [
+        {"email": email, "breach_name": "LinkedIn 2021",
+         "breach_date": "2021-06-22",
+         "data_types_exposed": ["passwords", "emails"],
+         "recommended_action": "Change LinkedIn password and any reused passwords.",
+         "status": "active", "is_demo": True},
+        {"email": email, "breach_name": "Canva 2019",
+         "breach_date": "2019-05-24",
+         "data_types_exposed": ["emails", "names"],
+         "recommended_action": "Rotate password if you used Canva.",
+         "status": "active", "is_demo": True},
+        {"email": email, "breach_name": "Adobe 2013",
+         "breach_date": "2013-10-04",
+         "data_types_exposed": ["emails", "passwords", "security questions"],
+         "recommended_action": "Update Adobe password + change security questions everywhere they were reused.",
+         "status": "active", "is_demo": True},
+    ]
+    for br in breaches_seed:
+        obj = BreachRecord(**br).dict()
+        obj["user_id"] = user_id
+        await db.breach_records.insert_one(obj)
+
+    # 6) Security alerts (live feed)
+    alerts_seed = [
+        {"severity": "critical", "title": "Spokeo: PII listing detected",
+         "description": "Name, address, phone, and employer found on spokeo.com. Send opt-out now.",
+         "action_type": "opt_out",
+         "related_id": None,
+         "created_at": days_ago(1)},
+        {"severity": "warning", "title": "Equifax dropped 8 points",
+         "description": "New hard inquiry from Chase Sapphire detected on Equifax.",
+         "action_type": "dispute",
+         "created_at": days_ago(2)},
+        {"severity": "critical", "title": "Email in LinkedIn 2021 breach",
+         "description": "Your email appeared in the LinkedIn 2021 password leak. Update reused passwords.",
+         "action_type": "change_pw",
+         "created_at": days_ago(3)},
+        {"severity": "warning", "title": "MyLife: PII listing detected",
+         "description": "Name, age, address, and associates listed publicly.",
+         "action_type": "opt_out",
+         "created_at": days_ago(4)},
+        {"severity": "resolved", "title": "BeenVerified removal confirmed",
+         "description": "Your listing was removed successfully.",
+         "action_type": "review",
+         "created_at": days_ago(15)},
+    ]
+    for a in alerts_seed:
+        obj = SecurityAlert(**a).dict()
+        obj["user_id"] = user_id
+        await db.security_alerts.insert_one(obj)
 
     return {"ok": True, "message": "Demo data seeded"}
 

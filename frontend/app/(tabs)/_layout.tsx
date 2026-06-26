@@ -1,14 +1,64 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Tabs, Redirect } from "expo-router";
 import { Home, Wallet, Briefcase, Shield, Grid3x3 } from "lucide-react-native";
-import { Platform, View } from "react-native";
+import { Platform, View, StyleSheet } from "react-native";
 import { BlurView } from "expo-blur";
 
 import { useAuth } from "@/src/lib/auth-context";
+import { securityApi } from "@/src/lib/api";
 import { colors } from "@/src/lib/theme";
+
+function badgeColor(threat: number) {
+  if (threat >= 6) return colors.danger;
+  if (threat >= 3) return colors.warning;
+  return colors.success;
+}
+
+function SafetyIcon({
+  color,
+  focused,
+  threat,
+}: {
+  color: string;
+  focused: boolean;
+  threat: number;
+}) {
+  const dotColor = badgeColor(threat);
+  const showDot = threat >= 3;
+  return (
+    <View style={styles.iconWrap}>
+      <Shield color={color} size={22} strokeWidth={focused ? 2 : 1.5} />
+      {showDot && (
+        <View
+          style={[styles.dot, { backgroundColor: dotColor }]}
+          testID="safety-threat-dot"
+        />
+      )}
+    </View>
+  );
+}
 
 export default function TabsLayout() {
   const { isAuthed, isLoading } = useAuth();
+  const [threat, setThreat] = useState<number>(0);
+
+  useEffect(() => {
+    if (!isAuthed) return;
+    let active = true;
+    const tick = async () => {
+      try {
+        const o = await securityApi.overview();
+        if (active) setThreat(Number(o?.threat_score) || 0);
+      } catch (_e) {}
+    };
+    tick();
+    const id = setInterval(tick, 60_000);
+    return () => {
+      active = false;
+      clearInterval(id);
+    };
+  }, [isAuthed]);
+
   if (isLoading) return null;
   if (!isAuthed) return <Redirect href="/(auth)/login" />;
 
@@ -79,9 +129,9 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="safety"
         options={{
-          title: "Safety",
+          title: "Security",
           tabBarIcon: ({ color, focused }) => (
-            <Shield color={color} size={22} strokeWidth={focused ? 2 : 1.5} />
+            <SafetyIcon color={color} focused={focused} threat={threat} />
           ),
           tabBarTestID: "tab-safety",
         }}
@@ -99,3 +149,17 @@ export default function TabsLayout() {
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  iconWrap: { width: 22, height: 22, alignItems: "center", justifyContent: "center" },
+  dot: {
+    position: "absolute",
+    top: -1,
+    right: -3,
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: "rgba(8,8,10,0.95)",
+  },
+});
