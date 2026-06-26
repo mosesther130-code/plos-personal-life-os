@@ -1,0 +1,163 @@
+{
+  "app_info": {
+    "name": "PLOS — Personal Life Operating System",
+    "description": "An AI-powered personal command center mobile app managing finance, career, safety, and health.",
+    "architecture": "Single user mobile app. React Native Expo. Bottom tab navigation."
+  },
+  "theme": {
+    "mode": "dark",
+    "archetype": "Archetype 5 (Luxury) mixed with Archetype 4 (Swiss & High-Contrast)",
+    "vibe": "Premium, authoritative, precise, ambient, data-dense but minimalist."
+  },
+  "colors": {
+    "background": {
+      "default": "#08080A",
+      "surface": "#121216",
+      "surface_elevated": "#1A1A20",
+      "glass": "rgba(18, 18, 22, 0.75)"
+    },
+    "brand": {
+      "primary": "#1E40AF",
+      "primary_glow": "#3B82F6",
+      "primary_muted": "rgba(30, 64, 175, 0.2)"
+    },
+    "text": {
+      "primary": "#FFFFFF",
+      "secondary": "#A1A1AA",
+      "tertiary": "#71717A",
+      "inverse": "#000000"
+    },
+    "semantic": {
+      "success": "#10B981",
+      "success_bg": "rgba(16, 185, 129, 0.1)",
+      "warning": "#F59E0B",
+      "warning_bg": "rgba(245, 158, 11, 0.1)",
+      "danger": "#EF4444",
+      "danger_bg": "rgba(239, 68, 68, 0.1)",
+      "info": "#3B82F6"
+    },
+    "border": {
+      "subtle": "rgba(255, 255, 255, 0.06)",
+      "strong": "rgba(255, 255, 255, 0.15)"
+    }
+  },
+  "typography": {
+    "font_families": {
+      "heading": "Manrope",
+      "body": "IBM Plex Sans",
+      "mono": "IBM Plex Mono"
+    },
+    "sizes": {
+      "h1": "text-4xl (36px) tracking-tighter leading-tight font-light",
+      "h2": "text-3xl (30px) tracking-tight leading-tight font-medium",
+      "h3": "text-xl (20px) tracking-tight font-medium",
+      "h4": "text-lg (18px) font-medium",
+      "body": "text-base (16px) leading-relaxed text-secondary",
+      "body_sm": "text-sm (14px) leading-normal text-tertiary",
+      "overline": "text-xs (12px) uppercase tracking-widest font-bold text-secondary",
+      "data_display": "text-5xl (48px) font-mono tracking-tighter"
+    },
+    "rules": [
+      "Never use Inter for headings.",
+      "Use IBM Plex Mono for all financial figures, scores, and exact data points.",
+      "Overlines must have heavy letter spacing (tracking-widest)."
+    ]
+  },
+  "layout_spacing": {
+    "container": {
+      "padding_horizontal": 20
+    },
+    "bento_grid": {
+      "gap": 16,
+      "border_radius": 20
+    },
+    "rules": [
+      "Mobile-first spacing: generous internal padding for cards (p-5 or 20px).",
+      "Use optical alignment for icons and text.",
+      "Avoid 100% full-width cards without side margins; keep them contained within the 20px horizontal padding."
+    ]
+  },
+  "components": {
+    "cards": {
+      "background": "colors.background.surface",
+      "border": "1px solid colors.border.subtle",
+      "border_radius": 20,
+      "padding": 20,
+      "shadow": "none (rely on border for definition)"
+    },
+    "ai_advice_card": {
+      "background": "colors.background.surface_elevated",
+      "border": "1px solid colors.brand.primary_muted",
+      "border_radius": 20,
+      "padding": 20,
+      "glow": "Subtle inner shadow or top border highlight using colors.brand.primary"
+    },
+    "bottom_tabs": {
+      "background": "Expo BlurView with dark tint (glassmorphism)",
+      "border_top": "1px solid colors.border.subtle",
+      "active_tint": "colors.brand.primary_glow",
+      "inactive_tint": "colors.text.tertiary"
+    },
+    "buttons": {
+      "primary": {
+        "background": "colors.brand.primary",
+        "text_color": "colors.text.primary",
+        "border_radius": 16,
+        "padding_vertical": 16,
+        "font_weight": "bold"
+      },
+      "secondary": {
+        "background": "transparent",
+        "border": "1px solid colors.border.strong",
+        "text_color": "colors.text.primary",
+        "border_radius": 16,
+        "padding_vertical": 16
+      }
+    },
+    "inputs": {
+      "background": "colors.background.surface_elevated",
+      "border_radius": 12,
+      "padding": 16,
+      "border": "1px solid transparent",
+      "focus_border": "1px solid colors.brand.primary_glow",
+      "text_color": "colors.text.primary"
+    }
+  },
+  "motion_interactions": {
+    "navigation": "Smooth React Navigation transitions (spring or slide-from-right).",
+    "buttons": "Scale down to 0.97 on press using Pressable.",
+    "ai_loading": "Use pulsing opacity on the AI badge or skeleton loaders for data fetching."
+  },
+  "icons_assets": {
+    "library": "lucide-react-native",
+    "rules": [
+      "Stroke width: 1.5 for regular, 2.0 for active states.",
+      "Size: 24px for bottom tabs, 20px for inline icons."
+    ],
+    "media": {
+      "splash_background": {
+        "url": "https://images.unsplash.com/photo-1597773150796-e5c14ebecbf5?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Njd8MHwxfHNlYXJjaHwxfHxkYXJrJTIwYmx1ZSUyMGFic3RyYWN0JTIwdGV4dHVyZXxlbnwwfHx8fDE3ODI0ODI3NDd8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Dark blue abstract liquid texture for splash screen or high-end AI processing states."
+      },
+      "user_avatar": {
+        "url": "https://images.unsplash.com/photo-1758534063829-a72058381e21?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NjZ8MHwxfHNlYXJjaHwxfHxwcm9mZXNzaW9uYWwlMjBoZWFkc2hvdCUyMGRhcmslMjBiYWNrZ3JvdW5kfGVufDB8fHx8MTc4MjQ4Mjc0N3ww&ixlib=rb-4.1.0&q=85",
+        "description": "Professional user profile placeholder."
+      },
+      "empty_state_bg": {
+        "url": "https://images.pexels.com/photos/7718474/pexels-photo-7718474.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Abstract monochrome glass block texture for empty state backgrounds."
+      }
+    }
+  },
+  "accessibility_and_testing": {
+    "test_attributes": "All interactive elements MUST use `testID` (e.g., testID='login-submit-button').",
+    "contrast": "Text contrast must meet WCAG AA standards. Muted text should not fall below 4.5:1 ratio against surface backgrounds."
+  },
+  "instructions_to_main_agent": {
+    "styling_approach": "Use NativeWind (Tailwind for React Native) or strict React Native StyleSheet mapping to these design tokens.",
+    "layout_structure": "Ensure SafeAreaView is used. Bottom tabs must account for safe area insets.",
+    "bento_implementation": "For Home screen dashboard, use View components with Flexbox (flex-row, flex-wrap) to create Bento box layouts.",
+    "ai_chat_interface": "The Chatbot screen should use inverted message bubbles: User (surface color), AI (deep blue #1E40AF with glow).",
+    "dark_mode": "Since it's a strictly dark-mode capable app (and requested as dark mode), prioritize the dark theme variables. Ensure no white flashes on navigation."
+  }
+}
