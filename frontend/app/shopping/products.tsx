@@ -10,6 +10,7 @@ import {
   Modal,
   TextInput,
   Alert,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -58,17 +59,21 @@ export default function Products() {
   };
 
   const removeItem = (id: string) => {
+    const performRemove = async () => {
+      try {
+        await shoppingApi.unregisterProduct(id);
+        setItems((prev) => prev.filter((p) => p.product_id !== id));
+      } catch (_e) {}
+    };
+    if (Platform.OS === "web") {
+      if (typeof window !== "undefined" && window.confirm("Remove product? You won’t receive recall alerts for it anymore.")) {
+        performRemove();
+      }
+      return;
+    }
     Alert.alert("Remove product?", "You won’t receive recall alerts for it anymore.", [
       { text: "Cancel", style: "cancel" },
-      {
-        text: "Remove", style: "destructive",
-        onPress: async () => {
-          try {
-            await shoppingApi.unregisterProduct(id);
-            setItems((prev) => prev.filter((p) => p.product_id !== id));
-          } catch (_e) {}
-        },
-      },
+      { text: "Remove", style: "destructive", onPress: performRemove },
     ]);
   };
 

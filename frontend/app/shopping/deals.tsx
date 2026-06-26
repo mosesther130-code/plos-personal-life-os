@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -68,19 +69,23 @@ export default function Deals() {
   const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
 
   const dismiss = (id: string) => {
+    const performDismiss = async () => {
+      try {
+        await shoppingApi.dismissDeal(id);
+        const next = deals.filter(d => d.deal_id !== id);
+        setDeals(next);
+        setTotalSavings(next.reduce((s, d) => s + (d.savings_usd || 0), 0));
+      } catch (_e) {}
+    };
+    if (Platform.OS === "web") {
+      if (typeof window !== "undefined" && window.confirm("Dismiss this deal? You won’t see it again unless you reset preferences.")) {
+        performDismiss();
+      }
+      return;
+    }
     Alert.alert("Dismiss this deal?", "You won’t see it again unless you reset preferences.", [
       { text: "Cancel", style: "cancel" },
-      {
-        text: "Dismiss", style: "destructive",
-        onPress: async () => {
-          try {
-            await shoppingApi.dismissDeal(id);
-            const next = deals.filter(d => d.deal_id !== id);
-            setDeals(next);
-            setTotalSavings(next.reduce((s, d) => s + (d.savings_usd || 0), 0));
-          } catch (_e) {}
-        },
-      },
+      { text: "Dismiss", style: "destructive", onPress: performDismiss },
     ]);
   };
 

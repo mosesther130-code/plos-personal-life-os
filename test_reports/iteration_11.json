@@ -1,0 +1,38 @@
+{
+  "summary": "Targeted regression of the two iteration-10 fixes — both VERIFIED via the public preview URL. Backend: POST /api/business/ideas/seed-1/plan returned HTTP 200 in 50.2s (was timing out at 60s Cloudflare proxy in iter 10) with a 6.4KB markdown plan containing the required ## sections; POST /api/shopping/utilities/ga_power/find-better returned HTTP 200 in 21.3s with a 2.4KB recommendation. Both now comfortably fit within the ~60s Cloudflare window. Frontend: Logged in as test1@plos.app on the web preview at 390x844 viewport. Active Deals → tapped dismiss-d2; window.confirm fired ('Dismiss this deal? You won’t see it again…'), auto-accepted, deals count 4 → 3, savings card recalculated to $66. Registered Products → opened add modal, registered 'TestProd', then tapped first delete trash; window.confirm fired ('Remove product? You won’t receive recall alerts…'), auto-accepted, products count 2 → 1. Both flows now actually mutate state on web, confirming the Platform.OS === 'web' window.confirm branch works. No new regressions observed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_11_fixes.py",
+    "/app/test_reports/pytest/iteration_11_results.xml"
+  ],
+  "action_items": [
+    "(Carry-over, not blocking) Consider splitting /app/backend/server.py (~4737 lines) into per-module routers and moving SEED_BUSINESS_IDEAS / DEFAULT_EDEN_HEIGHTS / SEED_DEALS / SEED_UTILITIES into /app/backend/seed/*.py — flagged in iter 10, still pending.",
+    "(Optional) The plan endpoint still rides close to the 60s ceiling (50.2s observed). If Claude latency drifts upward or the prompt is enriched, consider an async-job/polling pattern as a permanent safety net.",
+    "(Cosmetic) Console warnings: 'shadow* style props are deprecated. Use boxShadow' and 'props.pointerEvents is deprecated. Use style.pointerEvents' — react-native-web deprecations from a dependency; not blocking."
+  ],
+  "critical_code_review_comments": [
+    "Fix 1 implementation (server.py:4159-4168 + 4250): prompt now explicitly bounds Claude to ~1500 words for plan and ~500 words for find-better. Clean and minimal change — verified to bring both endpoints under the 60s Cloudflare ceiling.",
+    "Fix 2 implementation (deals.tsx:71-90, products.tsx:61-78): Platform.OS === 'web' branch with window.confirm is correctly gated and only runs on web, preserving native Alert.alert behaviour for iOS/Android. Verified end-to-end on the web preview."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_11_fixes.py (NEW — 2 focused regression tests for the Cloudflare-timeout fix)"
+  ],
+  "success_rate": {
+    "backend": "100% (2/2 targeted regression tests passed within the 60s Cloudflare window)",
+    "frontend": "100% (both Alert.alert → window.confirm web flows verified: deals dismiss 4→3 and product delete 2→1, with confirm() messages captured)"
+  },
+  "seed_data_creation": "No new seed data. Test re-used the seeded business idea seed-1, seeded utility ga_power, seeded deals (d1..d5 minus d1 already dismissed from prior runs leaving 4 active), and the registered_products collection for test1@plos.app — added TestProd then removed it during the run.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter 10's two blockers are both resolved. (1) Backend Claude endpoints /api/business/ideas/{id}/plan and /api/shopping/utilities/{id}/find-better now respond within 60s via the public URL (50.2s and 21.3s observed). (2) shopping/deals.tsx dismiss() and shopping/products.tsx removeItem() now use a Platform.OS web branch with window.confirm and work on the web preview. For future Playwright runs on this app, override window.confirm via page.add_init_script before any navigation — Playwright's built-in dialog event handler races with the click action and causes click() to time out; the JS override (window.confirm = () => true with a __confirms log) is the reliable pattern. Login testIDs are login-email-input / login-password-input / login-submit-button (not login-email/login-submit).",
+  "rca_of_issue": "N/A for this iteration — both fixes verified working. Iter 10 root causes were: (a) Claude was producing ~33KB markdown plans taking ~235s end-to-end which exceeded Cloudflare's ~60s proxy timeout — fixed by tightening the prompt to <1500 words with explicit section budgets, bringing total round-trip to ~50s; (b) React Native's Alert.alert button onPress callbacks don't fire on react-native-web (it falls back to window.alert) — fixed by adding a Platform.OS === 'web' branch that uses window.confirm() directly before invoking the same performDismiss/performRemove async path."
+}

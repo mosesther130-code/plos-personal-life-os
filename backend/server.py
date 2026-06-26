@@ -4157,12 +4157,14 @@ async def build_plan(idea_id: str, user_id: str = Depends(get_current_user_id)):
         system_message=PLOS_SYSTEM_PROMPT,
     ).with_model("anthropic", "claude-sonnet-4-5-20250929")
     prompt = (
-        f"Write a complete business plan for {idea.get('business_name')} tailored to Moses Ndifon's specific situation: "
-        "GSU Perimeter College employee, USAID financial management background, MBA, located in Stone Mountain Georgia, "
-        "monthly surplus of $920, ties to Philippines. Structure with these exact sections: "
-        "Executive Summary, Market Opportunity and Target Customers, Operations Plan, Financial Projections (Year 1, Year 2, Year 3), "
-        "Startup Cost Breakdown, Risk Assessment and Mitigation, First 30 Days Action Plan. "
-        "Be specific with dollar amounts, timelines, and actionable steps. Use markdown headers."
+        f"Write a concise business plan (UNDER 1500 words total) for {idea.get('business_name')} tailored to Moses Ndifon "
+        "(GSU Perimeter College employee, USAID financial mgmt background, MBA, Stone Mountain GA, $920/mo surplus, ties to PH). "
+        "Use these markdown sections, kept TIGHT and ACTIONABLE (no fluff): "
+        "## Executive Summary (3 sentences). ## Market & Target Customers (3 bullets). "
+        "## Operations Plan (4 bullets). ## Financial Projections (Year 1 / Year 2 / Year 3 revenue + net, one line each). "
+        "## Startup Cost Breakdown (table-style, 4-6 line items totaling under $5k where possible). "
+        "## Risks & Mitigation (3 bullets). ## First 30 Days (5 specific actions with week numbers). "
+        "Be specific with dollar amounts and dates. Skip preamble. Be brief."
     )
     r = await chat.send_message(UserMessage(text=prompt))
     plan_text = r if isinstance(r, str) else str(r)
@@ -4245,7 +4247,7 @@ async def find_better_rate(utility_id: str, user_id: str = Depends(get_current_u
         session_id=f"util-{user_id}-{utility_id}",
         system_message=PLOS_SYSTEM_PROMPT,
     ).with_model("anthropic", "claude-sonnet-4-5-20250929")
-    r = await chat.send_message(UserMessage(text=u["claude_prompt"]))
+    r = await chat.send_message(UserMessage(text=u["claude_prompt"] + "\n\nIMPORTANT: Be CONCISE. Limit response to UNDER 500 words. Use bullet points only. Skip preamble."))
     text = r if isinstance(r, str) else str(r)
     return {"utility_id": utility_id, "provider": u["provider"], "recommendation": text}
 
