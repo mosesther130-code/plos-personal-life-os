@@ -1,0 +1,51 @@
+{
+  "summary": "Iteration 5 — Investments & Retirement module (backend + frontend) + regression. Backend: 17/17 pytest cases in test_investments_module.py passed in 12.1s including real Claude (contribution-optimizer ~3s). Verified: (1) POST /api/auth/login returns flat token+user_id+email+full_name (no nested 'user' object). (2) GET /api/investments/portfolio returns total_balance=$365,500, total_projected_at_65=$2.95M, total_monthly_contribution=$1,645, years_to_65=27, retirement_readiness_score=100 (capped), needed_corpus, monthly_gap=0, annual_income, investments[] with each account enriched (projected_at_65/annual_growth_rate/trend_pct). (3) GET /api/investments/readiness-gate returns snapshot{emergency_months,monthly_income,monthly_expenses,monthly_surplus,credit_card_debt,high_apr_debt,total_debt,emergency_fund} + 3-item checklist [emergency_fund(ready=T 9.2mo), cc_debt(ready=F $4,200), surplus(ready=T $5,490)] + ready_now[3 items: Increase TSP, HYSA, I-Bonds] + blocked[3 cards: Stock ETFs needs cc<$2K, Individual stocks needs em≥6mo/surplus≥$500/no high-APR, Crypto needs em≥6mo/high-APR<$1K/surplus≥$1K] + reassessment_in_months=16 + all_prereqs_met=False. (4) POST /api/investments/opportunities returns 5 ranked opportunities (TSP 100→VOO 90→I-Bonds 85→HYSA 70→Backdoor Roth 50) each with name/type/risk/est_return_annual_pct/min_to_start/match_score/prereqs_met/instructions[3-4 steps]. (5) GET /api/investments/market-readiness returns stock_ready=F/crypto_ready=F/risk_tolerance=5(default), snapshot, stock_conditions_to_meet=['Pay credit card debt below $2K (currently $4,200)'], crypto_conditions=['Reduce high-APR debt below $1K (currently $4,200)', 'Risk ≥7'], allocation=null when not stock_ready. (6) POST /api/investments/social-security with {40,120000,18,85} returns monthly_at_62=$1,805, monthly_at_67=$2,578, monthly_at_70=$3,197 (monotonic), lifetime totals, break_even_62_vs_67=78.7, break_even_67_vs_70=82.5, recommended_claim_age=70. (7) POST /api/investments/contribution-optimizer (Claude Sonnet 4.5 ~3s) returns recommendation 'You're crushing it — already 138% funded for retirement at 65. Before adding more to retirement, aggressively pay off that $4,200 Chase card at 22.99% APR…' + suggested_extra_monthly/target_account/allocation_advice/employer_match_status. (8) Regression: GET /api/dashboard, GET /api/alerts, POST /api/ai/daily-advice, GET /api/income, /expenses, /debts, POST /api/finance/payoff-plan, GET /api/career, /career/pipeline, /job-applications all return 200. Frontend mobile (390x844): login test1@plos.app→tap More tab→tap 'Investments' module-investments→navigates to /investments (NOT /module/investments) ✓; portfolio-card shows $365,500/$2.95M/$1,645mo/27yrs, retirement-readiness-ring shows '100', contribution-optimizer-card present, 4 nav cards (open-readiness-gate, open-opportunities, open-market-readiness, open-social-security) all visible+tappable. Readiness Gate: PREREQUISITES checklist with green-check/red-x icons (Emergency fund Met, CC debt 'X $4,200 — pay down $2,200 more', Positive cashflow Met $5,490/mo), READY NOW list (Increase TSP, HYSA, I-Bonds), NOT YET cards (Stock ETFs/Individual stocks/Crypto with x-marked prereqs), Re-assess notice. Opportunities: ranked cards w/ safety bands (LOW/LOW-MEDIUM/VERY LOW/MINIMAL), ~%/yr, min $, score% color-coded green/yellow, 'Start This Investment' or 'Prereqs not met' (lock icon) CTAs. Market Readiness: risk pills 1/3/5/7/9 (default 5, tapped 7 → updates ring tolerance), Stock Index ETFs + Crypto cards both 'NOT YET' with x-marked conditions. Social Security: 4 inputs (Current Age 40, Salary 120000, Years 18, Life 85), Calculate Estimates → Age 62 $1,805/mo lifetime $498,125, Age 67 $2,578/mo $556,910, Age 70 $3,197/mo lifetime $575,473 with 'BEST' badge, Break-Even Analysis section. Contribution Optimizer Generate button triggers Claude (~5s) and renders the recommendation text inline. Back navigation works on every sub-screen (readiness-back/opps-back/mkt-back/ss-back) returning to /investments. Home regression: snapshot cards income $8.9K/expenses $3.4K/surplus +$5.5K/NW $530K render; Emergency Fund Runway 9.2/6mo; AI Daily Advice with Refresh button. Bottom tabs Home/Finance/Career/Safety/More all rendered (verified in screenshot, see /tmp/home.png). No page errors, no red screen, no API 4xx/5xx. Console deprecation warnings persist (carry-over): shadow* / props.pointerEvents. Expo SDK 54 version drift unchanged.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "global", "issues": [
+        "Carry-over console deprecation warnings: 'shadow*' style props → use boxShadow; props.pointerEvents → use style.pointerEvents. Non-blocking, cosmetic."
+      ]}
+    ],
+    "react_native_issues": [
+      {"component": "package.json (expo, expo-font, expo-router)", "issue": "Version drift vs Expo SDK 54: expo@54.0.34 (expected ~54.0.35), expo-font@14.0.11 (expected ~14.0.12), expo-router@6.0.23 (expected ~6.0.24). Carry-over from iter_2/3/4. Reference: /app/frontend/package.json"}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_investments_module.py",
+    "/app/test_reports/pytest/investments_results.xml"
+  ],
+  "action_items": [
+    "(Carry-over) Run `yarn expo install --fix` to clear SDK 54 version drift warnings (expo/expo-font/expo-router).",
+    "(Carry-over) Replace deprecated `shadow*` style props with `boxShadow` and `props.pointerEvents` with `style.pointerEvents`.",
+    "(Carry-over) server.py is now ~2485 LOC after Investments additions — overdue for split into routers (auth, finance, debt, mortgage, career, investments, health, ai, dashboard, alerts, safety) before adding more modules.",
+    "(Optional polish) /api/auth/login response is flat (token, user_id, email, full_name) — if a future test or screen expects `data.user.email` it will break. Confirm contract is intentional; current frontend at /src/lib/api.ts works with the flat shape."
+  ],
+  "critical_code_review_comments": [
+    "All investments endpoints exclude `_id`/`user_id` in MongoDB projections — no ObjectId leaks observed.",
+    "Retirement readiness score is correctly capped 0-100 via min/max in server.py:1023; verified score=100 for seeded user (138% funded).",
+    "Break-even ages are computed deterministically (closed-form) — monotonic 62<67<70 monthly benefits verified.",
+    "Frontend /investments routes correctly to /investments (not /module/investments) — more.tsx MODULES uses route:'/investments' for investments key (line 42).",
+    "All 4 investment sub-screens have correct testIDs for backnav (readiness-back/opps-back/mkt-back/ss-back).",
+    "Contribution-optimizer uses claude-sonnet-4-5-20250929 via emergentintegrations; ~3-5s response with parseable JSON; falls back to truncated text if parse fails — graceful.",
+    "server.py LOC now ~2485 after Investments — split into routers before further growth (carry-over from iter_3/4).",
+    "/api/investments/portfolio annual_income is computed from active income_sources only — correct."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_investments_module.py (new — 17 tests: auth/portfolio/readiness-gate/opportunities/market-readiness/social-security/contribution-optimizer + regression dashboard/alerts/daily-advice/income/expenses/debts/payoff-plan/career/pipeline/job-apps)"
+  ],
+  "success_rate": {
+    "backend": "100% (17/17 new investments+regression tests in 12.1s; iter_1-4 total 58/58 still valid → 75/75 cumulative)",
+    "frontend": "100% of tested Investments flows (login→More→Investments→overview cards + 4 nav cards; Readiness Gate checklist/ready-now/blocked render; Opportunities ranked list w/ Start vs Prereqs-not-met CTAs; Market Readiness risk-pill update + stock/crypto NOT YET cards; Social Security form→Calculate→Age 62/67/70 benefits + break-even; Contribution Optimizer Claude inline; back-nav works on all 4 sub-screens; bottom tabs rendered; home snapshot+emergency-fund+AI-advice regression intact)"
+  },
+  "seed_data_creation": "None — used existing seeded user test1@plos.app from /app/memory/test_credentials.md (5 investments worth $365,500 total; debts including Chase Sapphire CC $4,200 @22.99% drives readiness-gate cc_ready=False as designed).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend URL: https://life-os-hub-32.preview.emergentagent.com. Creds /app/memory/test_credentials.md (test1@plos.app/test123). /api/auth/login returns FLAT {token, user_id, email, full_name} — NOT nested under 'user'. Pytest dir /app/backend/tests/ has 5 files = 75 cumulative tests (test_plos_api 30, test_dashboard_alerts_ai 8, test_finance_v3 12, test_career_module 8, test_investments_module 17). Investments routes: /investments + /investments/{readiness,opportunities,market-readiness,social-security}. Investments testIDs: portfolio-card, retirement-readiness-card/ring, contribution-optimizer-card, optimizer-generate, open-{readiness-gate,opportunities,market-readiness,social-security}, account-{id}, inv-back; sub-screens use {readiness-checklist, check-{key}, ready-{i}, blocked-{i}, readiness-back}, {opportunity-{i}, start-{i}, steps-{i}, opps-back}, {risk-card, risk-{1|3|5|7|9}, stock-readiness-card, crypto-readiness-card, allocation-card, mkt-back}, {ss-age/salary/years/life, ss-calc, ss-benefits, ss-age-{62|67|70}, ss-breakeven, ss-back}. Claude contribution-optimizer takes 3-5s. Seed data: 5 investments $365K, 4 debts including Chase Sapphire $4,200 (drives stock_ready=False), positive surplus $5.5K/mo, emergency 9.2mo (>6 ready).",
+  "rca_of_issue": "N/A — no functional regressions. Investments module ships clean. Only outstanding items are carry-over expo SDK 54 version drift + style-deprecation warnings from previous iterations."
+}

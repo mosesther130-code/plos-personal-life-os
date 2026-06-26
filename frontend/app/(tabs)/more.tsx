@@ -23,30 +23,72 @@ import {
 
 import { colors, spacing, radius } from "@/src/lib/theme";
 
-const MODULES = [
-  { key: "investments", title: "Investments", subtitle: "TSP, IRA, brokerage", icon: TrendingUp, color: colors.success, route: "/investments" },
-  { key: "business", title: "Business", subtitle: "Side ventures & income", icon: Building2, color: colors.warning, route: "/module/business" },
-  { key: "global", title: "Global Tools", subtitle: "Currency, time, travel docs", icon: Globe, color: colors.primaryGlow, route: "/module/global" },
-  { key: "travel", title: "Travel", subtitle: "Trips, bookings, itineraries", icon: Plane, color: "#A855F7", route: "/module/travel" },
-  { key: "legal", title: "Legal", subtitle: "Documents, wills, contracts", icon: Scale, color: "#F59E0B", route: "/module/legal" },
-  { key: "shopping", title: "Shopping", subtitle: "Deals & smart purchases", icon: ShoppingBag, color: "#EC4899", route: "/module/shopping" },
-  { key: "health", title: "Health", subtitle: "Insurance, wellness, records", icon: HeartPulse, color: "#EF4444", route: "/module/health" },
-];
+type ModuleItem = {
+  key: string;
+  title: string;
+  subtitle: string;
+  icon: any;
+  color: string;
+  route: string;
+};
 
-const _LEGACY_MODULES_REMOVE = [
-  { key: "investments", title: "Investments", subtitle: "TSP, IRA, brokerage", icon: TrendingUp, color: colors.success },
-  { key: "business", title: "Business", subtitle: "Side ventures & income", icon: Building2, color: colors.warning },
-  { key: "global", title: "Global Tools", subtitle: "Currency, time, travel docs", icon: Globe, color: colors.primaryGlow },
-  { key: "travel", title: "Travel", subtitle: "Trips, bookings, itineraries", icon: Plane, color: "#A855F7" },
-  { key: "legal", title: "Legal", subtitle: "Documents, wills, contracts", icon: Scale, color: "#F59E0B" },
-  { key: "shopping", title: "Shopping", subtitle: "Deals & smart purchases", icon: ShoppingBag, color: "#EC4899" },
-  { key: "health", title: "Health", subtitle: "Insurance, wellness, records", icon: HeartPulse, color: "#EF4444" },
-];
-  { key: "global", title: "Global Tools", subtitle: "Currency, time, travel docs", icon: Globe, color: colors.primaryGlow },
-  { key: "travel", title: "Travel", subtitle: "Trips, bookings, itineraries", icon: Plane, color: "#A855F7" },
-  { key: "legal", title: "Legal", subtitle: "Documents, wills, contracts", icon: Scale, color: "#F59E0B" },
-  { key: "shopping", title: "Shopping", subtitle: "Deals & smart purchases", icon: ShoppingBag, color: "#EC4899" },
-  { key: "health", title: "Health", subtitle: "Insurance, wellness, records", icon: HeartPulse, color: "#EF4444" },
+const MODULES: ModuleItem[] = [
+  {
+    key: "investments",
+    title: "Investments",
+    subtitle: "TSP, IRA, brokerage",
+    icon: TrendingUp,
+    color: colors.success,
+    route: "/investments",
+  },
+  {
+    key: "business",
+    title: "Business",
+    subtitle: "Side ventures & income",
+    icon: Building2,
+    color: colors.warning,
+    route: "/module/business",
+  },
+  {
+    key: "global",
+    title: "Global Tools",
+    subtitle: "Currency, time, travel docs",
+    icon: Globe,
+    color: colors.primaryGlow,
+    route: "/module/global",
+  },
+  {
+    key: "travel",
+    title: "Travel",
+    subtitle: "Trips, bookings, itineraries",
+    icon: Plane,
+    color: "#A855F7",
+    route: "/module/travel",
+  },
+  {
+    key: "legal",
+    title: "Legal",
+    subtitle: "Documents, wills, contracts",
+    icon: Scale,
+    color: "#F59E0B",
+    route: "/module/legal",
+  },
+  {
+    key: "shopping",
+    title: "Shopping",
+    subtitle: "Deals & smart purchases",
+    icon: ShoppingBag,
+    color: "#EC4899",
+    route: "/module/shopping",
+  },
+  {
+    key: "health",
+    title: "Health",
+    subtitle: "Insurance, wellness, records",
+    icon: HeartPulse,
+    color: "#EF4444",
+    route: "/module/health",
+  },
 ];
 
 export default function More() {
@@ -67,7 +109,7 @@ export default function More() {
               <TouchableOpacity
                 key={m.key}
                 style={styles.row}
-                onPress={() => router.push(`/module/${m.key}`)}
+                onPress={() => router.push(m.route as any)}
                 testID={`module-${m.key}`}
                 activeOpacity={0.7}
               >
@@ -87,7 +129,7 @@ export default function More() {
 
           <TouchableOpacity
             style={styles.row}
-            onPress={() => router.push("/chatbot")}
+            onPress={() => router.push("/chatbot" as any)}
             testID="module-chatbot"
             activeOpacity={0.7}
           >
@@ -105,7 +147,7 @@ export default function More() {
 
           <TouchableOpacity
             style={styles.row}
-            onPress={() => router.push("/settings")}
+            onPress={() => router.push("/settings" as any)}
             testID="module-settings"
             activeOpacity={0.7}
           >
