@@ -50,6 +50,13 @@ Every AI call (advice + chat) gathers the user's complete data context (income, 
 ## Iteration 12 — Business CRUD via EditModal (DONE)
 - **Business Ideas Advisor** now supports full Add/Edit/Delete via the shared EditModal bottom-sheet pattern. Seed ideas auto-persist to Mongo on first read (each gets a uuid + `source: "seed"`) so they become user-editable. AI-generated ideas tagged `source: "ai"`; user-added `source: "custom"`. Backend endpoints: `POST/PUT/DELETE /api/business/ideas[/{id}]`.
 - **Eden Heights Tracker** Edit/Delete via EditModal (name, location, municipality, size_hectares, current_value_usd, breakeven_year, concept). `DELETE /api/business/eden-heights` resets to factory defaults (4 ha / $12k / 3 phases / 8-item checklist).
-- Verified end-to-end: 10/10 backend pytest + 7/7 Playwright UI (iteration_12 report).
+## Iteration 13 — Travel Advisor (DONE)
+- **Travel Home**: Plan a Trip search, Philippines pinned card with live PHP/USD rate (ExchangeRate-API), 3 MOCKED deal alerts (ATL→MNL price drop, ATL→CDG, ATL→NRT) with Google Flights deep-links, upcoming trips list with status pills + days countdown.
+- **Trip Planner** (`/travel/[id]`): destination hero, Level 1–4 advisory card (color-coded), Philippines-specific Immigration & Bulacan notes + cross-link to Eden Heights, **consolidated Claude 4.5 destination insights** (best time, cultural notes, visa, vaccinations, packing list by 5 categories, do's/don'ts, emergency contacts with tap-to-call), MOCKED flight cards (Korean Air $687, JAL $894, PAL $742) + MOCKED Manila hotels (Marriott $89, Seda $65, Red Planet $38), Pre-travel checklist (13 items + Eden Heights extra when purpose=eden_heights, auto-passport check), trip cost estimator with monthly-surplus impact line.
+- **Passport screen** with renewal warning logic (>12mo green, 6–12mo yellow, <6mo red, expired red) + Renew deep-link + Global Entry/NEXUS/Other Visa storage.
+- 30 seeded US State Dept advisory levels (PH=2, RU=4, IL=4, JP=1, …) with fallback deep-link to travel.state.gov.
+- Mocks intentional: flights, hotels, deal alerts — UI badges + deep-links to Google Flights / Booking.com.
+- Tested: 18/18 backend pytest + 10/10 Playwright UI (iteration_13 report).
+
 
 

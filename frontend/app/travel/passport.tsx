@@ -52,7 +52,7 @@ export default function PassportScreen() {
     setLoading(true);
     try {
       const r = await travelApi.passport();
-      setForm((f: any) => ({ ...f, ...(r?.passport || {}) }));
+      setForm((f: any) => ({ ...f, ...Object.fromEntries(Object.entries(r?.passport || {}).map(([k, v]) => [k, v ?? ""])) }));
       setStatus(r?.status);
     } catch (_e) {}
     setLoading(false);
