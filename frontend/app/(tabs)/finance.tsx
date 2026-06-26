@@ -1,38 +1,101 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
+  TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Wallet, CreditCard, Receipt } from "lucide-react-native";
+import { useRouter } from "expo-router";
+import {
+  Plus,
+  Briefcase,
+  Coins,
+  HandCoins,
+  CreditCard,
+  ChevronRight,
+  Edit3,
+} from "lucide-react-native";
 
 import { financeApi } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
-import { Card } from "@/src/components/Card";
+import { EditModal, Field } from "@/src/components/EditModal";
+import { categoryMeta } from "@/src/lib/categories";
 
 const fmtUSD = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
 
+const INCOME_TYPE_ICON: Record<string, any> = {
+  salary: Briefcase,
+  benefits: HandCoins,
+  side: Coins,
+};
+
+const incomeFields: Field[] = [
+  { key: "source_name", label: "Source", kind: "text", placeholder: "e.g. Primary Salary" },
+  {
+    key: "type",
+    label: "Type",
+    kind: "select",
+    options: [
+      { value: "salary", label: "Salary" },
+      { value: "side", label: "Side" },
+      { value: "benefits", label: "Benefits" },
+    ],
+  },
+  { key: "gross_monthly", label: "Gross Monthly ($)", kind: "number" },
+  { key: "net_monthly", label: "Net Monthly ($)", kind: "number" },
+  { key: "is_active", label: "Active", kind: "boolean" },
+];
+
+const expenseFields: Field[] = [
+  { key: "vendor", label: "Vendor", kind: "text", placeholder: "e.g. Netflix" },
+  {
+    key: "category",
+    label: "Category",
+    kind: "select",
+    options: [
+      { value: "Housing", label: "Housing" },
+      { value: "Utilities", label: "Utilities" },
+      { value: "Insurance", label: "Insurance" },
+      { value: "Transport", label: "Transport" },
+      { value: "Groceries", label: "Groceries" },
+      { value: "Phone", label: "Phone" },
+      { value: "Streaming", label: "Streaming" },
+      { value: "Debt", label: "Debt Payment" },
+      { value: "Health", label: "Health" },
+      { value: "Other", label: "Other" },
+    ],
+  },
+  { key: "monthly_amount", label: "Monthly Amount ($)", kind: "number" },
+  { key: "due_day_of_month", label: "Due Day (1-28)", kind: "number" },
+  { key: "auto_pay", label: "Auto-pay", kind: "boolean" },
+];
+
 export default function Finance() {
+  const router = useRouter();
   const [income, setIncome] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
-  const [debts, setDebts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  const [incomeModal, setIncomeModal] = useState<{ open: boolean; item?: any }>({
+    open: false,
+  });
+  const [expenseModal, setExpenseModal] = useState<{ open: boolean; item?: any }>({
+    open: false,
+  });
+
   const load = useCallback(async () => {
     try {
-      const [i, e, d] = await Promise.all([
+      const [i, e] = await Promise.all([
         financeApi.listIncome(),
         financeApi.listExpenses(),
-        financeApi.listDebts(),
       ]);
       setIncome(i);
       setExpenses(e);
-      setDebts(d);
     } catch (_e) {}
   }, []);
 
@@ -44,6 +107,50 @@ export default function Finance() {
     })();
   }, [load]);
 
+  const totals = useMemo(() => {
+    const inc = income.reduce(
+      (s, i) => s + (i.is_active ? i.net_monthly : 0),
+      0
+    );
+    const exp = expenses.reduce((s, e) => s + e.monthly_amount, 0);
+    return { income: inc, expenses: exp, surplus: inc - exp };
+  }, [income, expenses]);
+
+  const maxExpense = useMemo(
+    () => Math.max(1, ...expenses.map((e) => e.monthly_amount)),
+    [expenses]
+  );
+
+  const onSaveIncome = async (vals: any) => {
+    if (incomeModal.item) {
+      await financeApi.updateIncome(incomeModal.item.income_id, vals);
+    } else {
+      await financeApi.createIncome(vals);
+    }
+    await load();
+  };
+
+  const onDeleteIncome = async () => {
+    if (!incomeModal.item) return;
+    await financeApi.deleteIncome(incomeModal.item.income_id);
+    await load();
+  };
+
+  const onSaveExpense = async (vals: any) => {
+    if (expenseModal.item) {
+      await financeApi.updateExpense(expenseModal.item.expense_id, vals);
+    } else {
+      await financeApi.createExpense(vals);
+    }
+    await load();
+  };
+
+  const onDeleteExpense = async () => {
+    if (!expenseModal.item) return;
+    await financeApi.deleteExpense(expenseModal.item.expense_id);
+    await load();
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container} edges={["top"]}>
@@ -54,17 +161,11 @@ export default function Finance() {
     );
   }
 
-  const totalIncome = income.reduce(
-    (s, i) => s + (i.is_active ? i.net_monthly : 0),
-    0
-  );
-  const totalExpenses = expenses.reduce((s, e) => s + e.monthly_amount, 0);
-  const totalDebt = debts.reduce((s, d) => s + d.balance, 0);
-
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <ScrollView
         contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -77,119 +178,234 @@ export default function Finance() {
           />
         }
       >
-        <Text style={styles.h1}>Finance</Text>
+        <Text style={styles.h1}>Financial Snapshot</Text>
 
-        {/* Income */}
-        <Section
-          icon={<Wallet color={colors.success} size={18} />}
-          title="Income"
-          subtitle={`${fmtUSD(totalIncome)} / month`}
-          testID="finance-income-section"
+        {/* 1. Summary row */}
+        <View style={styles.summaryRow} testID="snapshot-summary-row">
+          <SummaryCard
+            label="Income"
+            value={fmtUSD(totals.income)}
+            color={colors.success}
+            testID="summary-income"
+          />
+          <SummaryCard
+            label="Outflow"
+            value={fmtUSD(totals.expenses)}
+            color={colors.danger}
+            testID="summary-outflow"
+          />
+          <SummaryCard
+            label="Surplus"
+            value={`${totals.surplus >= 0 ? "+" : ""}${fmtUSD(totals.surplus)}`}
+            color={totals.surplus >= 0 ? colors.success : colors.danger}
+            highlight
+            testID="summary-surplus"
+          />
+        </View>
+
+        {/* Debt manager entry */}
+        <TouchableOpacity
+          style={styles.debtMgrBtn}
+          onPress={() => router.push("/finance/debt-manager")}
+          testID="open-debt-manager"
+          activeOpacity={0.85}
         >
+          <View style={styles.debtMgrIcon}>
+            <CreditCard size={18} color={colors.danger} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.debtMgrTitle}>Debt Manager</Text>
+            <Text style={styles.debtMgrSub}>
+              Avalanche vs snowball · AI payoff plan
+            </Text>
+          </View>
+          <ChevronRight color={colors.textSecondary} size={18} />
+        </TouchableOpacity>
+
+        {/* 2. Income Sources */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Income Sources</Text>
+          <TouchableOpacity
+            onPress={() => setIncomeModal({ open: true })}
+            style={styles.addBtn}
+            testID="add-income-button"
+          >
+            <Plus size={14} color={colors.primaryGlow} />
+            <Text style={styles.addBtnText}>Add</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.list}>
           {income.length === 0 ? (
             <Text style={styles.empty}>No income sources yet</Text>
           ) : (
-            income.map((i) => (
-              <Row
-                key={i.income_id}
-                title={i.source_name}
-                sub={i.type.toUpperCase()}
-                amount={fmtUSD(i.net_monthly)}
-                color={colors.success}
-              />
-            ))
+            income.map((i) => {
+              const Icon = INCOME_TYPE_ICON[i.type] || Briefcase;
+              return (
+                <TouchableOpacity
+                  key={i.income_id}
+                  style={styles.incomeRow}
+                  onPress={() => setIncomeModal({ open: true, item: i })}
+                  testID={`income-row-${i.income_id}`}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.iconWrap, { backgroundColor: "rgba(16,185,129,0.15)" }]}>
+                    <Icon color={colors.success} size={18} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.rowTitle}>{i.source_name}</Text>
+                    <Text style={styles.rowSub}>
+                      {i.type} {i.is_active ? "" : "· inactive"}
+                    </Text>
+                  </View>
+                  <Text style={styles.incomeAmount}>
+                    +{fmtUSD(i.net_monthly)}
+                  </Text>
+                  <Edit3 color={colors.textTertiary} size={14} style={{ marginLeft: 6 }} />
+                </TouchableOpacity>
+              );
+            })
           )}
-        </Section>
+        </View>
 
-        {/* Expenses */}
-        <Section
-          icon={<Receipt color={colors.warning} size={18} />}
-          title="Expenses"
-          subtitle={`${fmtUSD(totalExpenses)} / month`}
-          testID="finance-expenses-section"
-        >
+        {/* 3. Monthly Expenses */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Monthly Expenses</Text>
+          <TouchableOpacity
+            onPress={() => setExpenseModal({ open: true })}
+            style={styles.addBtn}
+            testID="add-expense-button"
+          >
+            <Plus size={14} color={colors.primaryGlow} />
+            <Text style={styles.addBtnText}>Add</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.list}>
           {expenses.length === 0 ? (
-            <Text style={styles.empty}>No expenses tracked</Text>
+            <Text style={styles.empty}>No expenses yet</Text>
           ) : (
-            expenses.map((e) => (
-              <Row
-                key={e.expense_id}
-                title={e.vendor}
-                sub={`${e.category} · Day ${e.due_day_of_month}`}
-                amount={fmtUSD(e.monthly_amount)}
-                color={colors.danger}
-              />
-            ))
+            expenses.map((e) => {
+              const meta = categoryMeta(e.category);
+              const Icon = meta.icon;
+              const proportion = e.monthly_amount / maxExpense;
+              return (
+                <TouchableOpacity
+                  key={e.expense_id}
+                  style={styles.expenseRow}
+                  onPress={() => setExpenseModal({ open: true, item: e })}
+                  testID={`expense-row-${e.expense_id}`}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.expenseTop}>
+                    <View
+                      style={[
+                        styles.iconWrap,
+                        { backgroundColor: `${meta.color}26` },
+                      ]}
+                    >
+                      <Icon color={meta.color} size={18} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.rowTitle}>{e.vendor}</Text>
+                      <Text style={styles.rowSub}>
+                        {e.category} · day {e.due_day_of_month}
+                        {e.auto_pay ? " · auto" : ""}
+                      </Text>
+                    </View>
+                    <Text style={styles.expenseAmount}>
+                      {fmtUSD(e.monthly_amount)}
+                    </Text>
+                  </View>
+                  <View style={styles.barTrack}>
+                    <View
+                      style={[
+                        styles.barFill,
+                        {
+                          width: `${Math.max(4, proportion * 100)}%`,
+                          backgroundColor: meta.color,
+                        },
+                      ]}
+                    />
+                  </View>
+                </TouchableOpacity>
+              );
+            })
           )}
-        </Section>
-
-        {/* Debts */}
-        <Section
-          icon={<CreditCard color={colors.danger} size={18} />}
-          title="Debts"
-          subtitle={`${fmtUSD(totalDebt)} total balance`}
-          testID="finance-debts-section"
-        >
-          {debts.length === 0 ? (
-            <Text style={styles.empty}>No debts tracked</Text>
-          ) : (
-            debts.map((d) => (
-              <Row
-                key={d.debt_id}
-                title={d.lender}
-                sub={`${d.debt_type.replace("_", " ")} · ${d.apr}% APR`}
-                amount={fmtUSD(d.balance)}
-                color={colors.danger}
-              />
-            ))
-          )}
-        </Section>
+        </View>
 
         <View style={{ height: 100 }} />
       </ScrollView>
+
+      <EditModal
+        visible={incomeModal.open}
+        title={incomeModal.item ? "Edit Income" : "Add Income"}
+        fields={incomeFields}
+        initial={
+          incomeModal.item || {
+            source_name: "",
+            type: "salary",
+            gross_monthly: 0,
+            net_monthly: 0,
+            is_active: true,
+          }
+        }
+        onClose={() => setIncomeModal({ open: false })}
+        onSubmit={onSaveIncome}
+        onDelete={incomeModal.item ? onDeleteIncome : undefined}
+        testID="income-modal"
+      />
+
+      <EditModal
+        visible={expenseModal.open}
+        title={expenseModal.item ? "Edit Expense" : "Add Expense"}
+        fields={expenseFields}
+        initial={
+          expenseModal.item || {
+            vendor: "",
+            category: "Other",
+            monthly_amount: 0,
+            due_day_of_month: 1,
+            auto_pay: false,
+          }
+        }
+        onClose={() => setExpenseModal({ open: false })}
+        onSubmit={onSaveExpense}
+        onDelete={expenseModal.item ? onDeleteExpense : undefined}
+        testID="expense-modal"
+      />
     </SafeAreaView>
   );
 }
 
-function Section({
-  icon,
-  title,
-  subtitle,
-  children,
-  testID,
-}: any) {
-  return (
-    <View style={{ marginTop: spacing.xxl }} testID={testID}>
-      <View style={styles.secHeader}>
-        <View style={styles.iconBox}>{icon}</View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.secTitle}>{title}</Text>
-          <Text style={styles.secSub}>{subtitle}</Text>
-        </View>
-      </View>
-      <Card style={{ padding: 0 }}>{children}</Card>
-    </View>
-  );
-}
-
-function Row({
-  title,
-  sub,
-  amount,
+function SummaryCard({
+  label,
+  value,
   color,
+  highlight,
+  testID,
 }: {
-  title: string;
-  sub: string;
-  amount: string;
+  label: string;
+  value: string;
   color: string;
+  highlight?: boolean;
+  testID?: string;
 }) {
   return (
-    <View style={styles.row}>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.rowTitle}>{title}</Text>
-        <Text style={styles.rowSub}>{sub}</Text>
-      </View>
-      <Text style={[styles.rowAmount, { color }]}>{amount}</Text>
+    <View
+      style={[
+        styles.summaryCard,
+        highlight && {
+          borderColor: color,
+          backgroundColor: "rgba(16, 185, 129, 0.08)",
+        },
+      ]}
+      testID={testID}
+    >
+      <Text style={styles.summaryLabel}>{label}</Text>
+      <Text style={[styles.summaryValue, { color }]} numberOfLines={1}>
+        {value}
+      </Text>
     </View>
   );
 }
@@ -200,46 +416,146 @@ const styles = StyleSheet.create({
   scroll: { padding: spacing.xl, paddingTop: spacing.lg },
   h1: {
     color: colors.textPrimary,
-    fontSize: 30,
+    fontSize: 28,
     fontWeight: "300",
     letterSpacing: -0.5,
-    marginBottom: spacing.md,
+    marginBottom: spacing.lg,
   },
-  secHeader: {
+
+  // Summary row
+  summaryRow: { flexDirection: "row", gap: spacing.sm },
+  summaryCard: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderColor: colors.borderSubtle,
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+  },
+  summaryLabel: {
+    color: colors.textTertiary,
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+    marginBottom: 4,
+  },
+  summaryValue: { fontSize: 16, fontWeight: "700", letterSpacing: -0.3 },
+
+  // Debt manager button
+  debtMgrBtn: {
+    marginTop: spacing.lg,
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: spacing.md,
+    gap: spacing.md,
+    padding: spacing.lg,
+    backgroundColor: colors.surface,
+    borderColor: "rgba(239, 68, 68, 0.25)",
+    borderWidth: 1,
+    borderRadius: radius.lg,
   },
-  iconBox: {
+  debtMgrIcon: {
     width: 36,
     height: 36,
     borderRadius: radius.md,
-    backgroundColor: colors.surfaceElevated,
+    backgroundColor: "rgba(239, 68, 68, 0.15)",
     alignItems: "center",
     justifyContent: "center",
-    marginRight: spacing.md,
   },
-  secTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: "600" },
-  secSub: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
-  row: {
+  debtMgrTitle: { color: colors.textPrimary, fontWeight: "700", fontSize: 14 },
+  debtMgrSub: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
+
+  // Sections
+  sectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: spacing.xxl,
+    marginBottom: spacing.md,
+  },
+  sectionTitle: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  addBtn: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: spacing.lg,
-    paddingHorizontal: spacing.xl,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderSubtle,
+    gap: 4,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: radius.sm,
+    backgroundColor: colors.primaryMuted,
   },
-  rowTitle: { color: colors.textPrimary, fontSize: 15, fontWeight: "500" },
-  rowSub: {
-    color: colors.textTertiary,
+  addBtnText: {
+    color: colors.primaryGlow,
     fontSize: 12,
-    marginTop: 2,
-    textTransform: "capitalize",
+    fontWeight: "700",
+    letterSpacing: 0.5,
   },
-  rowAmount: { fontSize: 16, fontWeight: "700" },
+  list: {
+    backgroundColor: colors.surface,
+    borderColor: colors.borderSubtle,
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    overflow: "hidden",
+  },
   empty: {
     color: colors.textTertiary,
     padding: spacing.xl,
     textAlign: "center",
   },
+
+  // Rows
+  iconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  rowTitle: { color: colors.textPrimary, fontSize: 14, fontWeight: "600" },
+  rowSub: { color: colors.textSecondary, fontSize: 12, marginTop: 2, textTransform: "capitalize" },
+
+  // Income rows
+  incomeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    gap: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderSubtle,
+  },
+  incomeAmount: {
+    color: colors.success,
+    fontWeight: "700",
+    fontSize: 15,
+  },
+
+  // Expense rows
+  expenseRow: {
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderSubtle,
+    gap: spacing.sm,
+  },
+  expenseTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  expenseAmount: {
+    color: colors.textPrimary,
+    fontWeight: "700",
+    fontSize: 15,
+  },
+  barTrack: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.borderSubtle,
+    overflow: "hidden",
+  },
+  barFill: { height: "100%", borderRadius: 2 },
 });

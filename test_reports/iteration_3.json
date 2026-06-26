@@ -1,0 +1,50 @@
+{
+  "summary": "Iteration 3 — Financial Snapshot, Debt Manager, Payoff Plan, Mortgage Analyzer. Backend: 12/12 new pytest tests passed in 11.3s (list income/expenses/debts regression; PUT income/expenses/debts update + 404 for bogus IDs; POST /api/finance/payoff-plan baseline interest_saved=0, avalanche orders by APR (Chase Sapphire 22.99% first in schedule), snowball orders by balance (Chase $4,200 first); POST /api/ai/debt-strategy returns real Claude recommendation w/ recommended_extra/interest_saved/months_to_debt_free/payment_order; POST /api/finance/mortgage-scenarios returns 3 scenarios with correct math (extra-payment total_interest $185,774 < pay-min $219,993; refi @5% monthly < original min $2,350) plus AI best_scenario+reasoning). Frontend mobile (390x844): login → /finance shows snapshot-summary-row with INCOME $8,900 / OUTFLOW $3,410 / SURPLUS +$5,490 (green border on surplus card); 3 income rows + 6 expense rows with category-colored icons, sub labels (Day · Auto), proportional bars, amounts; tapping income-row opens edit modal prefilled with Source/Type/Gross/Net/Active + Delete button shown only in edit mode; open-debt-manager → /finance/debt-manager: strategy-toggle defaults Avalanche, Chase Sapphire shows 'FOCUS DEBT · HIGHEST APR' pill (44mo); switching to Snowball reorders; 4 debt-card-* rendered with lender, type+APR, large red balance, min/month, colored payoff pill; extra-chip-500 click shows extra-savings text; ai-strategy-generate triggers real Claude (~6s) and renders 549-char recommendation in ai-strategy-card; build-payoff-plan-button navigates to /finance/payoff-plan?strategy=avalanche&extra=500 with 166 payoff-month rows, M8=Chase Sapphire · PAID OFF marker; open-mortgage-analyzer (bottom of debt-manager) navigates to /finance/mortgage-analyzer showing Wells Fargo 6.25% balance $312,000, 3 scenario cards (Pay Min $2,350/19y11m/$219,993 — AI PICK badge, Extra $200/mo $2,550/16y4m/$185,774, Refi @5.25% $1,723/30y/$308,235), and mortgage-ai-card with Claude reasoning naming Chase 22.99% as higher-leverage target. testID naming differs from review spec but functional equivalents exist (see action_items). Deprecated package + version drift findings carried from iteration_2.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "global", "issues": [
+        "Console deprecation warnings persist on every screen: 'shadow*' style props (use boxShadow) and props.pointerEvents (use style.pointerEvents). Non-blocking."
+      ]}
+    ],
+    "react_native_issues": [
+      {"component": "package.json (expo, expo-font, expo-router)", "issue": "Version drift vs Expo SDK 54: expo@54.0.34 (expected ~54.0.35), expo-font@14.0.11 (expected ~14.0.12), expo-router@6.0.23 (expected ~6.0.24). Warning prints on every expo startup. Reference: /app/frontend/package.json"}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_finance_v3.py",
+    "/app/test_reports/pytest/finance_v3_results.xml"
+  ],
+  "action_items": [
+    "TestID naming mismatch vs review spec (functional but inconsistent for downstream automation): finance.tsx uses `summary-income|outflow|surplus` (spec said `snapshot-card-{income|outflow|surplus}`); modal uses `income-modal` / `expense-modal` (spec said `income-modal-sheet`); debt-manager uses `ai-strategy-card` (spec said `ai-strategy-recommendation`); mortgage-analyzer uses `scenario-{slug}` like `scenario-pay-minimum` instead of `scenario-0|1|2`. Either rename to match spec or update spec — pick one.",
+    "(Carry-over) Run `yarn expo install --fix` to silence expo SDK 54 version drift warnings.",
+    "(Carry-over) Replace deprecated shadow* style props with boxShadow and props.pointerEvents with style.pointerEvents (cosmetic).",
+    "(Carry-over) server.py is now ~1670 LOC — exceeds 700-line guideline. Split into routers (auth, finance, debt, mortgage, career, health, ai, dashboard, alerts)."
+  ],
+  "critical_code_review_comments": [
+    "_simulate_payoff and _amortize are deterministic and correct; verified with sanity checks (extra payment reduces interest, refi at lower APR reduces monthly).",
+    "PUT endpoints for income/expenses/debts properly return 404 when matched_count==0 — verified.",
+    "All MongoDB queries exclude `_id` projection — no ObjectId leaks observed in any new endpoint.",
+    "Mortgage endpoint accepts optional debt_id and falls back to debt_type='mortgage' — sensible default.",
+    "Claude calls use claude-sonnet-4-5-20250929 via emergentintegrations; both /api/ai/debt-strategy and /api/finance/mortgage-scenarios respond in ~5-8s with parseable JSON.",
+    "server.py grew from ~1297 to ~1670 LOC this iteration — modularize before adding more routers.",
+    "Finance tab is correctly outside the (tabs) group's nested screens — uses /finance/* stack via router.push, navigation works."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_finance_v3.py (new — 12 tests for finance snapshot listings, PUT updates + 404, payoff-plan baseline/avalanche/snowball, ai-debt-strategy real Claude, mortgage-scenarios math + AI)"
+  ],
+  "success_rate": {
+    "backend": "100% (12/12 new finance tests; iteration_1+2 38/38 still valid)",
+    "frontend": "100% of tested finance flows (snapshot 3 cards, income/expense lists, edit modal, debt manager toggle + 4 debt cards + extra chips + AI strategy real Claude, payoff plan with 166 month-by-month rows + PAID OFF marker, mortgage analyzer 3 scenarios + AI reasoning)"
+  },
+  "seed_data_creation": "Re-ran POST /api/seed-demo at start of pytest module to restore canonical demo data for test1@plos.app (3 income / 6 expense / 4 debts / 2 assets / 5 investments).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend URL: https://life-os-hub-32.preview.emergentagent.com. Creds in /app/memory/test_credentials.md. Pytest at /app/backend/tests/: test_plos_api.py (30) + test_dashboard_alerts_ai.py (8) + test_finance_v3.py (12) = 50 total. Run with `pytest /app/backend/tests/ -v`. AI calls take 5-8s — keep timeouts >=120s. Finance routes: /(tabs)/finance, /finance/debt-manager, /finance/payoff-plan?strategy=&extra=, /finance/mortgage-analyzer. TestIDs documented in this report's action_items (note spec vs actual mismatch).",
+  "rca_of_issue": "N/A — no functional regressions. All requested features working end-to-end with real Claude integration. Only outstanding items are cosmetic testID rename mismatch vs review spec and carry-over package version drift."
+}

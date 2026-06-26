@@ -438,6 +438,24 @@ async def delete_income(income_id: str, user_id: str = Depends(get_current_user_
     return {"ok": True}
 
 
+@api_router.put("/income/{income_id}", response_model=IncomeSource)
+async def update_income(
+    income_id: str,
+    payload: IncomeSourceCreate,
+    user_id: str = Depends(get_current_user_id),
+):
+    update = {k: v for k, v in payload.dict().items() if v is not None}
+    res = await db.income_sources.update_one(
+        {"income_id": income_id, "user_id": user_id}, {"$set": update}
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Income source not found")
+    doc = await db.income_sources.find_one(
+        {"income_id": income_id, "user_id": user_id}, {"_id": 0, "user_id": 0}
+    )
+    return IncomeSource(**doc)
+
+
 # ----------------------------- Expenses --------------------------------
 @api_router.get("/expenses", response_model=List[Expense])
 async def list_expenses(user_id: str = Depends(get_current_user_id)):
@@ -460,6 +478,24 @@ async def delete_expense(expense_id: str, user_id: str = Depends(get_current_use
     return {"ok": True}
 
 
+@api_router.put("/expenses/{expense_id}", response_model=Expense)
+async def update_expense(
+    expense_id: str,
+    payload: ExpenseCreate,
+    user_id: str = Depends(get_current_user_id),
+):
+    update = {k: v for k, v in payload.dict().items() if v is not None}
+    res = await db.expenses.update_one(
+        {"expense_id": expense_id, "user_id": user_id}, {"$set": update}
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Expense not found")
+    doc = await db.expenses.find_one(
+        {"expense_id": expense_id, "user_id": user_id}, {"_id": 0, "user_id": 0}
+    )
+    return Expense(**doc)
+
+
 # ----------------------------- Debts -----------------------------------
 @api_router.get("/debts", response_model=List[Debt])
 async def list_debts(user_id: str = Depends(get_current_user_id)):
@@ -480,6 +516,342 @@ async def create_debt(payload: DebtCreate, user_id: str = Depends(get_current_us
 async def delete_debt(debt_id: str, user_id: str = Depends(get_current_user_id)):
     await db.debts.delete_one({"debt_id": debt_id, "user_id": user_id})
     return {"ok": True}
+
+
+@api_router.put("/debts/{debt_id}", response_model=Debt)
+async def update_debt(
+    debt_id: str,
+    payload: DebtCreate,
+    user_id: str = Depends(get_current_user_id),
+):
+    update = {k: v for k, v in payload.dict().items() if v is not None}
+    res = await db.debts.update_one(
+        {"debt_id": debt_id, "user_id": user_id}, {"$set": update}
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Debt not found")
+    doc = await db.debts.find_one(
+        {"debt_id": debt_id, "user_id": user_id}, {"_id": 0, "user_id": 0}
+    )
+    return Debt(**doc)
+
+
+# ----------------------------- Debt analysis ---------------------------
+def _months_to_payoff(balance: float, apr: float, monthly_payment: float) -> Optional[int]:
+    """Return months to pay off a debt; None if payment doesn't cover interest."""
+    if balance <= 0:
+        return 0
+    monthly_rate = (apr / 100.0) / 12.0
+    if monthly_payment <= balance * monthly_rate:
+        return None
+    if monthly_rate == 0:
+        return int((balance / monthly_payment) + 0.999)
+    import math
+    n = -math.log(1 - (balance * monthly_rate) / monthly_payment) / math.log(1 + monthly_rate)
+    return int(n + 0.999)
+
+
+def _simulate_payoff(
+    debts: List[Dict[str, Any]], strategy: str, extra_monthly: float = 0
+) -> Dict[str, Any]:
+    """Simulate month-by-month payoff. Returns total_interest, months, schedule (per month focus)."""
+    # Deep copy state
+    state = [
+        {
+            "debt_id": d["debt_id"],
+            "lender": d["lender"],
+            "balance": float(d["balance"]),
+            "apr": float(d["apr"]),
+            "min_pay": float(d["minimum_payment"]),
+        }
+        for d in debts
+    ]
+    total_interest = 0.0
+    schedule: List[Dict[str, Any]] = []
+    month = 0
+    while any(d["balance"] > 0.01 for d in state) and month < 600:
+        month += 1
+        # Apply interest
+        for d in state:
+            if d["balance"] > 0:
+                d["balance"] += d["balance"] * (d["apr"] / 100.0 / 12.0)
+                total_interest += d["balance"] - (d["balance"] / (1 + d["apr"] / 100.0 / 12.0))
+        # Choose focus debt
+        active = [d for d in state if d["balance"] > 0]
+        if not active:
+            break
+        if strategy == "snowball":
+            active.sort(key=lambda x: x["balance"])
+        else:
+            active.sort(key=lambda x: -x["apr"])
+        focus = active[0]
+
+        # Pay minimums on others first
+        for d in state:
+            if d["balance"] > 0 and d["debt_id"] != focus["debt_id"]:
+                pay = min(d["min_pay"], d["balance"])
+                d["balance"] -= pay
+        # Pay focus debt: min + all extra + freed-up payments? Keep simple: min + extra.
+        focus_pay = min(focus["balance"], focus["min_pay"] + extra_monthly)
+        focus["balance"] -= focus_pay
+
+        schedule.append({
+            "month": month,
+            "focus_debt": focus["lender"],
+            "focus_debt_id": focus["debt_id"],
+            "focus_balance_after": round(focus["balance"], 2),
+            "total_remaining": round(sum(d["balance"] for d in state if d["balance"] > 0), 2),
+        })
+
+    return {
+        "total_interest": round(total_interest, 2),
+        "months": month,
+        "schedule": schedule,
+    }
+
+
+class PayoffPlanRequest(BaseModel):
+    strategy: str = "avalanche"  # avalanche/snowball
+    extra_monthly: float = 0
+
+
+@api_router.post("/finance/payoff-plan")
+async def payoff_plan(
+    payload: PayoffPlanRequest, user_id: str = Depends(get_current_user_id)
+):
+    debts = await db.debts.find({"user_id": user_id}, {"_id": 0, "user_id": 0}).to_list(50)
+    if not debts:
+        return {"strategy": payload.strategy, "total_interest": 0, "months": 0, "schedule": []}
+
+    base = _simulate_payoff(debts, payload.strategy, 0)
+    plan = _simulate_payoff(debts, payload.strategy, payload.extra_monthly)
+    interest_saved = round(max(0, base["total_interest"] - plan["total_interest"]), 2)
+
+    # Per-debt payoff months (at minimum payment alone)
+    per_debt = []
+    for d in debts:
+        m = _months_to_payoff(d["balance"], d["apr"], d["minimum_payment"])
+        per_debt.append({
+            "debt_id": d["debt_id"],
+            "lender": d["lender"],
+            "payoff_months_min_only": m,
+        })
+
+    return {
+        "strategy": payload.strategy,
+        "extra_monthly": payload.extra_monthly,
+        "total_interest": plan["total_interest"],
+        "baseline_interest": base["total_interest"],
+        "interest_saved": interest_saved,
+        "months": plan["months"],
+        "schedule": plan["schedule"],
+        "per_debt": per_debt,
+    }
+
+
+class DebtStrategyRequest(BaseModel):
+    strategy: str = "avalanche"
+    extra_monthly: float = 200
+
+
+@api_router.post("/ai/debt-strategy")
+async def ai_debt_strategy(
+    payload: DebtStrategyRequest, user_id: str = Depends(get_current_user_id)
+):
+    """Claude generates a debt strategy recommendation with payment order + extra
+    payment suggestion."""
+    debts = await db.debts.find({"user_id": user_id}, {"_id": 0, "user_id": 0}).to_list(50)
+    if not debts:
+        return {"summary": "No debts on file.", "payment_order": [], "recommended_extra": 0, "interest_saved": 0}
+
+    plan = _simulate_payoff(debts, payload.strategy, payload.extra_monthly)
+    base = _simulate_payoff(debts, payload.strategy, 0)
+    interest_saved = round(max(0, base["total_interest"] - plan["total_interest"]), 2)
+
+    # payment order = order debts will be killed in
+    order = []
+    seen = set()
+    for s in plan["schedule"]:
+        if s["focus_balance_after"] <= 0.01 and s["focus_debt_id"] not in seen:
+            order.append(s["focus_debt"])
+            seen.add(s["focus_debt_id"])
+
+    ctx = await gather_user_context(user_id)
+    prompt = f"""User selected '{payload.strategy}' debt payoff strategy with ${payload.extra_monthly}/month extra.
+
+Debts: {debts}
+Monthly income (net): ${sum(i.get('net_monthly',0) for i in ctx['income_sources'] or [] if i.get('is_active'))}
+Monthly expenses: ${sum(e.get('monthly_amount',0) for e in ctx['expenses'] or [])}
+
+Simulated plan: {plan['months']} months, ${plan['total_interest']:.0f} interest, ${interest_saved:.0f} saved vs minimums.
+Kill order: {order}
+
+Write a 3-4 sentence recommendation that says:
+1. Whether '{payload.strategy}' is the right strategy for THIS user
+2. Specific extra amount recommendation (could differ from ${payload.extra_monthly})
+3. One sharp next-action tip
+
+JSON only:
+{{"recommendation": "<3-4 sentences>", "recommended_extra": <number>}}
+"""
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=f"debt-{user_id}",
+        system_message=PLOS_SYSTEM_PROMPT,
+    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+
+    response = await chat.send_message(UserMessage(text=prompt))
+    text = response if isinstance(response, str) else str(response)
+    import json
+    import re
+    m = re.search(r"\{.*\}", text, re.DOTALL)
+    parsed = {}
+    if m:
+        try:
+            parsed = json.loads(m.group(0))
+        except Exception:
+            parsed = {}
+
+    return {
+        "strategy": payload.strategy,
+        "extra_monthly": payload.extra_monthly,
+        "recommendation": parsed.get("recommendation", text[:400]),
+        "recommended_extra": parsed.get("recommended_extra", payload.extra_monthly),
+        "total_interest": plan["total_interest"],
+        "interest_saved": interest_saved,
+        "months_to_debt_free": plan["months"],
+        "payment_order": order,
+    }
+
+
+# ----------------------------- Mortgage Analyzer -----------------------
+def _amortize(balance: float, apr: float, monthly_payment: float) -> Dict[str, float]:
+    """Standard amortization until balance <= 0."""
+    monthly_rate = (apr / 100.0) / 12.0
+    bal = balance
+    total_interest = 0.0
+    months = 0
+    while bal > 0.01 and months < 600:
+        interest = bal * monthly_rate
+        principal = monthly_payment - interest
+        if principal <= 0:
+            return {"months": -1, "total_interest": -1, "monthly_payment": monthly_payment}
+        if principal >= bal:
+            total_interest += interest
+            bal = 0
+            months += 1
+            break
+        bal -= principal
+        total_interest += interest
+        months += 1
+    return {
+        "months": months,
+        "total_interest": round(total_interest, 2),
+        "monthly_payment": round(monthly_payment, 2),
+    }
+
+
+def _payment_for_term(balance: float, apr: float, months: int) -> float:
+    monthly_rate = (apr / 100.0) / 12.0
+    if monthly_rate == 0:
+        return balance / months
+    return balance * monthly_rate / (1 - (1 + monthly_rate) ** (-months))
+
+
+class MortgageScenarioRequest(BaseModel):
+    debt_id: Optional[str] = None
+    extra_payment: float = 200
+    refinance_apr: Optional[float] = None  # if None, suggest current market rate
+    refinance_term_months: int = 360
+
+
+@api_router.post("/finance/mortgage-scenarios")
+async def mortgage_scenarios(
+    payload: MortgageScenarioRequest, user_id: str = Depends(get_current_user_id)
+):
+    # Find user's mortgage
+    query: Dict[str, Any] = {"user_id": user_id}
+    if payload.debt_id:
+        query["debt_id"] = payload.debt_id
+    else:
+        query["debt_type"] = "mortgage"
+    mortgage = await db.debts.find_one(query, {"_id": 0, "user_id": 0})
+    if not mortgage:
+        raise HTTPException(status_code=404, detail="No mortgage found")
+
+    balance = mortgage["balance"]
+    apr = mortgage["apr"]
+    min_pay = mortgage["minimum_payment"]
+
+    s1 = _amortize(balance, apr, min_pay)
+    s2 = _amortize(balance, apr, min_pay + payload.extra_payment)
+    refi_apr = payload.refinance_apr if payload.refinance_apr is not None else max(5.0, apr - 1.0)
+    refi_payment = _payment_for_term(balance, refi_apr, payload.refinance_term_months)
+    s3 = _amortize(balance, refi_apr, refi_payment)
+
+    scenarios = [
+        {
+            "name": "Pay Minimum",
+            "apr": apr,
+            "monthly_payment": round(min_pay, 2),
+            "months": s1["months"],
+            "total_interest": s1["total_interest"],
+        },
+        {
+            "name": f"Extra ${int(payload.extra_payment)}/mo",
+            "apr": apr,
+            "monthly_payment": round(min_pay + payload.extra_payment, 2),
+            "months": s2["months"],
+            "total_interest": s2["total_interest"],
+        },
+        {
+            "name": f"Refi @ {refi_apr:.2f}%",
+            "apr": refi_apr,
+            "monthly_payment": round(refi_payment, 2),
+            "months": s3["months"],
+            "total_interest": s3["total_interest"],
+        },
+    ]
+
+    # AI recommendation
+    ctx = await gather_user_context(user_id)
+    prompt = f"""Mortgage scenarios analysis:
+{scenarios}
+
+User financial context: monthly income ${sum(i.get('net_monthly',0) for i in ctx['income_sources'] or [] if i.get('is_active'))}, monthly expenses ${sum(e.get('monthly_amount',0) for e in ctx['expenses'] or [])}, other debts: {[d for d in ctx['debts'] if d['debt_type']!='mortgage']}
+
+Pick the best scenario and explain in 2-3 sentences why. Consider opportunity cost (could the extra payment go to higher-rate debt instead?). JSON only:
+{{"best_scenario": "<name from list>", "reasoning": "<2-3 sentences>"}}
+"""
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=f"mortgage-{user_id}",
+        system_message=PLOS_SYSTEM_PROMPT,
+    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+
+    response = await chat.send_message(UserMessage(text=prompt))
+    text = response if isinstance(response, str) else str(response)
+    import json
+    import re
+    m = re.search(r"\{.*\}", text, re.DOTALL)
+    parsed = {}
+    if m:
+        try:
+            parsed = json.loads(m.group(0))
+        except Exception:
+            parsed = {}
+
+    return {
+        "mortgage": {
+            "lender": mortgage["lender"],
+            "balance": balance,
+            "apr": apr,
+            "monthly_payment": min_pay,
+        },
+        "scenarios": scenarios,
+        "ai_best_scenario": parsed.get("best_scenario", scenarios[1]["name"]),
+        "ai_reasoning": parsed.get("reasoning", text[:400]),
+    }
 
 
 # ----------------------------- Assets ----------------------------------

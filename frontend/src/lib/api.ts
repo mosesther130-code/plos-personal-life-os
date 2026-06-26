@@ -78,18 +78,39 @@ export const financeApi = {
   listIncome: () => request<any[]>("/income"),
   createIncome: (data: any) =>
     request<any>("/income", { method: "POST", body: data }),
+  updateIncome: (id: string, data: any) =>
+    request<any>(`/income/${id}`, { method: "PUT", body: data }),
   deleteIncome: (id: string) =>
     request(`/income/${id}`, { method: "DELETE" }),
   listExpenses: () => request<any[]>("/expenses"),
   createExpense: (data: any) =>
     request<any>("/expenses", { method: "POST", body: data }),
+  updateExpense: (id: string, data: any) =>
+    request<any>(`/expenses/${id}`, { method: "PUT", body: data }),
   deleteExpense: (id: string) =>
     request(`/expenses/${id}`, { method: "DELETE" }),
   listDebts: () => request<any[]>("/debts"),
   createDebt: (data: any) =>
     request<any>("/debts", { method: "POST", body: data }),
+  updateDebt: (id: string, data: any) =>
+    request<any>(`/debts/${id}`, { method: "PUT", body: data }),
   deleteDebt: (id: string) =>
     request(`/debts/${id}`, { method: "DELETE" }),
+  payoffPlan: (strategy: string, extra_monthly: number) =>
+    request<any>("/finance/payoff-plan", {
+      method: "POST",
+      body: { strategy, extra_monthly },
+    }),
+  debtStrategy: (strategy: string, extra_monthly: number) =>
+    request<any>("/ai/debt-strategy", {
+      method: "POST",
+      body: { strategy, extra_monthly },
+    }),
+  mortgageScenarios: (extra_payment = 200, refinance_apr?: number) =>
+    request<any>("/finance/mortgage-scenarios", {
+      method: "POST",
+      body: { extra_payment, refinance_apr },
+    }),
 };
 
 // ----------------- Assets / Investments -----------------
