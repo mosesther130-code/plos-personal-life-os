@@ -132,7 +132,7 @@ export default function TravelHome() {
 
   const phTrip = trips.find((t) => (t.country_code || "").toUpperCase() === "PH");
   const phTitle = phTrip?.destination_name || "Philippines Quick Access";
-  const phSubtitleCity = phTrip?.city || phTemplate?.destination?.city || "Manila & Bulacan";
+  const phSubtitleCity = phTrip?.city || "Manila & Bulacan";
   const phPurposeKey = (phTrip?.purpose || phTemplate?.destination?.purpose || "eden_heights") as string;
   const phSubtitle = `${phSubtitleCity} · ${PURPOSE_LABELS[phPurposeKey] || PURPOSE_LABELS.eden_heights}`;
 

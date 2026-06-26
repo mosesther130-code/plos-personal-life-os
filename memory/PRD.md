@@ -56,7 +56,12 @@ Every AI call (advice + chat) gathers the user's complete data context (income, 
 - **Passport screen** with renewal warning logic (>12mo green, 6–12mo yellow, <6mo red, expired red) + Renew deep-link + Global Entry/NEXUS/Other Visa storage.
 - 30 seeded US State Dept advisory levels (PH=2, RU=4, IL=4, JP=1, …) with fallback deep-link to travel.state.gov.
 - Mocks intentional: flights, hotels, deal alerts — UI badges + deep-links to Google Flights / Booking.com.
-- Tested: 18/18 backend pytest + 10/10 Playwright UI (iteration_13 report).
+## Iteration 14 — Philippines Quick Access EditModal (DONE)
+- Added pencil edit badge to the Philippines pinned card on Travel home. Opens an EditModal bottom-sheet allowing the user to edit Card Title (destination_name), Primary City, Trip Purpose (7-option dropdown), Departure/Return dates, and Status. country/country_code are locked to "Philippines"/"PH".
+- If no PH trip exists, the editor creates one + pre-caches Claude insights via the fast-path; otherwise it updates the existing PH trip.
+- `stopPropagation` prevents the pencil tap from triggering the card's "Open Trip Planner" navigation.
+- Card title + subtitle now reflect the underlying PH trip (or sensible "Manila & Bulacan · Eden Heights Development" default).
+- Tested: 3/3 backend pytest + 6/6 Playwright steps (iteration_14 report).
 
 
 
