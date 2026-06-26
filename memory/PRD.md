@@ -47,5 +47,9 @@ Every AI call (advice + chat) gathers the user's complete data context (income, 
 - **Business Ideas Advisor**: Hub + Ideas screen with seed/Claude-generated cards (timeline/risk tags, startup/revenue ranges, next steps, full plan modal). Eden Heights Tracker for 4-hectare / $12,000 USD Bulacan eco-resort (5-yr ROI chart, 3 phases, PH compliance checklist, edit municipality/value).
 - **Shopping & Deals Engine**: Hub with monthly savings summary. Active Deals (5 curated, dismiss with web-confirm), Utilities Review with Claude 4.5 "Find Better Rate" (Georgia Power, AT&T, DeKalb Water), Registered Products CRUD for recall monitoring.
 - Backend endpoints (`/api/business/*`, `/api/shopping/*`) and frontend screens both tested via testing_agent (iteration_10 + iteration_11 reports).
-- Cloudflare 60s proxy compatibility: trimmed Claude prompts to keep all LLM endpoints under ceiling.
+## Iteration 12 — Business CRUD via EditModal (DONE)
+- **Business Ideas Advisor** now supports full Add/Edit/Delete via the shared EditModal bottom-sheet pattern. Seed ideas auto-persist to Mongo on first read (each gets a uuid + `source: "seed"`) so they become user-editable. AI-generated ideas tagged `source: "ai"`; user-added `source: "custom"`. Backend endpoints: `POST/PUT/DELETE /api/business/ideas[/{id}]`.
+- **Eden Heights Tracker** Edit/Delete via EditModal (name, location, municipality, size_hectares, current_value_usd, breakeven_year, concept). `DELETE /api/business/eden-heights` resets to factory defaults (4 ha / $12k / 3 phases / 8-item checklist).
+- Verified end-to-end: 10/10 backend pytest + 7/7 Playwright UI (iteration_12 report).
+
 
