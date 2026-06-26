@@ -4093,10 +4093,72 @@ SEED_UTILITIES = [
 # ----------------------------- Business Ideas -----------------------
 @api_router.get("/business/ideas")
 async def list_ideas(user_id: str = Depends(get_current_user_id)):
-    items = await db.business_ideas.find({"user_id": user_id}, {"_id": 0}).sort("created_at", 1).to_list(50)
+    items = await db.business_ideas.find({"user_id": user_id}, {"_id": 0}).sort([("order", 1), ("created_at", 1)]).to_list(50)
     if not items:
-        return {"ideas": SEED_BUSINESS_IDEAS, "is_seed": True}
+        # First read for this user: persist seed ideas so they become user-editable.
+        now = datetime.now(timezone.utc).isoformat()
+        seeded: List[Dict[str, Any]] = []
+        for i, seed in enumerate(SEED_BUSINESS_IDEAS):
+            doc = {
+                **seed,
+                "idea_id": str(uuid.uuid4()),
+                "user_id": user_id,
+                "created_at": now,
+                "updated_at": now,
+                "order": i,
+                "source": "seed",
+            }
+            await db.business_ideas.insert_one(doc)
+            seeded.append({k: v for k, v in doc.items() if k not in ("user_id", "_id")})
+        return {"ideas": seeded, "is_seed": True}
     return {"ideas": items, "is_seed": False}
+
+
+class BusinessIdeaIn(BaseModel):
+    business_name: str
+    timeline_tag: str = "Start Now"
+    risk_level: str = "Moderate"
+    description: str = ""
+    startup_cost_range: str = ""
+    estimated_monthly_revenue_range: str = ""
+    time_to_first_revenue: str = ""
+    next_steps: List[str] = []
+
+
+@api_router.post("/business/ideas")
+async def create_idea(body: BusinessIdeaIn, user_id: str = Depends(get_current_user_id)):
+    now = datetime.now(timezone.utc).isoformat()
+    cnt = await db.business_ideas.count_documents({"user_id": user_id})
+    doc = {
+        **body.dict(),
+        "idea_id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "created_at": now,
+        "updated_at": now,
+        "order": cnt,
+        "source": "custom",
+    }
+    await db.business_ideas.insert_one(doc)
+    return {k: v for k, v in doc.items() if k not in ("user_id", "_id")}
+
+
+@api_router.put("/business/ideas/{idea_id}")
+async def update_idea(idea_id: str, body: BusinessIdeaIn, user_id: str = Depends(get_current_user_id)):
+    existing = await db.business_ideas.find_one({"idea_id": idea_id, "user_id": user_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Idea not found")
+    update_fields = {**body.dict(), "updated_at": datetime.now(timezone.utc).isoformat()}
+    await db.business_ideas.update_one({"idea_id": idea_id, "user_id": user_id}, {"$set": update_fields})
+    merged = {**existing, **update_fields}
+    return {k: v for k, v in merged.items() if k not in ("user_id", "_id")}
+
+
+@api_router.delete("/business/ideas/{idea_id}")
+async def delete_idea(idea_id: str, user_id: str = Depends(get_current_user_id)):
+    r = await db.business_ideas.delete_one({"idea_id": idea_id, "user_id": user_id})
+    if r.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Idea not found")
+    return {"ok": True}
 
 
 @api_router.post("/business/ideas/generate")
@@ -4138,7 +4200,7 @@ async def generate_ideas(user_id: str = Depends(get_current_user_id)):
     now = datetime.now(timezone.utc).isoformat()
     await db.business_ideas.delete_many({"user_id": user_id})
     for i, idea in enumerate(ideas[:5]):
-        doc = {**idea, "idea_id": str(uuid.uuid4()), "user_id": user_id, "created_at": now, "order": i, "is_seed": False}
+        doc = {**idea, "idea_id": str(uuid.uuid4()), "user_id": user_id, "created_at": now, "updated_at": now, "order": i, "is_seed": False, "source": "ai"}
         await db.business_ideas.insert_one(doc)
     return {"ideas": ideas[:5], "is_seed": False, "generated_at": now}
 
@@ -4183,11 +4245,17 @@ async def get_eden_heights(user_id: str = Depends(get_current_user_id)):
 @api_router.put("/business/eden-heights")
 async def update_eden_heights(body: Dict[str, Any], user_id: str = Depends(get_current_user_id)):
     existing = await db.eden_heights.find_one({"user_id": user_id}, {"_id": 0}) or {**DEFAULT_EDEN_HEIGHTS}
-    for k in ("municipality", "size_hectares", "current_value_usd", "concept", "phases", "checklist"):
+    for k in ("municipality", "size_hectares", "current_value_usd", "concept", "phases", "checklist", "name", "location", "breakeven_year"):
         if k in body:
             existing[k] = body[k]
     existing["user_id"] = user_id
     await db.eden_heights.update_one({"user_id": user_id}, {"$set": existing}, upsert=True)
+    return {"ok": True}
+
+
+@api_router.delete("/business/eden-heights")
+async def delete_eden_heights(user_id: str = Depends(get_current_user_id)):
+    await db.eden_heights.delete_one({"user_id": user_id})
     return {"ok": True}
 
 

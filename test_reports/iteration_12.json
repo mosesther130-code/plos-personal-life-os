@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 12 — Business Ideas + Eden Heights CRUD via EditModal bottom-sheet — ALL TESTS PASS. Backend: 10/10 pytest cases against the public preview URL covering (1) GET /api/business/ideas seeds the 3 SEED_BUSINESS_IDEAS on first read with uuid-shaped idea_ids and source='seed' (is_seed:true); (2) second GET is non-seed; (3) POST creates a custom idea (source='custom', no _id, no user_id); (4) PUT updates and bumps updated_at (and preserves created_at); (5) DELETE removes it and (6) returns 404 for unknown idea_id; (7) GET /eden-heights returns defaults; (8) PUT /eden-heights accepts new fields name, breakeven_year, current_value_usd; (9) DELETE /eden-heights resets to factory (size_hectares=4, current_value_usd=12000, name='Eden Heights Sanctuary Resort', breakeven_year=4, phases=3, checklist=8). Frontend (Playwright, mobile viewport 390x900): logged in as test1@plos.app, navigated to /business/ideas, confirmed 3 seed cards render with 'Seed' pill (6 Seed text nodes — 2 per card from source-tag + region). Tapped + → EditModal opened, filled business_name, selected timeline 3-6 Months & risk Moderate, filled description, Save → new idea-3 card appeared with correct title/tags/Custom source pill. Tapped idea-3 → edit mode (Delete button present), changed name to 'My New Venture Updated' → Save → card title updated. Tapped idea-3 again → Delete → inline confirm box shown → 'Yes, delete' → card removed, list back to 3. Navigated to /business/eden, tapped pencil (eden-edit), edited name='Eden Heights 2.0' and current_value_usd=15000, Save → hero card showed 'Eden Heights 2.0' / $15,000. Tapped eden-edit again → Delete → confirm → Yes, delete → hero reloaded to factory defaults 'Eden Heights Sanctuary Resort' / $12,000 / Year 4 / 4 ha. No regressions, no React Native red screens. Two react-native-web deprecation warnings (shadow* and pointerEvents) persist from a dependency — same as iter 11, cosmetic only.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_12_business_crud.py",
+    "/app/test_reports/pytest/iteration_12_results.xml"
+  ],
+  "action_items": [
+    "(Carry-over from iter 10/11, still pending — not blocking) Split /app/backend/server.py (~4805 lines) into per-module routers and extract SEED_BUSINESS_IDEAS / DEFAULT_EDEN_HEIGHTS / SEED_DEALS / SEED_UTILITIES into /app/backend/seed/*.py.",
+    "(Cosmetic, dependency-sourced) react-native-web warnings 'shadow* style props are deprecated. Use boxShadow' and 'props.pointerEvents is deprecated. Use style.pointerEvents' — same as iter 11; not actionable from app code."
+  ],
+  "critical_code_review_comments": [
+    "server.py:4094-4161 — Business Ideas CRUD is clean: GET seeds on first read with fresh uuids, POST/PUT/DELETE properly scope by user_id, _id is excluded everywhere, 404 raised on PUT/DELETE for unknown idea_id. update_idea correctly preserves created_at and bumps updated_at via merge.",
+    "server.py:4245-4259 — Eden Heights PUT now accepts the 3 new fields (name, location, breakeven_year) in addition to original 5; DELETE simply removes the user's doc so GET falls back to DEFAULT_EDEN_HEIGHTS — neat factory-reset pattern.",
+    "ideas.tsx:142-198 — openCreate/openEdit/submitIdea/removeIdea correctly delegate to businessApi and patch local state optimistically. EditModal in 'edit' mode (initial has values) shows Delete button as expected.",
+    "eden.tsx:90-109 — submitEdit posts the 7 fields and patches local state; removeEden calls DELETE then load(), so factory defaults render correctly.",
+    "EditModal.tsx:282-300 — Inline confirm card (no window.confirm) renders with confirm-cancel and confirm-delete testIDs, which is the pattern this iteration relies on — no dialog interception needed in Playwright."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_12_business_crud.py (NEW — 10 pytest cases for Business Ideas + Eden Heights CRUD)"
+  ],
+  "success_rate": {
+    "backend": "100% (10/10 pytest cases pass against the public preview URL)",
+    "frontend": "100% (steps 11-17 all verified on Playwright at 390x900 — seed render, create, edit, delete on ideas; edit + factory-reset delete on Eden Heights)"
+  },
+  "seed_data_creation": "No new seed data created. Tests use the existing test1@plos.app account; the autouse class fixture clears the user's business_ideas collection at start so the seed-persistence path is exercised, then leaves the user with the 3 canonical seed ideas. Eden Heights is reset to factory defaults at end of run.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter 12 CRUD is fully verified. EditModal bottom-sheet pattern works on web; if writing Playwright tests for it, scroll target into view inside the sheet then dispatch the click via JS (el.click()) — Playwright's force=True click on react-native-web TouchableOpacity reports 'Element is outside of the viewport' for items below the modal fold even when visible. Use viewport height >=900 to fit the full sheet. The confirm flow inside EditModal is a sibling card (testID `${prefix}-confirm` with `${prefix}-confirm-delete` and `${prefix}-confirm-cancel`) — NO window.confirm interception needed. Login testIDs: login-email-input / login-password-input / login-submit-button. Direct navigation works: /business/ideas and /business/eden.",
+  "rca_of_issue": "N/A — no defects detected this iteration."
+}

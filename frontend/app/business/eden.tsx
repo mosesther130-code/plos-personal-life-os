@@ -1,4 +1,5 @@
-// Eden Heights Tracker — 4 hectares / $12,000 USD eco-resort property in Bulacan.
+// Eden Heights Tracker — 4 hectares / $12,000 USD eco-resort in Bulacan.
+// CRUD via EditModal bottom-sheet (Edit + Delete-resets-to-default).
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
@@ -8,9 +9,6 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
-  Modal,
-  TextInput,
-  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -22,11 +20,10 @@ import {
   CheckCircle2,
   Circle as CircleIcon,
   Pencil,
-  X,
-  Save,
 } from "lucide-react-native";
 import { businessApi } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
+import { EditModal, type Field } from "@/src/components/EditModal";
 
 const fmtUSD = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
 
@@ -41,23 +38,28 @@ const phaseLabel = (status: string) => {
   return "Not Started";
 };
 
+const EDEN_FIELDS: Field[] = [
+  { key: "name", label: "Property Name", kind: "text", placeholder: "Eden Heights Sanctuary Resort" },
+  { key: "location", label: "Province / Region", kind: "text", placeholder: "Bulacan Province, Philippines" },
+  { key: "municipality", label: "Municipality", kind: "text", placeholder: "e.g. Sta. Maria, Norzagaray" },
+  { key: "size_hectares", label: "Size (hectares)", kind: "number", placeholder: "4.0", suffix: "ha" },
+  { key: "current_value_usd", label: "Current Value (USD)", kind: "number", placeholder: "12000", suffix: "USD" },
+  { key: "breakeven_year", label: "Projected Breakeven Year", kind: "number", placeholder: "4", suffix: "yrs" },
+  { key: "concept", label: "Concept / Description", kind: "textarea", placeholder: "Eco-tourism vision, revenue mix, target guests…", maxLength: 500 },
+];
+
 export default function EdenHeights() {
   const router = useRouter();
   const [eden, setEden] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [editVisible, setEditVisible] = useState(false);
-  const [editMun, setEditMun] = useState("");
-  const [editVal, setEditVal] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const r = await businessApi.edenHeights();
       setEden(r);
-      setEditMun(r?.municipality || "");
-      setEditVal(String(r?.current_value_usd ?? 12000));
     } catch (_e) {}
     setLoading(false);
   }, []);
@@ -85,18 +87,39 @@ export default function EdenHeights() {
     try { await businessApi.updateEdenHeights({ phases }); } catch (_e) {}
   };
 
-  const saveDetails = async () => {
-    setSaving(true);
-    try {
-      const val = parseFloat(editVal) || 0;
-      await businessApi.updateEdenHeights({ municipality: editMun.trim(), current_value_usd: val });
-      setEden({ ...eden, municipality: editMun.trim(), current_value_usd: val });
-      setEditVisible(false);
-    } catch (_e) {
-      Alert.alert("Save failed", "Could not save changes.");
-    }
-    setSaving(false);
+  const submitEdit = async (values: any) => {
+    const payload: any = {
+      name: (values.name || "").trim(),
+      location: (values.location || "").trim(),
+      municipality: (values.municipality || "").trim(),
+      size_hectares: Number(values.size_hectares) || 0,
+      current_value_usd: Number(values.current_value_usd) || 0,
+      breakeven_year: Number(values.breakeven_year) || 0,
+      concept: values.concept || "",
+    };
+    if (!payload.name) throw new Error("Property name is required");
+    await businessApi.updateEdenHeights(payload);
+    setEden({ ...eden, ...payload, size_sqm: Math.round((payload.size_hectares || 0) * 10000) });
   };
+
+  const removeEden = async () => {
+    await businessApi.deleteEdenHeights();
+    // After delete, GET returns the factory defaults — reload to reflect.
+    await load();
+  };
+
+  const editorInitial = useMemo(() => {
+    if (!eden) return null;
+    return {
+      name: eden.name || "",
+      location: eden.location || "",
+      municipality: eden.municipality || "",
+      size_hectares: eden.size_hectares ?? 4,
+      current_value_usd: eden.current_value_usd ?? 12000,
+      breakeven_year: eden.breakeven_year ?? 4,
+      concept: eden.concept || "",
+    };
+  }, [eden]);
 
   const chart = useMemo(() => {
     if (!eden?.roi_series) return null;
@@ -121,11 +144,11 @@ export default function EdenHeights() {
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} testID="eden-back">
+        <TouchableOpacity style={styles.iconBtn} onPress={() => router.back()} testID="eden-back">
           <ArrowLeft color={colors.textPrimary} size={20} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Eden Heights Tracker</Text>
-        <TouchableOpacity style={styles.backBtn} onPress={() => setEditVisible(true)} testID="eden-edit">
+        <TouchableOpacity style={styles.iconBtn} onPress={() => setEditorOpen(true)} testID="eden-edit">
           <Pencil color={colors.textPrimary} size={18} />
         </TouchableOpacity>
       </View>
@@ -134,7 +157,6 @@ export default function EdenHeights() {
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primaryGlow} />}
       >
-        {/* Property overview */}
         <View style={styles.heroCard} testID="eden-hero">
           <View style={styles.heroHeader}>
             <View style={[styles.iconBox, { backgroundColor: "rgba(16,185,129,0.15)" }]}>
@@ -155,7 +177,7 @@ export default function EdenHeights() {
             <View style={styles.statCol}>
               <Text style={styles.statLabel}>SIZE</Text>
               <Text style={styles.statValue}>{eden?.size_hectares} ha</Text>
-              <Text style={styles.statSub}>{(eden?.size_sqm || 0).toLocaleString()} sqm</Text>
+              <Text style={styles.statSub}>{(eden?.size_sqm || Math.round((eden?.size_hectares || 0) * 10000)).toLocaleString()} sqm</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statCol}>
@@ -171,10 +193,9 @@ export default function EdenHeights() {
             </View>
           </View>
 
-          <Text style={styles.conceptText}>{eden?.concept}</Text>
+          {eden?.concept ? <Text style={styles.conceptText}>{eden.concept}</Text> : null}
         </View>
 
-        {/* ROI chart */}
         {chart && (
           <View style={styles.card} testID="eden-roi-chart">
             <Text style={styles.cardLabel}>5-YEAR ROI PROJECTION</Text>
@@ -198,7 +219,6 @@ export default function EdenHeights() {
           </View>
         )}
 
-        {/* Phases */}
         <View style={styles.card} testID="eden-phases">
           <Text style={styles.cardLabel}>BUILD PHASES</Text>
           <Text style={styles.cardTitle}>3-Phase Development Plan</Text>
@@ -222,18 +242,11 @@ export default function EdenHeights() {
           ))}
         </View>
 
-        {/* DOT / DENR / BIR Checklist */}
         <View style={styles.card} testID="eden-checklist">
           <Text style={styles.cardLabel}>PHILIPPINES COMPLIANCE</Text>
           <Text style={styles.cardTitle}>DOT · DENR · BIR · LGU Checklist</Text>
           {(eden?.checklist || []).map((item: any, i: number) => (
-            <TouchableOpacity
-              key={i}
-              style={styles.checkRow}
-              onPress={() => toggleChecklist(i)}
-              testID={`check-${i}`}
-              activeOpacity={0.7}
-            >
+            <TouchableOpacity key={i} style={styles.checkRow} onPress={() => toggleChecklist(i)} testID={`check-${i}`} activeOpacity={0.7}>
               {item.checked ? (
                 <CheckCircle2 size={18} color={colors.success} />
               ) : (
@@ -249,44 +262,17 @@ export default function EdenHeights() {
         <View style={{ height: 40 }} />
       </ScrollView>
 
-      {/* Edit modal */}
-      <Modal visible={editVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setEditVisible(false)}>
-        <SafeAreaView style={styles.container} edges={["top"]}>
-          <View style={styles.modalHeader}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardLabel}>EDIT PROPERTY</Text>
-              <Text style={styles.cardTitle}>Eden Heights</Text>
-            </View>
-            <TouchableOpacity style={styles.backBtn} onPress={() => setEditVisible(false)} testID="edit-close">
-              <X color={colors.textPrimary} size={20} />
-            </TouchableOpacity>
-          </View>
-          <ScrollView contentContainerStyle={styles.scroll}>
-            <Text style={styles.fieldLabel}>Municipality</Text>
-            <TextInput
-              style={styles.input}
-              value={editMun}
-              onChangeText={setEditMun}
-              placeholder="e.g. Sta. Maria, Norzagaray"
-              placeholderTextColor={colors.textTertiary}
-              testID="edit-municipality"
-            />
-            <Text style={styles.fieldLabel}>Current Value (USD)</Text>
-            <TextInput
-              style={styles.input}
-              value={editVal}
-              onChangeText={setEditVal}
-              keyboardType="decimal-pad"
-              placeholder="12000"
-              placeholderTextColor={colors.textTertiary}
-              testID="edit-value"
-            />
-            <TouchableOpacity style={[styles.saveBtn, saving && { opacity: 0.6 }]} onPress={saveDetails} disabled={saving} testID="edit-save">
-              {saving ? <ActivityIndicator color="#fff" /> : <><Save color="#fff" size={14} /><Text style={styles.saveBtnText}>Save Changes</Text></>}
-            </TouchableOpacity>
-          </ScrollView>
-        </SafeAreaView>
-      </Modal>
+      <EditModal
+        visible={editorOpen}
+        title="Edit Eden Heights"
+        fields={EDEN_FIELDS}
+        initial={editorInitial || {}}
+        onClose={() => setEditorOpen(false)}
+        onSubmit={submitEdit}
+        onDelete={removeEden}
+        deleteSubject="Eden Heights tracker (resets to factory defaults)"
+        testID="eden-editor"
+      />
     </SafeAreaView>
   );
 }
@@ -294,7 +280,7 @@ export default function EdenHeights() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
-  backBtn: { width: 36, height: 36, borderRadius: radius.md, backgroundColor: colors.surfaceElevated, alignItems: "center", justifyContent: "center" },
+  iconBtn: { width: 36, height: 36, borderRadius: radius.md, backgroundColor: colors.surfaceElevated, alignItems: "center", justifyContent: "center" },
   headerTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: "700" },
   scroll: { padding: spacing.xl, gap: spacing.md },
   heroCard: { backgroundColor: colors.surface, borderColor: colors.borderSubtle, borderWidth: 1, borderRadius: radius.lg, padding: spacing.lg, gap: spacing.md },
@@ -329,9 +315,4 @@ const styles = StyleSheet.create({
   statusPillText: { fontSize: 9, fontWeight: "700", letterSpacing: 0.5 },
   checkRow: { flexDirection: "row", alignItems: "flex-start", gap: spacing.sm, paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.borderSubtle },
   checkText: { color: colors.textPrimary, fontSize: 13, flex: 1, lineHeight: 19 },
-  modalHeader: { flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.lg, paddingVertical: spacing.md, gap: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle },
-  fieldLabel: { color: colors.textTertiary, fontSize: 11, fontWeight: "700", letterSpacing: 1, marginTop: spacing.md },
-  input: { backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, color: colors.textPrimary, fontSize: 15, borderWidth: 1, borderColor: colors.borderSubtle, marginTop: 6 },
-  saveBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, backgroundColor: colors.primary, paddingVertical: 14, borderRadius: radius.lg, marginTop: spacing.xl },
-  saveBtnText: { color: "#fff", fontWeight: "700" },
 });

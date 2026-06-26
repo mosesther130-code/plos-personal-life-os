@@ -330,9 +330,13 @@ export const globalApi = {
 export const businessApi = {
   listIdeas: () => request<any>("/business/ideas"),
   generateIdeas: () => request<any>("/business/ideas/generate", { method: "POST" }),
+  createIdea: (d: any) => request<any>("/business/ideas", { method: "POST", body: d }),
+  updateIdea: (id: string, d: any) => request<any>(`/business/ideas/${id}`, { method: "PUT", body: d }),
+  deleteIdea: (id: string) => request<any>(`/business/ideas/${id}`, { method: "DELETE" }),
   buildPlan: (id: string) => request<any>(`/business/ideas/${id}/plan`, { method: "POST" }),
   edenHeights: () => request<any>("/business/eden-heights"),
   updateEdenHeights: (data: any) => request<any>("/business/eden-heights", { method: "PUT", body: data }),
+  deleteEdenHeights: () => request<any>("/business/eden-heights", { method: "DELETE" }),
 };
 
 export const shoppingApi = {
