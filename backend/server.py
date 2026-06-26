@@ -214,11 +214,17 @@ class AssetCreate(BaseModel):
 
 class Investment(BaseModel):
     investment_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    type: str  # TSP/social_security/life_insurance/IRA/brokerage
+    type: str  # TSP/social_security/life_insurance/IRA/brokerage/pension/cash/savings
     balance: float
     contribution_monthly: float = 0
     employer_match_pct: float = 0
     projected_at_65: float = 0
+    # Extended PLOS fields
+    nickname: Optional[str] = None
+    institution: Optional[str] = None
+    growth_rate_override: Optional[float] = None  # decimal e.g. 0.07
+    beneficiary_name: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class InvestmentCreate(BaseModel):
@@ -227,6 +233,23 @@ class InvestmentCreate(BaseModel):
     contribution_monthly: float = 0
     employer_match_pct: float = 0
     projected_at_65: float = 0
+    nickname: Optional[str] = None
+    institution: Optional[str] = None
+    growth_rate_override: Optional[float] = None
+    beneficiary_name: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class InvestmentUpdate(BaseModel):
+    type: Optional[str] = None
+    balance: Optional[float] = None
+    contribution_monthly: Optional[float] = None
+    employer_match_pct: Optional[float] = None
+    nickname: Optional[str] = None
+    institution: Optional[str] = None
+    growth_rate_override: Optional[float] = None
+    beneficiary_name: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class CareerProfile(BaseModel):
@@ -928,11 +951,47 @@ async def list_investments(user_id: str = Depends(get_current_user_id)):
 async def create_investment(
     payload: InvestmentCreate, user_id: str = Depends(get_current_user_id)
 ):
+    if payload.balance < 0:
+        raise HTTPException(status_code=400, detail="Balance cannot be negative")
+    if payload.contribution_monthly < 0:
+        raise HTTPException(
+            status_code=400, detail="Monthly contribution cannot be negative"
+        )
     obj = Investment(**payload.dict())
     doc = obj.dict()
     doc["user_id"] = user_id
     await db.investments.insert_one(doc)
     return obj
+
+
+@api_router.put("/investments/{investment_id}", response_model=Investment)
+async def update_investment(
+    investment_id: str,
+    payload: InvestmentUpdate,
+    user_id: str = Depends(get_current_user_id),
+):
+    existing = await db.investments.find_one(
+        {"investment_id": investment_id, "user_id": user_id}, {"_id": 0, "user_id": 0}
+    )
+    if not existing:
+        raise HTTPException(status_code=404, detail="Investment not found")
+    updates = {k: v for k, v in payload.dict(exclude_unset=True).items() if v is not None or k in {"nickname", "institution", "growth_rate_override", "beneficiary_name", "notes"}}
+    # Validate non-negatives
+    if "balance" in updates and updates["balance"] is not None and updates["balance"] < 0:
+        raise HTTPException(status_code=400, detail="Balance cannot be negative")
+    if (
+        "contribution_monthly" in updates
+        and updates["contribution_monthly"] is not None
+        and updates["contribution_monthly"] < 0
+    ):
+        raise HTTPException(
+            status_code=400, detail="Monthly contribution cannot be negative"
+        )
+    await db.investments.update_one(
+        {"investment_id": investment_id, "user_id": user_id}, {"$set": updates}
+    )
+    merged = {**existing, **updates}
+    return Investment(**merged)
 
 
 @api_router.delete("/investments/{investment_id}")
@@ -952,6 +1011,7 @@ ACCOUNT_GROWTH_RATE: Dict[str, float] = {
     "life_insurance": 0.03,
     "cash": 0.045,
     "savings": 0.045,
+    "pension": 0.0,
 }
 
 
@@ -999,7 +1059,8 @@ async def investment_portfolio(user_id: str = Depends(get_current_user_id)):
     total_monthly_contrib = 0.0
     for inv in investments:
         kind = str(inv.get("type", ""))
-        rate = ACCOUNT_GROWTH_RATE.get(kind, 0.06)
+        override = inv.get("growth_rate_override")
+        rate = float(override) if override is not None else ACCOUNT_GROWTH_RATE.get(kind, 0.06)
         proj = _project_at_65(
             inv.get("balance", 0), inv.get("contribution_monthly", 0), rate, years
         )
@@ -1043,6 +1104,35 @@ async def investment_portfolio(user_id: str = Depends(get_current_user_id)):
         "monthly_gap": extra_needed_monthly,
         "annual_income": round(annual_income, 2),
         "investments": enriched,
+    }
+
+
+@api_router.get("/investments/summary")
+async def investment_summary(user_id: str = Depends(get_current_user_id)):
+    """Compact summary suitable for the Home dashboard.
+
+    Fields:
+      - total_portfolio_value
+      - total_monthly_contributions
+      - projected_total_at_65
+      - retirement_readiness_score (0-100)
+      - monthly_surplus_available_to_invest
+    """
+    portfolio = await investment_portfolio(user_id)
+    incomes = await db.income_sources.find({"user_id": user_id}, {"_id": 0}).to_list(50)
+    expenses = await db.expenses.find({"user_id": user_id}, {"_id": 0}).to_list(200)
+    monthly_income = sum(i.get("net_monthly", 0) for i in incomes if i.get("is_active"))
+    monthly_expenses = sum(e.get("monthly_amount", 0) for e in expenses)
+    monthly_surplus = max(0.0, monthly_income - monthly_expenses)
+    already_contributing = portfolio.get("total_monthly_contribution", 0)
+    available_to_invest = max(0.0, monthly_surplus - already_contributing)
+
+    return {
+        "total_portfolio_value": portfolio.get("total_balance", 0),
+        "total_monthly_contributions": already_contributing,
+        "projected_total_at_65": portfolio.get("total_projected_at_65", 0),
+        "retirement_readiness_score": portfolio.get("retirement_readiness_score", 0),
+        "monthly_surplus_available_to_invest": round(available_to_invest, 2),
     }
 
 

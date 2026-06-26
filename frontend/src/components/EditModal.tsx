@@ -12,24 +12,33 @@ import {
   Platform,
   ActivityIndicator,
 } from "react-native";
-import { X } from "lucide-react-native";
+import { X, AlertTriangle } from "lucide-react-native";
 import { colors, spacing, radius } from "@/src/lib/theme";
 
 export type Field =
   | { key: string; label: string; kind: "text"; placeholder?: string }
-  | {
-      key: string;
-      label: string;
-      kind: "number";
-      placeholder?: string;
-    }
+  | { key: string; label: string; kind: "number"; placeholder?: string; suffix?: string }
   | {
       key: string;
       label: string;
       kind: "select";
       options: { value: string; label: string }[];
     }
-  | { key: string; label: string; kind: "boolean" };
+  | { key: string; label: string; kind: "boolean" }
+  | {
+      key: string;
+      label: string;
+      kind: "textarea";
+      placeholder?: string;
+      maxLength?: number;
+    }
+  | {
+      key: string;
+      label: string;
+      kind: "readonly";
+      compute: (values: Record<string, any>) => string;
+      hint?: string;
+    };
 
 interface Props<T> {
   visible: boolean;
@@ -39,6 +48,18 @@ interface Props<T> {
   onClose: () => void;
   onSubmit: (values: T) => Promise<void> | void;
   onDelete?: () => Promise<void> | void;
+  /** Subject name for the delete confirmation (e.g. "My TSP" or "credit_card"). */
+  deleteSubject?: string;
+  /**
+   * Optional callback called when a field changes. Parent may return a partial
+   * map of values that will be merged into the current modal state (used for
+   * cascading defaults like "set growth rate based on selected type").
+   */
+  onFieldChange?: (
+    key: string,
+    value: any,
+    current: Record<string, any>
+  ) => Record<string, any> | void;
   testID?: string;
 }
 
@@ -50,20 +71,30 @@ export function EditModal<T extends Record<string, any>>({
   onClose,
   onSubmit,
   onDelete,
+  deleteSubject,
+  onFieldChange,
   testID,
 }: Props<T>) {
   const [values, setValues] = useState<Record<string, any>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     if (visible) {
       setValues({ ...(initial || {}) });
       setError(null);
+      setConfirmDelete(false);
     }
   }, [visible, initial]);
 
-  const update = (k: string, v: any) => setValues((s) => ({ ...s, [k]: v }));
+  const update = (k: string, v: any) => {
+    setValues((s) => {
+      const next = { ...s, [k]: v };
+      const cascade = onFieldChange?.(k, v, next);
+      return cascade ? { ...next, ...cascade } : next;
+    });
+  };
 
   const submit = async () => {
     setError(null);
@@ -71,11 +102,17 @@ export function EditModal<T extends Record<string, any>>({
     try {
       const cleaned: Record<string, any> = {};
       for (const f of fields) {
+        if (f.kind === "readonly") continue;
         const raw = values[f.key];
         if (f.kind === "number") {
-          cleaned[f.key] = raw === "" || raw === undefined ? 0 : Number(raw);
+          cleaned[f.key] =
+            raw === "" || raw === undefined || raw === null ? 0 : Number(raw);
         } else if (f.kind === "boolean") {
           cleaned[f.key] = !!raw;
+        } else if (f.kind === "text" || f.kind === "textarea") {
+          // empty strings → null so backend can clear optional fields
+          cleaned[f.key] =
+            raw === "" || raw === undefined || raw === null ? null : raw;
         } else {
           cleaned[f.key] = raw ?? "";
         }
@@ -174,35 +211,112 @@ export function EditModal<T extends Record<string, any>>({
                         {values[f.key] ? "Enabled" : "Disabled"}
                       </Text>
                     </TouchableOpacity>
+                  ) : f.kind === "textarea" ? (
+                    <View>
+                      <TextInput
+                        testID={`${testID}-${f.key}`}
+                        value={
+                          values[f.key] === undefined || values[f.key] === null
+                            ? ""
+                            : String(values[f.key])
+                        }
+                        onChangeText={(t) => {
+                          const max = f.maxLength ?? 300;
+                          update(f.key, t.length > max ? t.slice(0, max) : t);
+                        }}
+                        placeholder={f.placeholder || ""}
+                        placeholderTextColor={colors.textTertiary}
+                        style={[styles.input, styles.textarea]}
+                        multiline
+                        textAlignVertical="top"
+                      />
+                      <Text style={styles.counter}>
+                        {(values[f.key]?.length || 0)} / {f.maxLength ?? 300}
+                      </Text>
+                    </View>
+                  ) : f.kind === "readonly" ? (
+                    <View style={styles.readonly} testID={`${testID}-${f.key}`}>
+                      <Text style={styles.readonlyValue}>
+                        {f.compute(values)}
+                      </Text>
+                      {f.hint ? (
+                        <Text style={styles.readonlyHint}>{f.hint}</Text>
+                      ) : null}
+                    </View>
                   ) : (
-                    <TextInput
-                      testID={`${testID}-${f.key}`}
-                      value={
-                        values[f.key] === undefined ||
-                        values[f.key] === null
-                          ? ""
-                          : String(values[f.key])
-                      }
-                      onChangeText={(t) => update(f.key, t)}
-                      placeholder={
-                        ("placeholder" in f ? f.placeholder : "") || ""
-                      }
-                      placeholderTextColor={colors.textTertiary}
-                      keyboardType={f.kind === "number" ? "decimal-pad" : "default"}
-                      style={styles.input}
-                      autoCapitalize="none"
-                    />
+                    <View style={f.kind === "number" && (f as any).suffix ? styles.inputWithSuffix : undefined}>
+                      <TextInput
+                        testID={`${testID}-${f.key}`}
+                        value={
+                          values[f.key] === undefined || values[f.key] === null
+                            ? ""
+                            : String(values[f.key])
+                        }
+                        onChangeText={(t) => update(f.key, t)}
+                        placeholder={
+                          ("placeholder" in f ? f.placeholder : "") || ""
+                        }
+                        placeholderTextColor={colors.textTertiary}
+                        keyboardType={
+                          f.kind === "number" ? "decimal-pad" : "default"
+                        }
+                        style={[
+                          styles.input,
+                          f.kind === "number" && (f as any).suffix
+                            ? { flex: 1, backgroundColor: "transparent" }
+                            : null,
+                        ]}
+                        autoCapitalize="none"
+                      />
+                      {f.kind === "number" && (f as any).suffix ? (
+                        <Text style={styles.suffix}>{(f as any).suffix}</Text>
+                      ) : null}
+                    </View>
                   )}
                 </View>
               ))}
 
               {error ? <Text style={styles.error}>{error}</Text> : null}
+
+              {confirmDelete && onDelete && (
+                <View style={styles.confirmBox} testID={`${testID}-confirm`}>
+                  <AlertTriangle color={colors.danger} size={16} />
+                  <Text style={styles.confirmText}>
+                    Delete {deleteSubject || "this item"}? This cannot be
+                    undone.
+                  </Text>
+                  <View style={styles.confirmActions}>
+                    <TouchableOpacity
+                      onPress={() => setConfirmDelete(false)}
+                      style={styles.confirmCancel}
+                      testID={`${testID}-confirm-cancel`}
+                      disabled={busy}
+                    >
+                      <Text style={styles.confirmCancelText}>Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={remove}
+                      style={styles.confirmDelete}
+                      testID={`${testID}-confirm-delete`}
+                      disabled={busy}
+                    >
+                      {busy ? (
+                        <ActivityIndicator color="#fff" size="small" />
+                      ) : (
+                        <Text style={styles.confirmDeleteText}>
+                          Yes, delete
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
             </ScrollView>
 
             <View style={styles.footer}>
-              {onDelete && initial && Object.keys(initial).length > 0 && (
+              {onDelete && initial && Object.keys(initial).length > 0 && !confirmDelete && (
                 <TouchableOpacity
-                  onPress={remove}
+                  onPress={() => setConfirmDelete(true)}
                   style={styles.deleteBtn}
                   disabled={busy}
                   testID={`${testID}-delete`}
@@ -212,11 +326,14 @@ export function EditModal<T extends Record<string, any>>({
               )}
               <TouchableOpacity
                 onPress={submit}
-                style={styles.saveBtn}
-                disabled={busy}
+                style={[
+                  styles.saveBtn,
+                  confirmDelete ? { opacity: 0.5 } : null,
+                ]}
+                disabled={busy || confirmDelete}
                 testID={`${testID}-save`}
               >
-                {busy ? (
+                {busy && !confirmDelete ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
                   <Text style={styles.saveText}>Save</Text>
@@ -273,6 +390,47 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 15,
   },
+  textarea: {
+    minHeight: 84,
+    paddingTop: 12,
+  },
+  counter: {
+    color: colors.textTertiary,
+    fontSize: 11,
+    textAlign: "right",
+    marginTop: 4,
+  },
+  inputWithSuffix: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.surfaceElevated,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+  },
+  suffix: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontWeight: "600",
+    paddingHorizontal: spacing.sm,
+  },
+  readonly: {
+    backgroundColor: colors.primaryMuted,
+    borderColor: "rgba(96,165,250,0.25)",
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 12,
+  },
+  readonlyValue: {
+    color: colors.primaryGlow,
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  readonlyHint: {
+    color: colors.textTertiary,
+    fontSize: 11,
+    marginTop: 2,
+  },
   options: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   chip: {
     paddingHorizontal: spacing.md,
@@ -282,7 +440,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "transparent",
   },
-  chipActive: { borderColor: colors.primaryGlow, backgroundColor: colors.primaryMuted },
+  chipActive: {
+    borderColor: colors.primaryGlow,
+    backgroundColor: colors.primaryMuted,
+  },
   chipText: { color: colors.textSecondary, fontSize: 13, fontWeight: "600" },
   toggle: {
     paddingHorizontal: spacing.lg,
@@ -318,4 +479,37 @@ const styles = StyleSheet.create({
   },
   deleteText: { color: colors.danger, fontWeight: "700" },
   error: { color: colors.danger, fontSize: 13, marginTop: spacing.sm },
+  confirmBox: {
+    marginTop: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: "rgba(239,68,68,0.10)",
+    borderWidth: 1,
+    borderColor: "rgba(239,68,68,0.30)",
+    gap: spacing.sm,
+  },
+  confirmText: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  confirmActions: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "flex-end",
+  },
+  confirmCancel: {
+    paddingVertical: 10,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceElevated,
+  },
+  confirmCancelText: { color: colors.textSecondary, fontWeight: "700", fontSize: 13 },
+  confirmDelete: {
+    paddingVertical: 10,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.md,
+    backgroundColor: colors.danger,
+  },
+  confirmDeleteText: { color: "#fff", fontWeight: "700", fontSize: 13 },
 });

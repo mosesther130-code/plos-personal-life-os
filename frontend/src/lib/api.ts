@@ -124,8 +124,11 @@ export const investmentsApi = {
   list: () => request<any[]>("/investments"),
   create: (data: any) =>
     request<any>("/investments", { method: "POST", body: data }),
+  update: (id: string, data: any) =>
+    request<any>(`/investments/${id}`, { method: "PUT", body: data }),
   delete: (id: string) => request(`/investments/${id}`, { method: "DELETE" }),
   portfolio: () => request<any>("/investments/portfolio"),
+  summary: () => request<any>("/investments/summary"),
   contributionOptimizer: () =>
     request<any>("/investments/contribution-optimizer", { method: "POST" }),
   readinessGate: () => request<any>("/investments/readiness-gate"),

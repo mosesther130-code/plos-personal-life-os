@@ -1,0 +1,53 @@
+{
+  "summary": "Iteration 6 — Investments CRUD (Add/Edit/Delete via EditModal) + new PUT/{id} + GET /api/investments/summary. Backend: NEW test file /app/backend/tests/test_investments_crud.py = 14/14 passed in 5.3s; existing regression /app/backend/tests/test_investments_module.py = 17/17 passed in 10.5s (NOT modified). Cumulative backend 31/31 PASS (89/89 across full repo). Verified: (1) POST /api/auth/login still returns FLAT {token, user_id, email, full_name} — no nested 'user'. (2) POST /api/investments rejects negative balance/contribution with 400 'Balance cannot be negative' / 'Monthly contribution cannot be negative'. (3) POST /api/investments persists extended fields nickname/institution/growth_rate_override/beneficiary_name/notes (verified via GET round-trip). (4) PUT /api/investments/{id} updates all 9 fields (type, balance, contribution_monthly, employer_match_pct, nickname, institution, growth_rate_override, beneficiary_name, notes), returned object matches input, GET re-read confirms persistence. (5) PUT validation: 400 on negative balance / negative contribution, 404 on bogus investment_id. (6) DELETE removes account; portfolio total_balance + total_monthly_contribution decrement exactly by removed amounts (verified before $365,500 → after-create $370,500 → after-delete $365,500). (7) pension type: default growth=0 yields linear projection = balance + contrib*12*years (verified $10K + $100*12*27 = ~$42,400 with default). (8) growth_rate_override (0.10) is honored in portfolio.investments[].annual_growth_rate (overrides brokerage default 0.08). (9) Default growth fallback: TSP without override → annual_growth_rate=0.07. (10) GET /api/investments/summary returns exactly the 5-field shape {total_portfolio_value, total_monthly_contributions, projected_total_at_65, retirement_readiness_score, monthly_surplus_available_to_invest}, all numeric, values consistent with /portfolio (cross-verified equality). Frontend mobile (390x844): login test1@plos.app → /investments. (a) '+ Add Account' button visible (testID add-account-button). (b) Tapping opens account-modal-sheet titled 'Add Account' with all 10 required fields in spec order incl 8 Type chips (TSP/IRA/Brokerage/Social Security/Life Insurance/Pension/Cash/Savings — pension chip testID account-modal-type-pension confirmed present). (c) Growth rate prefills to 7 (TSP default) on initial open; auto-fill logic correctly only applies when growth field is empty/0 (selecting Pension after TSP did NOT overwrite the existing 7 — matches spec 'only when growth field is empty/0'). (d) Projected Value at Age 65 read-only updates live ($5000 bal + $200/mo @ 5.5% / 27yrs → $170K shown). (e) Notes textarea shows '/ 300' counter. (f) Save creates account; modal closes; Total Portfolio recomputes $365,500 → $370,500 (+$5K), Contributing $1,645 → $1,845 (+$200) WITHOUT manual refresh. (g) Tapping new card opens 'Edit Account' modal pre-filled with all 7 user-entered fields (nickname=TEST_E2E_Pension, institution=MyEmployer Pension Fund, balance=5000, contribution=200, growth=5.5, beneficiary=Test Beneficiary, notes=E2E created note). (h) Delete button visible in edit modal; tap opens in-modal confirm card with EXACT text 'Delete TEST_E2E_Pension? This cannot be undone.' plus Cancel/Yes-delete buttons (testIDs account-modal-confirm-cancel and account-modal-confirm-delete). (i) Cancel returns user to edit form (Save button reappears). (j) Confirm-delete removes account; Total Portfolio reverts to $365,500 and Contributing to $1,645/mo (auto-recompute confirmed both directions). (k) Account card displays nickname when set + uppercase TYPE · institution as subtitle. No red screen, no API 4xx/5xx errors. Console deprecation warnings 'shadow*' / pointerEvents persist (carry-over).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "global", "issues": [
+        "Carry-over console deprecation warnings: 'shadow*' style props → use boxShadow; props.pointerEvents → use style.pointerEvents. Non-blocking, cosmetic."
+      ]}
+    ],
+    "react_native_issues": [
+      {"component": "package.json (expo, expo-font, expo-router)", "issue": "Carry-over SDK 54 version drift: expo@54.0.34 (expected ~54.0.35), expo-font@14.0.11 (expected ~14.0.12), expo-router@6.0.23 (expected ~6.0.24). Reference: /app/frontend/package.json"}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_investments_crud.py (NEW)",
+    "/app/backend/tests/test_investments_module.py (regression, untouched)",
+    "/app/test_reports/pytest/investments_crud_results.xml",
+    "/app/test_reports/pytest/investments_results.xml"
+  ],
+  "action_items": [
+    "(Carry-over) Run `yarn expo install --fix` to clear SDK 54 version drift.",
+    "(Carry-over) Replace deprecated 'shadow*' style props with 'boxShadow' and props.pointerEvents with style.pointerEvents.",
+    "(Carry-over) server.py is now ~2576 LOC after Investments CRUD additions — overdue for split into routers (auth, finance, debt, mortgage, career, investments, health, ai, dashboard, alerts, safety).",
+    "(Optional polish) Pension default growth=0 cannot be selected via auto-fill when a non-zero default is already populated (e.g. TSP=7 prefill stays at 7 when user then taps Pension). This is per spec ('only when empty/0'), but could be UX-improved by always applying the type's default on type-change if user hasn't edited the growth field manually. Not a bug."
+  ],
+  "critical_code_review_comments": [
+    "PUT /api/investments/{id} correctly returns 404 only when document not owned by current user_id (compound key {investment_id, user_id}).",
+    "InvestmentUpdate.dict(exclude_unset=True) is paired with a whitelist that intentionally allows None for the 5 optional text/override fields (nickname/institution/growth_rate_override/beneficiary_name/notes) — enables clearing those fields, while skipping None for numeric fields like balance — correct behavior.",
+    "GET /api/investments/summary internally calls investment_portfolio(user_id) — single source of truth for totals; verified consistency via test_summary_consistent_with_portfolio.",
+    "ACCOUNT_GROWTH_RATE includes 'pension': 0.0 — matches PRD; pension projection grows only via contributions when no override set.",
+    "Route ordering safe: /investments/summary (GET) doesn't collide with /investments/{id} (PUT/DELETE) since methods differ.",
+    "Frontend: onFieldChange auto-fill only mutates growth_rate_pct when current value is empty/0 — preserves user edits, matches spec.",
+    "Frontend: deleteSubject uses nickname || type so confirm text says 'Delete <nickname> ...' or 'Delete <type> ...' (verified 'Delete TEST_E2E_Pension? This cannot be undone.').",
+    "Frontend: After save/delete, load() refetches /investments/portfolio so totals + cards auto-recompute without manual refresh — confirmed twice (after create and after delete)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_investments_crud.py (NEW — 14 tests covering POST validation+extended fields, PUT update all-fields/negative-validation/404, DELETE + portfolio auto-recompute, pension default growth, growth_rate_override honored, default fallback, /summary shape + consistency with /portfolio)"
+  ],
+  "success_rate": {
+    "backend": "100% (14/14 new CRUD tests in 5.3s + 17/17 regression tests in 10.5s = 31/31 investments domain; cumulative repo 89/89)",
+    "frontend": "100% of tested CRUD flows (login → /investments → add Pension w/ extended fields → portfolio auto-recompute +$5K/+$200 → edit pre-fill all 7 fields → delete confirm 'cannot be undone' → cancel returns to form → confirm-delete reverts portfolio to baseline)"
+  },
+  "seed_data_creation": "None — used seeded user test1@plos.app. Pre/post cleanup fixture purges any TEST_-prefixed or pension accounts left from prior runs; E2E flow on the frontend created TEST_E2E_Pension and deleted it within the same session.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend URL: https://life-os-hub-32.preview.emergentagent.com. Creds /app/memory/test_credentials.md (test1@plos.app/test123). /api/auth/login = FLAT shape {token, user_id, email, full_name} — NOT nested. Pytest dir has 6 files now = 89 cumulative tests (test_plos_api 30, test_dashboard_alerts_ai 8, test_finance_v3 12, test_career_module 8, test_investments_module 17, test_investments_crud 14). Investments CRUD testIDs: add-account-button, account-modal{,-sheet,-close,-save,-delete,-confirm,-confirm-cancel,-confirm-delete}, account-modal-type-{TSP,IRA,brokerage,social_security,life_insurance,pension,cash,savings}, account-modal-{nickname,institution,balance,contribution_monthly,employer_match_pct,growth_rate_pct,projected_at_65_display,beneficiary_name,notes}, account-{investment_id}. Login testIDs: login-{email,password,submit,biometric,go-to-register}-input/button. Pension default growth = 0 in backend ACCOUNT_GROWTH_RATE; frontend DEFAULT_GROWTH_RATE_PCT.pension = 0. Notes maxLength=300 enforced client-side. /api/investments/summary returns 5 fields exactly. growth_rate_override is a DECIMAL on backend (0.07) but a PERCENT on frontend (7) — frontend onSaveAccount converts pct→decimal before POST/PUT. Backend regression unchanged.",
+  "rca_of_issue": "N/A — Investments CRUD ships clean. No functional issues found. Only outstanding items are carry-over SDK drift + style deprecation warnings from prior iterations."
+}
