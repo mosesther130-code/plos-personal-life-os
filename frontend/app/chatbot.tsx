@@ -43,6 +43,15 @@ import {
 import { aiApi } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
 
+// Helper: Alert.alert is a silent no-op on react-native-web; fall back to window.alert.
+function notify(title: string, message?: string) {
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    window.alert(message ? `${title}\n\n${message}` : title);
+  } else {
+    Alert.alert(title, message);
+  }
+}
+
 type Mode = "general" | "legal" | "financial" | "career" | "travel";
 
 interface Msg {
@@ -334,7 +343,7 @@ export default function Chatbot() {
   const toggleVoice = () => {
     const SR = getWebSpeechRecognition();
     if (!SR) {
-      Alert.alert("Voice unavailable", "Voice input requires Chrome / Edge browser on web. On mobile native, this will be wired up in a future build.");
+      notify("Voice unavailable", "Voice input requires Chrome / Edge browser on web. On mobile native, this will be wired up in a future build.");
       return;
     }
     if (listening) {
@@ -362,7 +371,7 @@ export default function Chatbot() {
   };
 
   const showAttachmentNotice = () =>
-    Alert.alert("Attachments coming soon", "Document and photo analysis will be wired up in the next iteration.");
+    notify("Attachments coming soon", "Document and photo analysis will be wired up in the next iteration.");
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>

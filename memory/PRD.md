@@ -61,7 +61,17 @@ Every AI call (advice + chat) gathers the user's complete data context (income, 
 - If no PH trip exists, the editor creates one + pre-caches Claude insights via the fast-path; otherwise it updates the existing PH trip.
 - `stopPropagation` prevents the pencil tap from triggering the card's "Open Trip Planner" navigation.
 - Card title + subtitle now reflect the underlying PH trip (or sensible "Manila & Bulacan · Eden Heights Development" default).
-- Tested: 3/3 backend pytest + 6/6 Playwright steps (iteration_14 report).
+## Iteration 15 — AI Life Advisor Chatbot (DONE)
+- Full rewrite of `/app/frontend/app/chatbot.tsx`: header with brain icon, mode-tinted color, "Online · {mode}" status pill, mode picker (5 specialized modes: General / Legal / Financial / Career / Travel), history drawer with conversation list, search and per-row delete + Clear All.
+- 8 quick-action chips (exactly matching spec) shown above composer on first message.
+- User bubbles right-aligned blue, AI bubbles dark with brain icon avatar, lightweight markdown rendering (**bold**, *italic*, `code`, ## headings, • bullets, 1. numbered).
+- Per-AI-message Copy button using expo-clipboard.
+- Animated 3-dot thinking indicator.
+- Composer: attachment button (coming-soon notify), text input, mic button (Web Speech API on web, notify on native), send button.
+- Backend: extended `POST /api/chat` with optional `mode` overlay (legal/financial/career/travel guidance overlays onto `PLOS_SYSTEM_PROMPT`); persists conversation metadata to `chat_conversations` collection.
+- 4 new endpoints: `GET /api/chatbot/conversations`, `DELETE /api/chatbot/conversations/{id}`, `DELETE /api/chatbot/conversations`, `GET /api/chatbot/search?q=...`, `GET /api/chatbot/quick-actions`.
+- Cross-platform `notify()` helper wired for all in-chatbot Alert messages (react-native-web silently swallows `Alert.alert`).
+- Tested: 10/10 backend pytest + 22/22 Playwright UI (iteration_15 + post-fix verification).
 
 
 
