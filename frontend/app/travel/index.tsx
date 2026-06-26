@@ -27,6 +27,7 @@ import {
   ExternalLink,
   Compass,
   BookOpen,
+  Pencil,
 } from "lucide-react-native";
 import { travelApi } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
@@ -76,6 +77,43 @@ const NEW_TRIP_FIELDS: Field[] = [
   },
 ];
 
+const PH_EDIT_FIELDS: Field[] = [
+  { key: "destination_name", label: "Card Title", kind: "text", placeholder: "e.g. Manila & Bulacan" },
+  { key: "city", label: "Primary City", kind: "text", placeholder: "Manila" },
+  {
+    key: "purpose", label: "Trip Purpose (drives subtitle)", kind: "select",
+    options: [
+      { value: "business", label: "Business" },
+      { value: "leisure", label: "Leisure" },
+      { value: "eden_heights", label: "Eden Heights Development" },
+      { value: "family", label: "Family Visit" },
+      { value: "conference", label: "Conference / Training" },
+      { value: "medical", label: "Medical" },
+      { value: "mixed", label: "Mixed" },
+    ],
+  },
+  { key: "departure_date", label: "Departure (YYYY-MM-DD)", kind: "text", placeholder: "2026-09-15" },
+  { key: "return_date", label: "Return (YYYY-MM-DD)", kind: "text", placeholder: "2026-09-25" },
+  {
+    key: "status", label: "Status", kind: "select",
+    options: [
+      { value: "planning", label: "Planning" },
+      { value: "booked", label: "Booked" },
+      { value: "completed", label: "Completed" },
+    ],
+  },
+];
+
+const PURPOSE_LABELS: Record<string, string> = {
+  business: "Business",
+  leisure: "Leisure",
+  eden_heights: "Eden Heights Development",
+  family: "Family Visit",
+  conference: "Conference / Training",
+  medical: "Medical",
+  mixed: "Mixed",
+};
+
 export default function TravelHome() {
   const router = useRouter();
   const [trips, setTrips] = useState<any[]>([]);
@@ -88,6 +126,15 @@ export default function TravelHome() {
   const [editorInitial, setEditorInitial] = useState<any | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [creatingPH, setCreatingPH] = useState(false);
+  const [phEditorOpen, setPhEditorOpen] = useState(false);
+  const [phEditorInitial, setPhEditorInitial] = useState<any | null>(null);
+  const [phEditingId, setPhEditingId] = useState<string | null>(null);
+
+  const phTrip = trips.find((t) => (t.country_code || "").toUpperCase() === "PH");
+  const phTitle = phTrip?.destination_name || "Philippines Quick Access";
+  const phSubtitleCity = phTrip?.city || phTemplate?.destination?.city || "Manila & Bulacan";
+  const phPurposeKey = (phTrip?.purpose || phTemplate?.destination?.purpose || "eden_heights") as string;
+  const phSubtitle = `${phSubtitleCity} · ${PURPOSE_LABELS[phPurposeKey] || PURPOSE_LABELS.eden_heights}`;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -143,6 +190,50 @@ export default function TravelHome() {
     setEditorOpen(false);
     await load();
     if (!editingId && created?.trip_id) router.push(`/travel/${created.trip_id}`);
+  };
+
+  const openPhEdit = () => {
+    setPhEditingId(phTrip?.trip_id || null);
+    setPhEditorInitial({
+      destination_name: phTrip?.destination_name || phTemplate?.destination?.destination_name || "Manila & Bulacan",
+      city: phTrip?.city || phTemplate?.destination?.city || "Manila",
+      purpose: phTrip?.purpose || phTemplate?.destination?.purpose || "eden_heights",
+      departure_date: phTrip?.departure_date || "",
+      return_date: phTrip?.return_date || "",
+      status: phTrip?.status || "planning",
+    });
+    setPhEditorOpen(true);
+  };
+
+  const submitPhEdit = async (values: any) => {
+    const payload: any = {
+      destination_name: (values.destination_name || "").trim() || "Manila & Bulacan",
+      city: (values.city || "").trim() || "Manila",
+      country: "Philippines",
+      country_code: "PH",
+      departure_date: values.departure_date || null,
+      return_date: values.return_date || null,
+      purpose: values.purpose || "eden_heights",
+      status: values.status || "planning",
+    };
+    if (phEditingId) {
+      await travelApi.updateTrip(phEditingId, payload);
+    } else {
+      const created = await travelApi.createTrip(payload);
+      // Pre-cache PH insights on the new trip (fast hardcoded path)
+      try {
+        await travelApi.insights({
+          destination_name: payload.destination_name,
+          country: payload.country,
+          country_code: payload.country_code,
+          city: payload.city,
+          purpose: payload.purpose,
+          trip_id: created.trip_id,
+        });
+      } catch (_e) {}
+    }
+    setPhEditorOpen(false);
+    await load();
   };
 
   const openPhilippines = async () => {
@@ -225,10 +316,20 @@ export default function TravelHome() {
           >
             <View style={styles.phHeader}>
               <Text style={styles.phEmoji}>🇵🇭 🌴</Text>
-              <View style={styles.phPin}><Text style={styles.phPinText}>PINNED</Text></View>
+              <View style={styles.phHeaderRight}>
+                <View style={styles.phPin}><Text style={styles.phPinText}>PINNED</Text></View>
+                <TouchableOpacity
+                  style={styles.phEditBtn}
+                  onPress={(e) => { (e as any)?.stopPropagation?.(); openPhEdit(); }}
+                  testID="ph-edit"
+                  hitSlop={8}
+                >
+                  <Pencil size={14} color="#fff" />
+                </TouchableOpacity>
+              </View>
             </View>
-            <Text style={styles.phTitle}>Philippines Quick Access</Text>
-            <Text style={styles.phSub}>Manila & Bulacan · Eden Heights Development</Text>
+            <Text style={styles.phTitle}>{phTitle}</Text>
+            <Text style={styles.phSub}>{phSubtitle}</Text>
             <View style={styles.phStats}>
               <View style={styles.phStat}>
                 <Text style={styles.phStatLabel}>1 USD =</Text>
@@ -353,6 +454,16 @@ export default function TravelHome() {
         onSubmit={submitTrip}
         testID="trip-editor"
       />
+
+      <EditModal
+        visible={phEditorOpen}
+        title={phEditingId ? "Edit Philippines Quick Access" : "Set up Philippines Quick Access"}
+        fields={PH_EDIT_FIELDS}
+        initial={phEditorInitial || {}}
+        onClose={() => setPhEditorOpen(false)}
+        onSubmit={submitPhEdit}
+        testID="ph-editor"
+      />
     </SafeAreaView>
   );
 }
@@ -371,6 +482,8 @@ const styles = StyleSheet.create({
   planBtnText: { color: "#fff", fontWeight: "700", fontSize: 13 },
   phCard: { backgroundColor: "#0E3A5C", borderRadius: radius.lg, padding: spacing.lg, borderWidth: 1, borderColor: "#2563EB", gap: spacing.sm, overflow: "hidden" },
   phHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  phHeaderRight: { flexDirection: "row", alignItems: "center", gap: 8 },
+  phEditBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: "rgba(255,255,255,0.15)", borderWidth: 1, borderColor: "rgba(255,255,255,0.25)", alignItems: "center", justifyContent: "center" },
   phEmoji: { fontSize: 24 },
   phPin: { backgroundColor: "rgba(20,184,166,0.25)", paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.sm, borderWidth: 1, borderColor: "#14B8A6" },
   phPinText: { color: "#5EEAD4", fontSize: 9, fontWeight: "700", letterSpacing: 0.8 },
