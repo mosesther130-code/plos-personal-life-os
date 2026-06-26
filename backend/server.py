@@ -238,7 +238,10 @@ class CareerProfile(BaseModel):
     target_roles: List[str] = []
     target_locations: List[str] = []
     min_salary: float = 0
+    work_type_pref: Optional[str] = "remote"  # remote/hybrid/onsite/any
     auto_apply_enabled: bool = False
+    auto_apply_review_first: bool = True
+    auto_cover_letter: bool = True
 
 
 class CareerProfileUpdate(BaseModel):
@@ -248,6 +251,9 @@ class CareerProfileUpdate(BaseModel):
     ats_score: Optional[int] = None
     target_roles: Optional[List[str]] = None
     target_locations: Optional[List[str]] = None
+    work_type_pref: Optional[str] = None
+    auto_apply_review_first: Optional[bool] = None
+    auto_cover_letter: Optional[bool] = None
     min_salary: Optional[float] = None
     auto_apply_enabled: Optional[bool] = None
 
@@ -261,6 +267,15 @@ class JobApplication(BaseModel):
     resume_version_used: Optional[str] = None
     cover_letter_used: Optional[str] = None
     applied_date: Optional[str] = None
+    location: Optional[str] = None
+    work_type: Optional[str] = None  # remote/hybrid/onsite
+    salary_range: Optional[str] = None
+    badges: List[str] = []
+    notes: Optional[str] = None
+    follow_up_date: Optional[str] = None
+    job_description: Optional[str] = None
+    generated_resume: Optional[str] = None
+    generated_cover_letter: Optional[str] = None
 
 
 class JobApplicationCreate(BaseModel):
@@ -271,6 +286,32 @@ class JobApplicationCreate(BaseModel):
     resume_version_used: Optional[str] = None
     cover_letter_used: Optional[str] = None
     applied_date: Optional[str] = None
+    location: Optional[str] = None
+    work_type: Optional[str] = None
+    salary_range: Optional[str] = None
+    badges: List[str] = []
+    notes: Optional[str] = None
+    follow_up_date: Optional[str] = None
+    job_description: Optional[str] = None
+
+
+class JobApplicationUpdate(BaseModel):
+    employer: Optional[str] = None
+    role_title: Optional[str] = None
+    match_score: Optional[int] = None
+    status: Optional[str] = None
+    resume_version_used: Optional[str] = None
+    cover_letter_used: Optional[str] = None
+    applied_date: Optional[str] = None
+    location: Optional[str] = None
+    work_type: Optional[str] = None
+    salary_range: Optional[str] = None
+    badges: Optional[List[str]] = None
+    notes: Optional[str] = None
+    follow_up_date: Optional[str] = None
+    job_description: Optional[str] = None
+    generated_resume: Optional[str] = None
+    generated_cover_letter: Optional[str] = None
 
 
 class HealthProfile(BaseModel):
@@ -948,6 +989,246 @@ async def delete_application(
     return {"ok": True}
 
 
+@api_router.put("/job-applications/{application_id}", response_model=JobApplication)
+async def update_application(
+    application_id: str,
+    payload: JobApplicationUpdate,
+    user_id: str = Depends(get_current_user_id),
+):
+    update = {k: v for k, v in payload.dict().items() if v is not None}
+    res = await db.job_applications.update_one(
+        {"application_id": application_id, "user_id": user_id}, {"$set": update}
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Application not found")
+    doc = await db.job_applications.find_one(
+        {"application_id": application_id, "user_id": user_id},
+        {"_id": 0, "user_id": 0},
+    )
+    return JobApplication(**doc)
+
+
+# ----------------------------- Career AI ------------------------------
+class ResumeAnalyzeRequest(BaseModel):
+    resume_text: Optional[str] = None  # if None, use stored master
+
+
+@api_router.post("/career/resume-analyze")
+async def resume_analyze(
+    payload: ResumeAnalyzeRequest = ResumeAnalyzeRequest(),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Claude analyzes resume → returns ats_score, strengths[], gaps[], improvements[]."""
+    career = await db.career_profile.find_one(
+        {"user_id": user_id}, {"_id": 0, "user_id": 0}
+    )
+    resume = payload.resume_text or (career or {}).get("resume_master_text") or ""
+    if not resume.strip():
+        return {
+            "ats_score": 0,
+            "strengths": [],
+            "gaps": ["No resume on file. Add your resume to get an analysis."],
+            "improvements": [],
+        }
+
+    target_roles = (career or {}).get("target_roles", [])
+    prompt = f"""Analyze this resume for ATS optimization and quality.
+Target roles: {target_roles}
+
+Resume:
+\"\"\"{resume[:8000]}\"\"\"
+
+Return JSON ONLY (no markdown):
+{{
+  "ats_score": <0-100 int>,
+  "strengths": ["<strength1>", "<strength2>", "<strength3>"],
+  "gaps": ["<gap1>", "<gap2>", "<gap3>"],
+  "improvements": ["<specific improvement 1>", "<2>", "<3>", "<4>"]
+}}
+"""
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=f"resume-{user_id}",
+        system_message=PLOS_SYSTEM_PROMPT,
+    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+    response = await chat.send_message(UserMessage(text=prompt))
+    text = response if isinstance(response, str) else str(response)
+    import json
+    import re
+    m = re.search(r"\{.*\}", text, re.DOTALL)
+    parsed: Dict[str, Any] = {}
+    if m:
+        try:
+            parsed = json.loads(m.group(0))
+        except Exception:
+            parsed = {}
+
+    ats = int(parsed.get("ats_score", 0))
+    # persist
+    await db.career_profile.update_one(
+        {"user_id": user_id}, {"$set": {"ats_score": ats}}
+    )
+    return {
+        "ats_score": ats,
+        "strengths": parsed.get("strengths", []),
+        "gaps": parsed.get("gaps", []),
+        "improvements": parsed.get("improvements", []),
+    }
+
+
+class GenerateApplicationRequest(BaseModel):
+    application_id: Optional[str] = None
+    role_title: str
+    employer: str
+    job_description: str
+
+
+@api_router.post("/career/generate")
+async def generate_application(
+    payload: GenerateApplicationRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Generates ATS-optimized resume + cover letter for a specific job + keyword
+    match analysis."""
+    career = await db.career_profile.find_one(
+        {"user_id": user_id}, {"_id": 0, "user_id": 0}
+    )
+    master = (career or {}).get("resume_master_text") or ""
+
+    prompt = f"""Tailor an ATS-optimized resume and cover letter for this job.
+
+ROLE: {payload.role_title} at {payload.employer}
+
+JOB DESCRIPTION:
+\"\"\"{payload.job_description[:5000]}\"\"\"
+
+CANDIDATE MASTER RESUME:
+\"\"\"{master[:5000]}\"\"\"
+
+CANDIDATE CONTEXT:
+- Current role: {(career or {}).get('current_title')}
+- Current employer: {(career or {}).get('current_employer')}
+- Target roles: {(career or {}).get('target_roles')}
+
+Return JSON ONLY (no markdown):
+{{
+  "resume": "<full ATS-optimized resume text, copy-paste ready, plain text>",
+  "cover_letter": "<3-paragraph cover letter, personalized to this employer>",
+  "keywords_present": ["<keyword1>", "<keyword2>"],
+  "keywords_missing": ["<missing1>", "<missing2>"],
+  "match_score": <0-100 int>
+}}
+"""
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=f"gen-{user_id}-{uuid.uuid4()}",
+        system_message=PLOS_SYSTEM_PROMPT,
+    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+    response = await chat.send_message(UserMessage(text=prompt))
+    text = response if isinstance(response, str) else str(response)
+    import json
+    import re
+    m = re.search(r"\{.*\}", text, re.DOTALL)
+    parsed: Dict[str, Any] = {}
+    if m:
+        try:
+            parsed = json.loads(m.group(0))
+        except Exception:
+            parsed = {}
+
+    result = {
+        "resume": parsed.get("resume", ""),
+        "cover_letter": parsed.get("cover_letter", ""),
+        "keywords_present": parsed.get("keywords_present", []),
+        "keywords_missing": parsed.get("keywords_missing", []),
+        "match_score": int(parsed.get("match_score", 0)),
+    }
+
+    # Persist to application if id provided
+    if payload.application_id:
+        await db.job_applications.update_one(
+            {
+                "application_id": payload.application_id,
+                "user_id": user_id,
+            },
+            {
+                "$set": {
+                    "generated_resume": result["resume"],
+                    "generated_cover_letter": result["cover_letter"],
+                    "match_score": result["match_score"],
+                    "job_description": payload.job_description,
+                }
+            },
+        )
+    return result
+
+
+@api_router.post("/career/path-advisor")
+async def path_advisor(user_id: str = Depends(get_current_user_id)):
+    """Claude proposes 3 career paths with cert/courses/timeline/salary."""
+    career = await db.career_profile.find_one(
+        {"user_id": user_id}, {"_id": 0, "user_id": 0}
+    )
+    if not career:
+        raise HTTPException(status_code=404, detail="Career profile not found")
+
+    prompt = f"""Based on this candidate, propose 3 distinct career path options.
+
+CANDIDATE:
+{career}
+
+For each path:
+- name (concise)
+- description (1-2 sentences)
+- timeline (e.g. "6-12 months")
+- target_salary_range (USD)
+- required_skills (array of 3-5)
+- certifications (array of 2-3 with name + provider like Coursera/LinkedIn/AWS)
+- next_action (1 sentence)
+
+Return JSON ONLY:
+{{"paths": [{{"name":"","description":"","timeline":"","target_salary_range":"","required_skills":[],"certifications":[{{"name":"","provider":""}}],"next_action":""}}, ...]}}
+"""
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=f"path-{user_id}",
+        system_message=PLOS_SYSTEM_PROMPT,
+    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+    response = await chat.send_message(UserMessage(text=prompt))
+    text = response if isinstance(response, str) else str(response)
+    import json
+    import re
+    m = re.search(r"\{.*\}", text, re.DOTALL)
+    parsed: Dict[str, Any] = {}
+    if m:
+        try:
+            parsed = json.loads(m.group(0))
+        except Exception:
+            parsed = {}
+    return {"paths": parsed.get("paths", [])}
+
+
+# ----------------------------- Pipeline -------------------------------
+@api_router.get("/career/pipeline")
+async def career_pipeline(user_id: str = Depends(get_current_user_id)):
+    """Return application counts by stage + interviews_pending + new_matches counts."""
+    stages = ["matched", "applied", "screening", "interview", "offer", "rejected"]
+    counts: Dict[str, int] = {}
+    for s in stages:
+        counts[s] = await db.job_applications.count_documents(
+            {"user_id": user_id, "status": s}
+        )
+    return {
+        "counts": counts,
+        "new_matches": counts.get("matched", 0),
+        "applications_sent": counts.get("applied", 0)
+        + counts.get("screening", 0)
+        + counts.get("interview", 0)
+        + counts.get("offer", 0),
+        "interviews_pending": counts.get("interview", 0),
+    }
+
+
 # ----------------------------- Health ----------------------------------
 @api_router.get("/health-profile", response_model=HealthProfile)
 async def get_health(user_id: str = Depends(get_current_user_id)):
@@ -1591,9 +1872,11 @@ async def seed_demo(user_id: str = Depends(get_current_user_id)):
 
     # Job Applications
     apps = [
-        {"employer": "Anthropic", "role_title": "Senior Product Engineer", "match_score": 87, "status": "interview", "resume_version_used": "v3-tech", "cover_letter_used": "anthropic-cover", "applied_date": "2026-01-18"},
-        {"employer": "Stripe", "role_title": "Staff Engineer, Payments", "match_score": 78, "status": "applied", "resume_version_used": "v3-tech", "cover_letter_used": None, "applied_date": "2026-02-02"},
-        {"employer": "Linear", "role_title": "Engineering Manager", "match_score": 72, "status": "matched", "resume_version_used": None, "cover_letter_used": None, "applied_date": None},
+        {"employer": "Anthropic", "role_title": "Senior Product Engineer", "match_score": 87, "status": "interview", "resume_version_used": "v3-tech", "cover_letter_used": "anthropic-cover", "applied_date": "2026-01-18", "location": "San Francisco, CA", "work_type": "remote", "salary_range": "$220K-$280K", "badges": ["Top Match", "Lateral Move"]},
+        {"employer": "Stripe", "role_title": "Staff Engineer, Payments", "match_score": 78, "status": "applied", "resume_version_used": "v3-tech", "cover_letter_used": None, "applied_date": "2026-02-02", "location": "Remote (US)", "work_type": "remote", "salary_range": "$240K-$310K", "badges": ["New"]},
+        {"employer": "Linear", "role_title": "Engineering Manager", "match_score": 72, "status": "matched", "resume_version_used": None, "cover_letter_used": None, "applied_date": None, "location": "Remote", "work_type": "remote", "salary_range": "$200K-$260K", "badges": ["New"]},
+        {"employer": "Vercel", "role_title": "Senior Full-Stack Engineer", "match_score": 91, "status": "matched", "resume_version_used": None, "cover_letter_used": None, "applied_date": None, "location": "Remote", "work_type": "remote", "salary_range": "$210K-$270K", "badges": ["Top Match", "New"]},
+        {"employer": "Notion", "role_title": "Senior Software Engineer", "match_score": 83, "status": "screening", "resume_version_used": "v3-tech", "cover_letter_used": None, "applied_date": "2026-01-25", "location": "New York, NY", "work_type": "hybrid", "salary_range": "$195K-$250K", "badges": []},
     ]
     for a in apps:
         obj = JobApplication(**a).dict()
@@ -1610,7 +1893,35 @@ async def seed_demo(user_id: str = Depends(get_current_user_id)):
             "target_roles": ["Senior Engineer", "Staff Engineer", "Engineering Manager"],
             "target_locations": ["Remote", "Austin, TX", "New York, NY"],
             "min_salary": 165000,
+            "work_type_pref": "remote",
             "auto_apply_enabled": False,
+            "auto_apply_review_first": True,
+            "auto_cover_letter": True,
+            "resume_master_text": """JOHN DOE — Senior Software Engineer
+Austin, TX · john.doe@example.com · linkedin.com/in/johndoe
+
+SUMMARY
+Senior software engineer with 8+ years of experience building scalable web applications and leading cross-functional teams. Specialized in TypeScript, React, Node.js, and distributed systems on AWS. Shipped products at Series-B and public companies serving 10M+ users.
+
+EXPERIENCE
+Acme Corp — Senior Software Engineer (2022 — Present)
+• Led migration of monolithic Rails app to Next.js + Postgres + Redis, improving p95 latency 47%.
+• Built feature-flag system in TypeScript used by 4 product teams, 200+ active flags.
+• Mentored 3 junior engineers through formal program.
+
+PayFlow (Series B Fintech) — Software Engineer (2019 — 2022)
+• Designed event-driven payments pipeline (Kafka, Go) processing $2B/yr.
+• Implemented PCI-DSS and SOC2 controls for production data access.
+
+OpenStack Labs — Software Engineer (2017 — 2019)
+• Contributed to open-source SDKs in Python and JavaScript (3k+ stars).
+• Built CLI tool adopted by 12 partner companies.
+
+EDUCATION
+B.S. Computer Science, UT Austin, 2017
+
+SKILLS
+TypeScript, React, Next.js, Node.js, Python, Go, PostgreSQL, Redis, AWS (ECS, RDS, S3), Docker, Kubernetes, Terraform, CI/CD, system design, mentoring."""
         }},
     )
 

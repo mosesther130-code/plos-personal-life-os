@@ -1,0 +1,51 @@
+{
+  "summary": "Iteration 4 — Career Module (backend + frontend). Backend: 8/8 new pytest cases in test_career_module.py passed in 87.5s including real Claude calls. Verified: (1) GET /api/career/pipeline returns counts{matched,applied,screening,interview,offer,rejected} + derived new_matches/applications_sent (applied+screening+interview+offer)/interviews_pending (verified from seed: Vercel+Linear matched, Stripe applied, Notion screening, Anthropic interview). (2) GET /api/job-applications returns enriched seed with location, work_type, salary_range, badges; Vercel match_score=91 status=matched 'Top Match' badge confirmed. (3) PUT /api/job-applications/{id} partial update (status+notes+follow_up_date) returns updated app, persists; bogus id returns 404. (4) POST /api/career/resume-analyze (empty body) → real Claude returns ats_score (int 0-100), strengths[], gaps[], improvements[]; persists ats_score to career_profile (verified via GET /api/career). (5) POST /api/career/generate with {role_title,employer,job_description} returns {resume(text>50ch), cover_letter(text>50ch), keywords_present[], keywords_missing[], match_score(int)}; with application_id persists generated_resume/cover/match_score/job_description to that application (verified GET shows persisted strings). (6) POST /api/career/path-advisor returns paths[] with ≥3 entries; each has name/description/timeline/target_salary_range/required_skills[]/certifications[{name,provider}]/next_action. Frontend mobile (390x844): login → tap Career tab → /career shows: header 'Senior Software Engineer · Acme Corp' + open-criteria gear; career-stats-row with stat-new-matches/stat-applications-sent/stat-interviews-pending (numbers reflect live pipeline); application-funnel with 5 tappable cells stage-{matched,applied,screening,interview,offer} — tap stage-applied navigates to /career/applications?stage=applied with filter-applied chip pre-selected; resume-health-card with ats-score-ring '78 ATS' + improve-resume-button triggers real Claude (~18s) and renders strength-0..2, gap-0..2, improvement-0..3 bullets; open-path-advisor → /career/path-advisor shows loading then path-card-0/1/2 (e.g. 'Staff Engineer IC Leadership' 6-12mo $210K-$280K with skills+certs from AWS/Educative/CNCF + next_action); open-resume-generator → /career/resume-generator with gen-role/gen-employer/gen-jd inputs + gen-button; tapping match-card-{id} on home navigates to resume-generator?application_id={id} prefilling Vercel employer + 'Senior Full-Stack Engineer' role; top 4 match cards render with logo initials, role, employer·location·work_type, color-coded score (Vercel 92% green, Anthropic 87%, etc.), salary_range pill + badges (Top Match/New/Lateral Move); criteria-modal opens via edit-criteria-button with criteria-modal-{current_title,current_employer,min_salary,work_type_pref-remote/hybrid/onsite/any,auto_apply_review_first-toggle,auto_cover_letter-toggle,save,close} controls — pre-populated from career_profile; /career/applications shows filter chips (all/matched/applied/screening/…), each app card has logo, role, status badge colored, match%, advance-{id} button that cycles status (verified Linear matched→applied with TEST_note + follow_up persisted from pytest mutation). All 5 funnel stages, 3 paths, 4 match cards, full applications screen + advance flow verified end-to-end with real Claude. Carry-over deprecations from iter_3 still present (shadow*, pointerEvents, expo SDK 54 version drift).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "global", "issues": [
+        "Console deprecation warnings (carry-over from iter_3): 'shadow*' style props deprecated → use boxShadow; props.pointerEvents deprecated → use style.pointerEvents. Non-blocking, cosmetic."
+      ]}
+    ],
+    "react_native_issues": [
+      {"component": "package.json (expo, expo-font, expo-router)", "issue": "Version drift vs Expo SDK 54: expo@54.0.34 (expected ~54.0.35), expo-font@14.0.11 (expected ~14.0.12), expo-router@6.0.23 (expected ~6.0.24). Carry-over from iter_2/3. Reference: /app/frontend/package.json"}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_career_module.py",
+    "/app/test_reports/pytest/career_module_results.xml"
+  ],
+  "action_items": [
+    "(Minor) criteria-modal field testIDs use `criteria-modal-{field}` (e.g. criteria-modal-current_title, criteria-modal-save) rather than the spec's `criteria-{field}`. Functional and consistent — either rename to spec OR update spec to match current naming. Same testID-naming-vs-spec drift pattern reported in iter_3.",
+    "(Carry-over) Run `yarn expo install --fix` to clear SDK 54 version drift warnings.",
+    "(Carry-over) Replace deprecated `shadow*` style props with `boxShadow` and `props.pointerEvents` with `style.pointerEvents`.",
+    "(Carry-over) server.py now ~1950+ LOC after Career module — split into routers (auth, finance, debt, mortgage, career, health, ai, dashboard, alerts) before further growth."
+  ],
+  "critical_code_review_comments": [
+    "All 5 Career endpoints properly exclude `_id`/`user_id` in projections — no ObjectId leaks.",
+    "PUT /api/job-applications/{id} correctly returns 404 when matched_count==0 — verified.",
+    "Claude calls use claude-sonnet-4-5-20250929 via emergentintegrations across resume-analyze (~5-10s), generate (~10-15s), path-advisor (~15-20s); all return parseable JSON consistently.",
+    "/api/career/resume-analyze persists ats_score to career_profile collection — verified via GET /api/career roundtrip.",
+    "/api/career/generate with application_id persists generated_resume/cover/match_score/job_description to that job_application — verified.",
+    "Frontend resume-generator screen correctly reads application_id query param and prefills employer/role from match-card navigation.",
+    "Funnel stage cells navigate to /career/applications?stage={key} with the filter chip pre-selected via route param — wiring works for all 5 stages.",
+    "server.py LOC now ~1950+ after Career additions — refactor into routers before adding more modules (carry-over from iter_3)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_career_module.py (new — 8 tests: pipeline shape+derived, job-apps enrichment, PUT update+404, resume-analyze persistence, generate roundtrip + persistence, path-advisor 3-path shape)"
+  ],
+  "success_rate": {
+    "backend": "100% (8/8 new career tests in 87.5s; iter_1-3 total 50/50 still valid → 58/58 cumulative)",
+    "frontend": "100% of tested Career flows (login → tab → home stats/funnel/resume-health/match-cards/path-advisor entry/resume-gen entry/criteria modal; applications screen filter chips + advance status; match-card→resume-gen prefill; improve-resume real Claude renders strengths/gaps/improvements; path-advisor renders 3 paths from Claude)"
+  },
+  "seed_data_creation": "POST /api/seed-demo invoked at module-fixture start to restore canonical demo (5 job apps: Vercel matched 91%, Linear matched, Stripe applied, Notion screening, Anthropic interview 87%; full resume_master_text on career_profile). Pytest mutated Linear→applied with TEST_note as expected.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend URL: https://life-os-hub-32.preview.emergentagent.com. Creds /app/memory/test_credentials.md (test1@plos.app/test123). Pytest dir /app/backend/tests/ now has 4 files = 58 tests total (test_plos_api 30, test_dashboard_alerts_ai 8, test_finance_v3 12, test_career_module 8). Career routes: /(tabs)/career, /career/applications?stage=, /career/resume-generator?application_id=, /career/path-advisor. Claude UI flows take 15-25s — wait long enough. After running test_career_module.py the Linear app gets mutated to status=applied with TEST_note/follow_up — re-seed if you need original matched state. criteria-modal testID prefix is `criteria-modal-{field}` not `criteria-{field}`.",
+  "rca_of_issue": "N/A — no functional regressions. Career module ships clean. Only outstanding item is testID-spec-naming drift (functional, downstream automation needs alignment) and carry-over expo version + style-deprecation warnings."
+}

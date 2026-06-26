@@ -134,8 +134,24 @@ export const careerApi = {
   listApplications: () => request<any[]>("/job-applications"),
   createApplication: (data: any) =>
     request<any>("/job-applications", { method: "POST", body: data }),
+  updateApplication: (id: string, data: any) =>
+    request<any>(`/job-applications/${id}`, { method: "PUT", body: data }),
   deleteApplication: (id: string) =>
     request(`/job-applications/${id}`, { method: "DELETE" }),
+  pipeline: () => request<any>("/career/pipeline"),
+  resumeAnalyze: (resume_text?: string) =>
+    request<any>("/career/resume-analyze", {
+      method: "POST",
+      body: { resume_text },
+    }),
+  generate: (data: {
+    application_id?: string;
+    role_title: string;
+    employer: string;
+    job_description: string;
+  }) => request<any>("/career/generate", { method: "POST", body: data }),
+  pathAdvisor: () =>
+    request<{ paths: any[] }>("/career/path-advisor", { method: "POST" }),
 };
 
 // ----------------- Health -----------------
