@@ -44,10 +44,10 @@ const MODULES = [
   { key: "career", title: "Career", icon: Briefcase, color: colors.primaryGlow, route: "/(tabs)/career" },
   { key: "investments", title: "Investments", icon: TrendingUp, color: "#10B981", route: "/investments" },
   { key: "debt", title: "Debt", icon: CreditCard, color: colors.warning, route: "/(tabs)/finance" },
-  { key: "deals", title: "Deals", icon: Tag, color: "#EC4899", route: "/module/shopping" },
-  { key: "travel", title: "Travel", icon: Plane, color: "#A855F7", route: "/module/travel" },
-  { key: "legal", title: "Legal", icon: Scale, color: "#F59E0B", route: "/module/legal" },
-  { key: "health", title: "Health", icon: HeartPulse, color: colors.danger, route: "/module/health" },
+  { key: "deals", title: "Deals", icon: Tag, color: "#EC4899", route: "/shopping" },
+  { key: "travel", title: "Travel", icon: Plane, color: "#A855F7", route: "/travel" },
+  { key: "legal", title: "Legal", icon: Scale, color: "#F59E0B", route: "/legal" },
+  { key: "health", title: "Health", icon: HeartPulse, color: colors.danger, route: "/health" },
 ];
 
 function greetingFor(date: Date) {
