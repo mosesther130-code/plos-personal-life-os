@@ -80,7 +80,7 @@ const MODULES: ModuleItem[] = [
     subtitle: "Documents, wills, contracts",
     icon: Scale,
     color: "#F59E0B",
-    route: "/module/legal",
+    route: "/legal",
   },
   {
     key: "shopping",
@@ -96,7 +96,7 @@ const MODULES: ModuleItem[] = [
     subtitle: "Insurance, wellness, records",
     icon: HeartPulse,
     color: "#EF4444",
-    route: "/module/health",
+    route: "/health",
   },
 ];
 

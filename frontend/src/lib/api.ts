@@ -176,13 +176,6 @@ export const careerApi = {
     request<{ paths: any[] }>("/career/path-advisor", { method: "POST" }),
 };
 
-// ----------------- Health -----------------
-export const healthApi = {
-  get: () => request<any>("/health-profile"),
-  update: (data: any) =>
-    request<any>("/health-profile", { method: "PUT", body: data }),
-};
-
 // ----------------- AI -----------------
 export const aiApi = {
   decisions: () => request<any[]>("/ai-decisions"),
@@ -385,6 +378,36 @@ export const travelApi = {
   updatePassport: (d: any) => request<any>("/travel/passport", { method: "PUT", body: d }),
   // Philippines template
   philippinesTemplate: () => request<any>("/travel/philippines-template"),
+};
+
+// ----------------- Health & Wellbeing -----------------
+export const healthApi = {
+  insurance: () => request<any>("/health/insurance"),
+  updateInsurance: (d: any) => request<any>("/health/insurance", { method: "PUT", body: d }),
+  resources: () => request<any>("/health/medicaid-resources"),
+  wellness: (days = 7) => request<any>(`/health/wellness?days=${days}`),
+  logWellness: (d: any) => request<any>("/health/wellness", { method: "POST", body: d }),
+  medications: () => request<any>("/health/medications"),
+  createMed: (d: any) => request<any>("/health/medications", { method: "POST", body: d }),
+  updateMed: (id: string, d: any) => request<any>(`/health/medications/${id}`, { method: "PUT", body: d }),
+  deleteMed: (id: string) => request<any>(`/health/medications/${id}`, { method: "DELETE" }),
+  appointments: () => request<any>("/health/appointments"),
+  createAppt: (d: any) => request<any>("/health/appointments", { method: "POST", body: d }),
+  updateAppt: (id: string, d: any) => request<any>(`/health/appointments/${id}`, { method: "PUT", body: d }),
+  deleteAppt: (id: string) => request<any>(`/health/appointments/${id}`, { method: "DELETE" }),
+  insights: () => request<any>("/health/insights", { method: "POST" }),
+};
+
+// ----------------- Legal Advisor -----------------
+export const legalApi = {
+  categories: () => request<any>("/legal/categories"),
+  topic: (slug: string, force_refresh = false) =>
+    request<any>(`/legal/topic/${slug}${force_refresh ? "?force_refresh=true" : ""}`, { method: "POST" }),
+  documents: () => request<any>("/legal/documents"),
+  createDoc: (d: any) => request<any>("/legal/documents", { method: "POST", body: d }),
+  updateDoc: (id: string, d: any) => request<any>(`/legal/documents/${id}`, { method: "PUT", body: d }),
+  deleteDoc: (id: string) => request<any>(`/legal/documents/${id}`, { method: "DELETE" }),
+  debtRights: () => request<any>("/legal/debt-rights"),
 };
 
 export const seedDemo = () => request<any>("/seed-demo", { method: "POST" });

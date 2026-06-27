@@ -5435,6 +5435,505 @@ async def ph_template(user_id: str = Depends(get_current_user_id)):
 
 
 # ====================================================================
+# HEALTH & WELLBEING MODULE
+# ====================================================================
+GA_MEDICAID_THRESHOLD_MONTHLY = 1822  # 138% FPL single adult (2026 estimate)
+GA_MEDICAID_THRESHOLD_FAMILY_OF_2 = 2466
+
+DEFAULT_HEALTH_INSURANCE = {
+    "coverage_type": "Medicaid",
+    "plan_name": "Georgia Medicaid",
+    "provider": "Georgia Department of Community Health",
+    "policy_number": None,
+    "renewal_date": None,  # YYYY-MM-DD
+    "monthly_premium_usd": 0,
+    "deductible_usd": 0,
+    "household_size": 1,
+    "monthly_income_usd": None,  # User-entered for eligibility tracking
+    "notes": "Income-based coverage. Renewal review required annually.",
+}
+
+MEDICAID_RESOURCES = [
+    {"label": "Georgia Medicaid Portal", "url": "https://medicaid.georgia.gov/", "description": "Apply, renew, check eligibility"},
+    {"label": "Healthcare.gov Marketplace", "url": "https://www.healthcare.gov/", "description": "ACA marketplace plans if over Medicaid limit"},
+    {"label": "GA Gateway (Renewals)", "url": "https://gateway.ga.gov/", "description": "Renew Medicaid online"},
+    {"label": "Find In-Network Provider", "url": "https://medicaid.georgia.gov/providers/provider-search", "description": "Search Georgia Medicaid providers"},
+    {"label": "PeachCare for Kids", "url": "https://medicaid.georgia.gov/peachcare-kids", "description": "Children under 19 coverage"},
+    {"label": "Member Services", "url": "tel:18664394769", "description": "Call 1-866-439-4769"},
+]
+
+COVERED_SERVICES_SUMMARY = [
+    "Primary care visits",
+    "Emergency room services",
+    "Hospital inpatient/outpatient care",
+    "Lab work and X-rays",
+    "Mental & behavioral health services",
+    "Prescription medications (formulary)",
+    "Maternity & newborn care",
+    "Dental & vision (limited for adults)",
+    "Substance use disorder treatment",
+    "Family planning services",
+]
+
+
+class InsuranceIn(BaseModel):
+    coverage_type: Optional[str] = None
+    plan_name: Optional[str] = None
+    provider: Optional[str] = None
+    policy_number: Optional[str] = None
+    renewal_date: Optional[str] = None
+    monthly_premium_usd: Optional[float] = None
+    deductible_usd: Optional[float] = None
+    household_size: Optional[int] = None
+    monthly_income_usd: Optional[float] = None
+    notes: Optional[str] = None
+
+
+def _eligibility_status(monthly_income: Optional[float], household_size: int = 1) -> Dict[str, Any]:
+    threshold = GA_MEDICAID_THRESHOLD_MONTHLY if household_size <= 1 else GA_MEDICAID_THRESHOLD_FAMILY_OF_2
+    if monthly_income is None:
+        return {"level": "unknown", "color": "neutral", "label": "Income not entered", "threshold": threshold, "income": None, "ratio": None}
+    ratio = monthly_income / threshold if threshold else 0
+    if ratio > 1:
+        return {"level": "over", "color": "danger", "label": "Income exceeds Medicaid threshold — review alternatives", "threshold": threshold, "income": monthly_income, "ratio": ratio}
+    if ratio >= 0.85:
+        return {"level": "approaching", "color": "warning", "label": "Income is approaching the Medicaid eligibility cap", "threshold": threshold, "income": monthly_income, "ratio": ratio}
+    return {"level": "ok", "color": "success", "label": "Within Medicaid eligibility limits", "threshold": threshold, "income": monthly_income, "ratio": ratio}
+
+
+def _days_until(date_str: Optional[str]) -> Optional[int]:
+    if not date_str:
+        return None
+    try:
+        d = datetime.fromisoformat(date_str).date()
+        return (d - datetime.now(timezone.utc).date()).days
+    except Exception:
+        return None
+
+
+@api_router.get("/health/insurance")
+async def get_insurance(user_id: str = Depends(get_current_user_id)):
+    p = await db.health_profile.find_one({"user_id": user_id}, {"_id": 0}) or {}
+    ins = p.get("insurance") or DEFAULT_HEALTH_INSURANCE
+    # Fall back to user's actual income if not set
+    if ins.get("monthly_income_usd") is None:
+        sources = await db.income_sources.find({"user_id": user_id}, {"_id": 0}).to_list(20)
+        total = sum((s.get("monthly_amount") or 0) for s in sources)
+        if total > 0:
+            ins["monthly_income_usd"] = total
+    elig = _eligibility_status(ins.get("monthly_income_usd"), ins.get("household_size") or 1)
+    return {
+        "insurance": ins,
+        "eligibility": elig,
+        "days_until_renewal": _days_until(ins.get("renewal_date")),
+    }
+
+
+@api_router.put("/health/insurance")
+async def update_insurance(body: InsuranceIn, user_id: str = Depends(get_current_user_id)):
+    p = await db.health_profile.find_one({"user_id": user_id}, {"_id": 0}) or {}
+    ins = p.get("insurance") or {**DEFAULT_HEALTH_INSURANCE}
+    update = {k: v for k, v in body.dict().items() if v is not None}
+    ins.update(update)
+    await db.health_profile.update_one({"user_id": user_id}, {"$set": {"insurance": ins}}, upsert=True)
+    elig = _eligibility_status(ins.get("monthly_income_usd"), ins.get("household_size") or 1)
+    return {"insurance": ins, "eligibility": elig, "days_until_renewal": _days_until(ins.get("renewal_date"))}
+
+
+@api_router.get("/health/medicaid-resources")
+async def medicaid_resources():
+    return {
+        "resources": MEDICAID_RESOURCES,
+        "covered_services": COVERED_SERVICES_SUMMARY,
+        "thresholds": {
+            "single_adult_monthly_usd": GA_MEDICAID_THRESHOLD_MONTHLY,
+            "family_of_2_monthly_usd": GA_MEDICAID_THRESHOLD_FAMILY_OF_2,
+            "state": "Georgia",
+            "year": 2026,
+            "note": "Threshold reflects 138% of Federal Poverty Level. Verify on medicaid.georgia.gov for exact eligibility.",
+        },
+    }
+
+
+class WellnessIn(BaseModel):
+    energy: int  # 1-10
+    sleep: int
+    stress: int
+    mood: int
+    notes: Optional[str] = ""
+    date: Optional[str] = None  # YYYY-MM-DD, defaults to today
+
+
+@api_router.post("/health/wellness")
+async def log_wellness(body: WellnessIn, user_id: str = Depends(get_current_user_id)):
+    today = body.date or datetime.now(timezone.utc).date().isoformat()
+    doc = {
+        "user_id": user_id,
+        "date": today,
+        "energy": max(1, min(10, body.energy)),
+        "sleep": max(1, min(10, body.sleep)),
+        "stress": max(1, min(10, body.stress)),
+        "mood": max(1, min(10, body.mood)),
+        "notes": body.notes or "",
+        "created_at": iso(now_utc()),
+    }
+    # Upsert by (user_id, date) so one entry per day
+    await db.wellness_checkins.update_one(
+        {"user_id": user_id, "date": today},
+        {"$set": doc},
+        upsert=True,
+    )
+    return {k: v for k, v in doc.items() if k != "user_id"}
+
+
+@api_router.get("/health/wellness")
+async def list_wellness(days: int = 7, user_id: str = Depends(get_current_user_id)):
+    days = max(1, min(60, days))
+    since = (datetime.now(timezone.utc).date() - timedelta(days=days)).isoformat()
+    rows = await db.wellness_checkins.find(
+        {"user_id": user_id, "date": {"$gte": since}},
+        {"_id": 0, "user_id": 0},
+    ).sort("date", 1).to_list(60)
+    return {"checkins": rows, "since": since, "days": days}
+
+
+class MedicationIn(BaseModel):
+    name: str
+    dosage: Optional[str] = None
+    schedule_time: Optional[str] = None  # "08:00" / "Morning & Evening"
+    notes: Optional[str] = None
+
+
+@api_router.get("/health/medications")
+async def list_meds(user_id: str = Depends(get_current_user_id)):
+    rows = await db.medications.find({"user_id": user_id}, {"_id": 0, "user_id": 0}).sort("created_at", 1).to_list(50)
+    return {"medications": rows}
+
+
+@api_router.post("/health/medications")
+async def create_med(body: MedicationIn, user_id: str = Depends(get_current_user_id)):
+    doc = {
+        **body.dict(),
+        "med_id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "created_at": iso(now_utc()),
+    }
+    await db.medications.insert_one(doc)
+    return {k: v for k, v in doc.items() if k not in ("_id", "user_id")}
+
+
+@api_router.put("/health/medications/{med_id}")
+async def update_med(med_id: str, body: MedicationIn, user_id: str = Depends(get_current_user_id)):
+    r = await db.medications.update_one(
+        {"med_id": med_id, "user_id": user_id},
+        {"$set": {**body.dict(), "updated_at": iso(now_utc())}},
+    )
+    if r.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Not found")
+    doc = await db.medications.find_one({"med_id": med_id, "user_id": user_id}, {"_id": 0, "user_id": 0})
+    return doc
+
+
+@api_router.delete("/health/medications/{med_id}")
+async def delete_med(med_id: str, user_id: str = Depends(get_current_user_id)):
+    r = await db.medications.delete_one({"med_id": med_id, "user_id": user_id})
+    if r.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Not found")
+    return {"ok": True}
+
+
+class AppointmentIn(BaseModel):
+    title: str
+    datetime: str  # ISO
+    location: Optional[str] = None
+    notes: Optional[str] = None
+
+
+@api_router.get("/health/appointments")
+async def list_appts(user_id: str = Depends(get_current_user_id)):
+    rows = await db.appointments.find({"user_id": user_id}, {"_id": 0, "user_id": 0}).sort("datetime", 1).to_list(50)
+    today = datetime.now(timezone.utc).date()
+    for r in rows:
+        try:
+            d = datetime.fromisoformat(r["datetime"].replace("Z", "+00:00")).date()
+            r["days_until"] = (d - today).days
+        except Exception:
+            r["days_until"] = None
+    return {"appointments": rows}
+
+
+@api_router.post("/health/appointments")
+async def create_appt(body: AppointmentIn, user_id: str = Depends(get_current_user_id)):
+    doc = {
+        **body.dict(),
+        "appt_id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "created_at": iso(now_utc()),
+    }
+    await db.appointments.insert_one(doc)
+    return {k: v for k, v in doc.items() if k not in ("_id", "user_id")}
+
+
+@api_router.put("/health/appointments/{appt_id}")
+async def update_appt(appt_id: str, body: AppointmentIn, user_id: str = Depends(get_current_user_id)):
+    r = await db.appointments.update_one({"appt_id": appt_id, "user_id": user_id}, {"$set": body.dict()})
+    if r.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Not found")
+    doc = await db.appointments.find_one({"appt_id": appt_id, "user_id": user_id}, {"_id": 0, "user_id": 0})
+    return doc
+
+
+@api_router.delete("/health/appointments/{appt_id}")
+async def delete_appt(appt_id: str, user_id: str = Depends(get_current_user_id)):
+    r = await db.appointments.delete_one({"appt_id": appt_id, "user_id": user_id})
+    if r.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Not found")
+    return {"ok": True}
+
+
+@api_router.post("/health/insights")
+async def health_insights(user_id: str = Depends(get_current_user_id)):
+    since = (datetime.now(timezone.utc).date() - timedelta(days=7)).isoformat()
+    rows = await db.wellness_checkins.find(
+        {"user_id": user_id, "date": {"$gte": since}},
+        {"_id": 0, "user_id": 0},
+    ).sort("date", 1).to_list(7)
+    if not rows:
+        return {"insights": "Log at least one wellness check-in to receive AI insights. Aim for a daily check-in for the best signal.", "data_points": 0}
+    summary = "\n".join(
+        f"{r['date']}: energy {r['energy']}/10, sleep {r['sleep']}/10, stress {r['stress']}/10, mood {r['mood']}/10. {r.get('notes','')}"
+        for r in rows
+    )
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=f"health-insights-{user_id}-{int(time.time())}",
+        system_message="You are a wellness coach for PLOS users. Be concise, evidence-based, and ALWAYS end with: 'This is not a medical diagnosis — please consult your doctor for medical questions.'",
+    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+    prompt = (
+        "Analyze this user's last 7 days of wellness check-ins. Identify the most concerning trend "
+        "(stress, sleep, energy, or mood). Offer EXACTLY 3 evidence-based strategies they can try this week. "
+        "Be brief (under 250 words total). Use markdown bullets.\n\nData:\n" + summary
+    )
+    try:
+        r = await chat.send_message(UserMessage(text=prompt))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Insights failed: {e}")
+    return {"insights": r if isinstance(r, str) else str(r), "data_points": len(rows)}
+
+
+# ====================================================================
+# LEGAL ADVISOR MODULE
+# ====================================================================
+LEGAL_CATEGORIES = [
+    {"slug": "housing", "title": "Housing & Tenant Rights", "icon": "home", "color": "#3B82F6",
+     "description": "Lease agreements, evictions, security deposits, repairs, fair housing"},
+    {"slug": "employment", "title": "Employment Law", "icon": "briefcase", "color": "#F59E0B",
+     "description": "At-will, discrimination, wage & hour, FMLA, workers' comp"},
+    {"slug": "debt", "title": "Debt & Credit Rights (FDCPA)", "icon": "credit-card", "color": "#EF4444",
+     "description": "Collector behavior, credit disputes, statute of limitations"},
+    {"slug": "immigration", "title": "Immigration & International", "icon": "globe", "color": "#06B6D4",
+     "description": "Visas, green cards, naturalization, work authorization"},
+    {"slug": "family", "title": "Family Law Basics", "icon": "users", "color": "#A855F7",
+     "description": "Marriage, divorce, custody, adoption, support"},
+    {"slug": "estate", "title": "Estate Planning", "icon": "scroll", "color": "#10B981",
+     "description": "Wills, trusts, POA, healthcare directives, probate"},
+    {"slug": "consumer", "title": "Consumer Rights", "icon": "shopping-cart", "color": "#EC4899",
+     "description": "Warranties, lemon laws, deceptive practices, refunds"},
+    {"slug": "tax", "title": "Tax Law Basics", "icon": "calculator", "color": "#14B8A6",
+     "description": "Filing requirements, deductions, IRS disputes, GA state tax"},
+    {"slug": "smallbiz", "title": "Small Business Law", "icon": "building", "color": "#F97316",
+     "description": "LLC formation, contracts, taxes, employment, licensing"},
+]
+LEGAL_CATEGORY_BY_SLUG = {c["slug"]: c for c in LEGAL_CATEGORIES}
+
+LEGAL_DISCLAIMER = "⚖️ This is general legal information only and not legal advice. For specific legal situations, consult a licensed attorney in your jurisdiction."
+
+DEFAULT_LEGAL_DOCS = [
+    {"type": "will", "title": "Last Will & Testament", "description": "Directs distribution of assets after death."},
+    {"type": "poa", "title": "Power of Attorney", "description": "Authorizes someone to act on your behalf."},
+    {"type": "life_insurance", "title": "Life Insurance Beneficiaries", "description": "Confirm beneficiaries are current and correct."},
+    {"type": "property_deed", "title": "Property Deeds & Titles", "description": "All real estate ownership documents filed."},
+    {"type": "healthcare_directive", "title": "Healthcare Directive / Living Will", "description": "Medical decisions if incapacitated."},
+]
+
+GA_DEBT_RIGHTS = {
+    "fdcpa": {
+        "title": "Fair Debt Collection Practices Act (FDCPA)",
+        "rights": [
+            "Collectors may NOT call before 8 AM or after 9 PM in your time zone",
+            "They cannot use abusive, obscene, or threatening language",
+            "They must identify themselves and the debt they are collecting on",
+            "You can request validation of the debt in writing within 30 days",
+            "You can demand they cease all communication in writing",
+            "They cannot discuss your debt with third parties (except spouse, attorney)",
+            "Violations: $1,000 statutory damages + actual damages + attorney's fees",
+        ],
+    },
+    "credit_disputes": {
+        "title": "Disputing Credit Report Errors",
+        "steps": [
+            "Get free credit reports at annualcreditreport.com (weekly, all 3 bureaus)",
+            "Send dispute letter via certified mail with return receipt",
+            "Include: copy of report with item circled, explanation, supporting docs",
+            "Bureau must investigate within 30 days (45 if you submit additional info)",
+            "If unresolved, complain to CFPB at consumerfinance.gov/complaint",
+        ],
+    },
+    "student_loans": {
+        "title": "Student Loan Forgiveness Programs",
+        "programs": [
+            {"name": "Public Service Loan Forgiveness (PSLF)", "criteria": "120 qualifying payments while working full-time for government or 501(c)(3) — applies to USAID, GSU, public schools."},
+            {"name": "Teacher Loan Forgiveness", "criteria": "Up to $17,500 after 5 consecutive years teaching low-income schools."},
+            {"name": "Income-Driven Repayment (SAVE/IDR)", "criteria": "Payments capped at 5-10% of discretionary income; balance forgiven after 20-25 years."},
+            {"name": "Borrower Defense to Repayment", "criteria": "School engaged in fraudulent practices."},
+            {"name": "Total & Permanent Disability Discharge", "criteria": "Documented permanent disability through SSA/VA/physician."},
+        ],
+    },
+    "statute_of_limitations_ga": {
+        "title": "Statute of Limitations in Georgia (Debt Collection)",
+        "items": [
+            {"debt_type": "Credit card (open account)", "years": 4, "note": "Per O.C.G.A. § 9-3-25"},
+            {"debt_type": "Written contract / signed agreement", "years": 6, "note": "Per O.C.G.A. § 9-3-24"},
+            {"debt_type": "Promissory note", "years": 6, "note": "Per O.C.G.A. § 11-3-118"},
+            {"debt_type": "Auto loan (UCC)", "years": 4, "note": "Per O.C.G.A. § 11-2-725"},
+            {"debt_type": "Medical debt (oral)", "years": 4, "note": "Per O.C.G.A. § 9-3-26"},
+            {"debt_type": "Judgments (state court)", "years": 7, "note": "Renewable; per O.C.G.A. § 9-12-60"},
+        ],
+    },
+    "free_legal_aid_ga": [
+        {"name": "Atlanta Legal Aid Society", "phone": "404-524-5811", "url": "https://atlantalegalaid.org/"},
+        {"name": "Georgia Legal Services Program", "phone": "1-833-457-7529", "url": "https://www.glsp.org/"},
+        {"name": "State Bar of Georgia Lawyer Referral", "phone": "404-527-8700", "url": "https://www.gabar.org/forthepublic/"},
+        {"name": "CFPB (federal complaints)", "phone": "1-855-411-2372", "url": "https://www.consumerfinance.gov/complaint/"},
+    ],
+}
+
+
+@api_router.get("/legal/categories")
+async def list_legal_categories():
+    return {"categories": LEGAL_CATEGORIES, "disclaimer": LEGAL_DISCLAIMER}
+
+
+@api_router.post("/legal/topic/{slug}")
+async def legal_topic(slug: str, force_refresh: bool = False, user_id: str = Depends(get_current_user_id)):
+    cat = LEGAL_CATEGORY_BY_SLUG.get(slug)
+    if not cat:
+        raise HTTPException(status_code=404, detail="Unknown category")
+
+    if not force_refresh:
+        cached = await db.legal_topic_cache.find_one({"user_id": user_id, "slug": slug}, {"_id": 0})
+        if cached and cached.get("response"):
+            try:
+                age_days = (datetime.now(timezone.utc) - datetime.fromisoformat(cached["generated_at"].replace("Z", "+00:00"))).days
+                if age_days < 7:
+                    return {"slug": slug, "title": cat["title"], "response": cached["response"], "cached": True, "disclaimer": LEGAL_DISCLAIMER}
+            except Exception:
+                pass
+
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=f"legal-{user_id}-{slug}-{int(time.time())}",
+        system_message=(
+            "You are a legal information assistant for PLOS users based in Atlanta, Georgia. "
+            "Provide accurate, plain-English overviews of US/Georgia law. Use markdown structure: "
+            "## Overview of Key Rights, ## Common Situations, ## When to Consult an Attorney, "
+            "## Georgia Resources. Keep total response UNDER 600 words, focused on actionable info. "
+            "ALWAYS end with: '⚖️ This is general legal information only and not legal advice. For specific legal situations, consult a licensed attorney in your jurisdiction.'"
+        ),
+    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+    prompt = f"Generate the overview for category: {cat['title']}. Description: {cat['description']}. User is in Georgia."
+    try:
+        r = await chat.send_message(UserMessage(text=prompt))
+        text = r if isinstance(r, str) else str(r)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Legal topic failed: {e}")
+
+    await db.legal_topic_cache.update_one(
+        {"user_id": user_id, "slug": slug},
+        {"$set": {"response": text, "generated_at": iso(now_utc())}},
+        upsert=True,
+    )
+    return {"slug": slug, "title": cat["title"], "response": text, "cached": False, "disclaimer": LEGAL_DISCLAIMER}
+
+
+class LegalDocIn(BaseModel):
+    type: str
+    title: str
+    description: Optional[str] = ""
+    status: str = "not_started"  # not_started / drafted / signed / filed
+    date: Optional[str] = None
+    location: Optional[str] = None
+    notes: Optional[str] = None
+    custom: bool = False
+
+
+@api_router.get("/legal/documents")
+async def list_legal_docs(user_id: str = Depends(get_current_user_id)):
+    items = await db.legal_documents.find({"user_id": user_id}, {"_id": 0, "user_id": 0}).sort("created_at", 1).to_list(50)
+    if not items:
+        # Seed defaults
+        now = iso(now_utc())
+        for d in DEFAULT_LEGAL_DOCS:
+            doc = {
+                **d,
+                "doc_id": str(uuid.uuid4()),
+                "user_id": user_id,
+                "status": "not_started",
+                "date": None,
+                "location": None,
+                "notes": None,
+                "custom": False,
+                "created_at": now,
+            }
+            await db.legal_documents.insert_one(doc)
+        items = await db.legal_documents.find({"user_id": user_id}, {"_id": 0, "user_id": 0}).sort("created_at", 1).to_list(50)
+    return {"documents": items, "disclaimer": LEGAL_DISCLAIMER}
+
+
+@api_router.post("/legal/documents")
+async def create_legal_doc(body: LegalDocIn, user_id: str = Depends(get_current_user_id)):
+    doc = {
+        **body.dict(),
+        "doc_id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "custom": True,
+        "created_at": iso(now_utc()),
+    }
+    await db.legal_documents.insert_one(doc)
+    return {k: v for k, v in doc.items() if k not in ("_id", "user_id")}
+
+
+@api_router.put("/legal/documents/{doc_id}")
+async def update_legal_doc(doc_id: str, body: LegalDocIn, user_id: str = Depends(get_current_user_id)):
+    existing = await db.legal_documents.find_one({"doc_id": doc_id, "user_id": user_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Not found")
+    update = body.dict()
+    update["updated_at"] = iso(now_utc())
+    # Preserve `custom` flag from existing doc
+    update["custom"] = existing.get("custom", False)
+    await db.legal_documents.update_one({"doc_id": doc_id, "user_id": user_id}, {"$set": update})
+    merged = {**existing, **update}
+    return {k: v for k, v in merged.items() if k not in ("_id", "user_id")}
+
+
+@api_router.delete("/legal/documents/{doc_id}")
+async def delete_legal_doc(doc_id: str, user_id: str = Depends(get_current_user_id)):
+    existing = await db.legal_documents.find_one({"doc_id": doc_id, "user_id": user_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Not found")
+    if not existing.get("custom"):
+        raise HTTPException(status_code=400, detail="Default documents cannot be deleted — reset their status instead.")
+    await db.legal_documents.delete_one({"doc_id": doc_id, "user_id": user_id})
+    return {"ok": True}
+
+
+@api_router.get("/legal/debt-rights")
+async def debt_rights():
+    return {**GA_DEBT_RIGHTS, "disclaimer": LEGAL_DISCLAIMER}
+
+
+# ====================================================================
 # Health check
 # ====================================================================
 @api_router.get("/")
