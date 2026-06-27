@@ -5517,8 +5517,8 @@ async def get_insurance(user_id: str = Depends(get_current_user_id)):
     ins = p.get("insurance") or DEFAULT_HEALTH_INSURANCE
     # Fall back to user's actual income if not set
     if ins.get("monthly_income_usd") is None:
-        sources = await db.income_sources.find({"user_id": user_id}, {"_id": 0}).to_list(20)
-        total = sum((s.get("monthly_amount") or 0) for s in sources)
+        sources = await db.income_sources.find({"user_id": user_id, "is_active": True}, {"_id": 0}).to_list(20)
+        total = sum((s.get("net_monthly") or s.get("gross_monthly") or 0) for s in sources)
         if total > 0:
             ins["monthly_income_usd"] = total
     elig = _eligibility_status(ins.get("monthly_income_usd"), ins.get("household_size") or 1)

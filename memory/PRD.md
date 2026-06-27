@@ -71,7 +71,11 @@ Every AI call (advice + chat) gathers the user's complete data context (income, 
 - Backend: extended `POST /api/chat` with optional `mode` overlay (legal/financial/career/travel guidance overlays onto `PLOS_SYSTEM_PROMPT`); persists conversation metadata to `chat_conversations` collection.
 - 4 new endpoints: `GET /api/chatbot/conversations`, `DELETE /api/chatbot/conversations/{id}`, `DELETE /api/chatbot/conversations`, `GET /api/chatbot/search?q=...`, `GET /api/chatbot/quick-actions`.
 - Cross-platform `notify()` helper wired for all in-chatbot Alert messages (react-native-web silently swallows `Alert.alert`).
-- Tested: 10/10 backend pytest + 22/22 Playwright UI (iteration_15 + post-fix verification).
+## Iteration 16 — Health & Wellbeing + Legal Advisor (DONE)
+- **Health & Wellbeing**: Insurance card (Medicaid default) with 4-tier eligibility logic against GA 2026 Medicaid threshold ($1,822/mo single adult, $2,466 family of 2), color-coded eligibility bar + "Find Coverage Alternatives" CTA when income exceeds threshold. Daily Wellness Check-In with 4 sliders (1-10 energy/sleep/stress/mood) + notes, 7-day SVG trend chart, AI Health Insights via Claude 4.5 (3 evidence-based strategies + "consult your doctor" disclaimer). Medications + Appointments CRUD via EditModal with days_until pills. 6 Medicaid resources + covered-services summary.
+- **Legal Advisor**: 9 legal categories (housing, employment, debt, immigration, family, estate, consumer, tax, smallbiz) with Claude 4.5 GA-specific overviews, 7-day cache. Persistent mandatory disclaimer banner. My Legal Documents tracker with 5 auto-seeded defaults (Will, POA, Life Insurance Beneficiaries, Property Deeds, Healthcare Directive) + custom doc CRUD. Dedicated Debt & Credit Rights page (FDCPA, credit dispute steps, 5 student loan programs, GA statute-of-limitations table, 4 free legal aid contacts with tap-to-call).
+- Tested: 29/29 backend pytest + 100% Playwright UI (iteration_16 report).
+- Post-test fixes: income auto-fill field name `monthly_amount` → `net_monthly` (+ `is_active` filter); restored legacy `healthApi.get/update` for `/health-profile` compatibility in `module/[name].tsx`.
 
 
 

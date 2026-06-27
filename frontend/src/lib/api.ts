@@ -382,6 +382,10 @@ export const travelApi = {
 
 // ----------------- Health & Wellbeing -----------------
 export const healthApi = {
+  // Legacy health-profile compatibility (used by app/module/[name].tsx)
+  get: () => request<any>("/health-profile"),
+  update: (d: any) => request<any>("/health-profile", { method: "PUT", body: d }),
+  // Insurance + Medicaid
   insurance: () => request<any>("/health/insurance"),
   updateInsurance: (d: any) => request<any>("/health/insurance", { method: "PUT", body: d }),
   resources: () => request<any>("/health/medicaid-resources"),
