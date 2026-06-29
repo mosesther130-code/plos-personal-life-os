@@ -192,7 +192,36 @@ agent_communication:
 
     - agent: "main"
       message: |
-        Enhancement 7 — Safety & Local implementation complete.
+        Enhancement 8 — Global Tools (World Clock + Time Zone Converter + AI Best
+        Meeting Time) implementation complete.
+
+        NEW backend (/app/backend/world_clock.py — mounted in server.py):
+        1. GET /api/world-clock/directory → curated list of cities + IANA timezones
+        2. GET /api/world-clock/clocks → autoseeds 3 clocks (Atlanta, Manila, London)
+           on first call; returns local_time/local_date/utc_offset_hours per clock.
+        3. POST/PUT/DELETE /api/world-clock/clocks → CRUD.
+        4. POST /api/world-clock/convert → convert source_datetime+tz to many targets
+        5. POST /api/world-clock/best-meeting-time → Claude-powered. Generates 24 UTC
+           candidate slots, scores by in-hours count, sends top 6 to Claude for the
+           final pick + reasoning.
+
+        Frontend (/app/frontend/app/global/world-clock.tsx — NEW screen):
+        - Section 1 YOUR CLOCKS with Add button (testID add-clock), tap-to-edit
+          (testID clock-{id}). Local time updates live every 30s using browser
+          Intl.DateTimeFormat.
+        - Section 2 TIME ZONE CONVERTER: From pills + HH:MM input + Convert button
+          (testID convert-btn). Results show as resultRow per target.
+        - Section 3 BEST MEETING TIME · AI: Participant pills (testIDs
+          ai-participant-{tz}), Duration/Earliest/Latest hour inputs, "Find Best
+          Meeting Time" button (testID run-best-meeting). Result card (testID
+          ai-result) shows recommended UTC slot, per-participant local times with
+          ⚠ for out-of-hours, plus Claude's reasoning + tradeoffs.
+
+        Also: Added a "World Clock" tile to the Global Tools hub at /global
+        (testID hub-world-clock).
+
+        Please test both backend (CRUD, convert, AI) and frontend (full Add/Edit/
+        Delete flow + Convert + AI meeting pick). Auth: test1@plos.app / test123.
 
         NEW backend (/app/backend/safety_local.py — mounted in server.py):
         1. Offline Maps CRUD at /api/local/offline-maps (GET autoseeds Georgia + Bulacan

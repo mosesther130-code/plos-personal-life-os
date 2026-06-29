@@ -484,7 +484,22 @@ export const securityExtrasApi = {
   getPoliceStep: () => request<any>("/security/identity-theft/police-step"),
 };
 
-// ----------------- Safety & Local Enhancements (Enhancement 7) -----------------
+// ----------------- World Clock / Global Tools (Enhancement 8) -----------------
+export const worldClockApi = {
+  directory: () => request<{ timezones: any[] }>("/world-clock/directory"),
+  listClocks: () =>
+    request<{ clocks: any[]; now_utc: string }>("/world-clock/clocks"),
+  createClock: (d: any) =>
+    request<any>("/world-clock/clocks", { method: "POST", body: d }),
+  updateClock: (id: string, d: any) =>
+    request<any>(`/world-clock/clocks/${id}`, { method: "PUT", body: d }),
+  deleteClock: (id: string) =>
+    request<any>(`/world-clock/clocks/${id}`, { method: "DELETE" }),
+  convert: (d: { source_tz: string; source_datetime: string; targets: string[] }) =>
+    request<any>("/world-clock/convert", { method: "POST", body: d }),
+  bestMeetingTime: (d: any) =>
+    request<any>("/world-clock/best-meeting-time", { method: "POST", body: d }),
+};
 export const localExtrasApi = {
   // Offline Maps CRUD (overrides legacy /local/offline-maps)
   listOfflineMaps: () =>

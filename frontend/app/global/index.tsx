@@ -3,7 +3,7 @@ import React from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { ArrowLeft, Languages, ArrowRightLeft, ChevronRight } from "lucide-react-native";
+import { ArrowLeft, Languages, ArrowRightLeft, ChevronRight, Clock } from "lucide-react-native";
 import { colors, spacing, radius } from "@/src/lib/theme";
 
 export default function GlobalHub() {
@@ -18,7 +18,22 @@ export default function GlobalHub() {
         <View style={{ width: 36 }} />
       </View>
       <ScrollView contentContainerStyle={styles.scroll}>
-        <Text style={styles.intro}>Translate any of 12 languages or convert between 13 currencies in real time.</Text>
+        <Text style={styles.intro}>Translate, convert currencies, or check world time — your global toolkit.</Text>
+        <TouchableOpacity
+          style={styles.tile}
+          onPress={() => router.push("/global/world-clock")}
+          testID="hub-world-clock"
+          activeOpacity={0.85}
+        >
+          <View style={[styles.tileIcon, { backgroundColor: "rgba(245,158,11,0.15)" }]}>
+            <Clock color={colors.warning} size={22} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.tileTitle}>World Clock</Text>
+            <Text style={styles.tileSub}>Multi-city · Converter · AI meeting picker</Text>
+          </View>
+          <ChevronRight size={16} color={colors.textTertiary} />
+        </TouchableOpacity>
         <TouchableOpacity
           style={styles.tile}
           onPress={() => router.push("/global/translator")}

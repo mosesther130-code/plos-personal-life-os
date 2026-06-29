@@ -6064,6 +6064,11 @@ from safety_local import make_router as make_safety_local_router  # noqa: E402
 
 app.include_router(make_safety_local_router(db, get_current_user_id))
 
+# Mount World Clock / Global Tools sub-router (Enhancement 8)
+from world_clock import make_router as make_world_clock_router  # noqa: E402
+
+app.include_router(make_world_clock_router(db, get_current_user_id))
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
