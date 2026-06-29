@@ -192,8 +192,39 @@ agent_communication:
 
     - agent: "main"
       message: |
-        Enhancement 9 — Shopping & Deals: AI Product Deal Finder implementation
-        complete.
+        Enhancement 10 — Health & Wellbeing: Medical Documents CRUD complete.
+
+        Existing Health module already had CRUD for Insurance / Medications /
+        Appointments. The missing piece was Medical Documents — now added.
+
+        NEW backend (/app/backend/medical_docs.py — mounted in server.py):
+        1. GET /api/health/medical-docs/types → 10 doc types (lab_result, imaging,
+           prescription, etc.)
+        2. GET /api/health/medical-docs[?doc_type=...] → list user docs (no raw
+           content_b64 in list view)
+        3. GET /api/health/medical-docs/{id} → metadata
+        4. GET /api/health/medical-docs/{id}/download → returns
+           {filename, mime_type, content_base64, size_bytes}
+        5. POST /api/health/medical-docs/upload → multipart upload with form
+           fields title, doc_type, doc_date, provider, notes
+        6. PUT /api/health/medical-docs/{id} → update metadata
+        7. DELETE /api/health/medical-docs/{id} → delete
+
+        Frontend (/app/frontend/app/health/index.tsx):
+        - New "Medical Documents" card with upload button (testID doc-upload),
+          list of docs (testID prefix doc-{id}), per-row download
+          (doc-download-{id}), tap row → edit metadata via EditModal
+          (Title / Type select / Date / Provider / Notes / Delete).
+        - Existing Insurance / Meds / Appointments CRUD continues to work
+          (regression check needed).
+
+        Please test backend (all 7 endpoints including multipart upload of a small
+        PDF/TXT) and frontend (upload via doc picker, edit metadata, download,
+        delete + no regression on Meds/Appts/Insurance).
+
+        Auth: test1@plos.app / test123. Existing Meds CRUD endpoints are
+        /api/health/medications, Appts /api/health/appointments, Insurance
+        /api/health/insurance.
 
         NEW backend (/app/backend/deal_finder.py — mounted in server.py):
         1. GET /api/shopping/deal-finder/retailers → 16 common US retailers

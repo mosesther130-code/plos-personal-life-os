@@ -6074,6 +6074,11 @@ from deal_finder import make_router as make_deal_finder_router  # noqa: E402
 
 app.include_router(make_deal_finder_router(db, get_current_user_id))
 
+# Mount Medical Docs sub-router (Enhancement 10)
+from medical_docs import make_router as make_medical_docs_router  # noqa: E402
+
+app.include_router(make_medical_docs_router(db, get_current_user_id))
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,

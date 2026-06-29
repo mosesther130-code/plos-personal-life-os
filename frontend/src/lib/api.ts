@@ -484,6 +484,62 @@ export const securityExtrasApi = {
   getPoliceStep: () => request<any>("/security/identity-theft/police-step"),
 };
 
+// ----------------- Medical Documents (Enhancement 10) -----------------
+export const medicalDocsApi = {
+  types: () => request<{ doc_types: string[] }>("/health/medical-docs/types"),
+  list: (doc_type?: string) =>
+    request<{ docs: any[]; total: number }>(
+      `/health/medical-docs${doc_type ? `?doc_type=${doc_type}` : ""}`
+    ),
+  get: (id: string) => request<any>(`/health/medical-docs/${id}`),
+  download: (id: string) =>
+    request<{ filename: string; mime_type: string; content_base64: string; size_bytes: number }>(
+      `/health/medical-docs/${id}/download`
+    ),
+  update: (id: string, d: any) =>
+    request<any>(`/health/medical-docs/${id}`, { method: "PUT", body: d }),
+  delete: (id: string) =>
+    request<any>(`/health/medical-docs/${id}`, { method: "DELETE" }),
+  upload: async (
+    file: File | Blob,
+    opts: {
+      title?: string;
+      doc_type?: string;
+      doc_date?: string;
+      provider?: string;
+      notes?: string;
+      filename?: string;
+    }
+  ) => {
+    const token = await getToken();
+    const fd = new FormData();
+    const name = opts.filename || (file as any).name || "document.bin";
+    fd.append("file", file as any, name);
+    if (opts.title) fd.append("title", opts.title);
+    fd.append("doc_type", opts.doc_type || "other");
+    if (opts.doc_date) fd.append("doc_date", opts.doc_date);
+    if (opts.provider) fd.append("provider", opts.provider);
+    if (opts.notes) fd.append("notes", opts.notes);
+    const baseUrl = (process.env.EXPO_PUBLIC_BACKEND_URL || "") + "/api";
+    const res = await fetch(`${baseUrl}/health/medical-docs/upload`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: fd as any,
+    });
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`;
+      try {
+        const j = await res.json();
+        msg = j?.detail || msg;
+      } catch {
+        // ignore
+      }
+      throw new Error(msg);
+    }
+    return res.json();
+  },
+};
+
 // ----------------- Deal Finder (Enhancement 9) -----------------
 export const dealFinderApi = {
   retailers: () => request<{ retailers: string[] }>("/shopping/deal-finder/retailers"),

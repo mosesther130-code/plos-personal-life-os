@@ -10,8 +10,10 @@ import Svg, { Polyline, Line as SvgLine, Circle as SvgCircle } from "react-nativ
 import {
   ArrowLeft, Activity, Heart, ShieldCheck, ShieldAlert, Pill, Calendar,
   Sparkles, Plus, ExternalLink, Pencil, Trash2, RefreshCw, AlertTriangle,
+  FileText, Upload, Download as DownloadIcon,
 } from "lucide-react-native";
-import { healthApi } from "@/src/lib/api";
+import * as DocumentPicker from "expo-document-picker";
+import { healthApi, medicalDocsApi } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
 import { EditModal, type Field } from "@/src/components/EditModal";
 
@@ -70,6 +72,37 @@ const APPT_FIELDS: Field[] = [
   { key: "notes", label: "Notes", kind: "textarea", maxLength: 200 },
 ];
 
+const DOC_TYPE_OPTIONS = [
+  { label: "Lab result", value: "lab_result" },
+  { label: "Imaging", value: "imaging" },
+  { label: "Prescription", value: "prescription" },
+  { label: "Discharge summary", value: "discharge_summary" },
+  { label: "Vaccine record", value: "vaccine_record" },
+  { label: "Insurance card", value: "insurance_card" },
+  { label: "Visit note", value: "visit_note" },
+  { label: "Specialist referral", value: "specialist_referral" },
+  { label: "Test report", value: "test_report" },
+  { label: "Other", value: "other" },
+];
+
+const DOC_FIELDS: Field[] = [
+  { key: "title", label: "Title", kind: "text", placeholder: "e.g. Annual blood panel" },
+  { key: "doc_type", label: "Document Type", kind: "select", options: DOC_TYPE_OPTIONS },
+  { key: "doc_date", label: "Document Date (YYYY-MM-DD)", kind: "text", placeholder: "2026-05-12" },
+  { key: "provider", label: "Provider / Doctor", kind: "text", placeholder: "Dr. Smith, Emory" },
+  { key: "notes", label: "Notes", kind: "textarea", maxLength: 300 },
+];
+
+const docTypeLabel = (v?: string) =>
+  DOC_TYPE_OPTIONS.find((o) => o.value === v)?.label || v || "Other";
+
+const fmtBytes = (n?: number) => {
+  if (!n) return "—";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+};
+
 export default function HealthHub() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -96,16 +129,23 @@ export default function HealthHub() {
   const [apptEditOpen, setApptEditOpen] = useState(false);
   const [apptEditing, setApptEditing] = useState<string | null>(null);
   const [apptInitial, setApptInitial] = useState<any | null>(null);
+  // Medical Documents (Enhancement 10)
+  const [docs, setDocs] = useState<any[]>([]);
+  const [docEditOpen, setDocEditOpen] = useState(false);
+  const [docEditing, setDocEditing] = useState<string | null>(null);
+  const [docInitial, setDocInitial] = useState<any | null>(null);
+  const [docUploading, setDocUploading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [ins, res, well, m, a] = await Promise.all([
+      const [ins, res, well, m, a, d] = await Promise.all([
         healthApi.insurance(),
         healthApi.resources(),
         healthApi.wellness(7),
         healthApi.medications(),
         healthApi.appointments(),
+        medicalDocsApi.list(),
       ]);
       setInsurance(ins?.insurance);
       setEligibility(ins?.eligibility);
@@ -114,6 +154,7 @@ export default function HealthHub() {
       setWellness(well?.checkins || []);
       setMeds(m?.medications || []);
       setAppts(a?.appointments || []);
+      setDocs(d?.docs || []);
     } catch (_e) {}
     setLoading(false);
   }, []);
@@ -147,6 +188,58 @@ export default function HealthHub() {
   };
 
   const eligColor = eligibility?.color === "danger" ? colors.danger : eligibility?.color === "warning" ? colors.warning : eligibility?.color === "success" ? colors.success : colors.textSecondary;
+
+  // ---- Medical Doc upload + download handlers ----
+  const pickAndUploadDoc = async () => {
+    try {
+      const r = await DocumentPicker.getDocumentAsync({
+        multiple: false,
+        type: ["application/pdf", "image/*", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"],
+        copyToCacheDirectory: true,
+      });
+      if (r.canceled || !r.assets?.[0]) return;
+      const asset = r.assets[0];
+      setDocUploading(true);
+      let blob: Blob | File;
+      if (Platform.OS === "web" && (asset as any).file) {
+        blob = (asset as any).file as File;
+      } else {
+        const resp = await fetch(asset.uri);
+        blob = await resp.blob();
+      }
+      await medicalDocsApi.upload(blob, {
+        title: asset.name,
+        doc_type: "other",
+        filename: asset.name,
+      });
+      await load();
+      notify("Uploaded", `${asset.name} added to your medical documents.`);
+    } catch (e: any) {
+      notify("Upload failed", e?.message || "Try again.");
+    } finally {
+      setDocUploading(false);
+    }
+  };
+
+  const downloadDoc = async (doc: any) => {
+    try {
+      const r = await medicalDocsApi.download(doc.doc_id);
+      const dataUrl = `data:${r.mime_type};base64,${r.content_base64}`;
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        const a = document.createElement("a");
+        a.href = dataUrl;
+        a.download = r.filename || "document";
+        a.target = "_blank";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      } else {
+        await Linking.openURL(dataUrl);
+      }
+    } catch (e: any) {
+      notify("Download failed", e?.message || "Try again.");
+    }
+  };
 
   const chart = useMemo(() => {
     if (wellness.length < 1) return null;
@@ -337,6 +430,68 @@ export default function HealthHub() {
             ))}
           </View>
 
+          {/* Medical Documents (Enhancement 10) */}
+          <View style={styles.card} testID="medical-docs-card">
+            <View style={styles.cardHeader}>
+              <View style={styles.cardHeaderLeft}>
+                <FileText color={colors.primaryGlow} size={18} />
+                <Text style={styles.cardTitle}>Medical Documents</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.smallIconBtn}
+                onPress={pickAndUploadDoc}
+                disabled={docUploading}
+                testID="doc-upload"
+              >
+                {docUploading ? (
+                  <ActivityIndicator color={colors.primaryGlow} size="small" />
+                ) : (
+                  <Upload size={14} color={colors.textTertiary} />
+                )}
+              </TouchableOpacity>
+            </View>
+            {docs.length === 0 ? (
+              <Text style={styles.emptyText}>
+                Upload lab results, imaging, prescriptions, or insurance cards. PDFs, images, and DOCX up to 15 MB.
+              </Text>
+            ) : (
+              docs.map((d) => (
+                <View key={d.doc_id} style={styles.itemRow}>
+                  <TouchableOpacity
+                    style={{ flex: 1 }}
+                    onPress={() => {
+                      setDocEditing(d.doc_id);
+                      setDocInitial({
+                        title: d.title || "",
+                        doc_type: d.doc_type || "other",
+                        doc_date: d.doc_date || "",
+                        provider: d.provider || "",
+                        notes: d.notes || "",
+                      });
+                      setDocEditOpen(true);
+                    }}
+                    testID={`doc-${d.doc_id}`}
+                  >
+                    <Text style={styles.itemTitle} numberOfLines={1}>{d.title}</Text>
+                    <Text style={styles.itemSub} numberOfLines={1}>
+                      {docTypeLabel(d.doc_type)}
+                      {d.doc_date ? ` · ${d.doc_date}` : ""}
+                      {d.provider ? ` · ${d.provider}` : ""} · {fmtBytes(d.size)}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.smallIconBtn}
+                    onPress={() => downloadDoc(d)}
+                    testID={`doc-download-${d.doc_id}`}
+                  >
+                    <DownloadIcon size={12} color={colors.textTertiary} />
+                  </TouchableOpacity>
+                  <Pencil size={12} color={colors.textTertiary} />
+                </View>
+              ))
+            )}
+          </View>
+
           {/* Resources */}
           <View style={styles.card} testID="medicaid-resources">
             <Text style={styles.cardTitle}>Medicaid Resources (Georgia)</Text>
@@ -412,6 +567,31 @@ export default function HealthHub() {
         onDelete={apptEditing ? async () => { await healthApi.deleteAppt(apptEditing); await load(); } : undefined}
         deleteSubject={apptInitial?.title || "this appointment"}
         testID="appt-editor"
+      />
+      {/* Medical Doc edit modal */}
+      <EditModal
+        visible={docEditOpen}
+        title="Edit Document Details"
+        fields={DOC_FIELDS}
+        initial={docInitial || {}}
+        onClose={() => setDocEditOpen(false)}
+        onSubmit={async (v) => {
+          if (docEditing) {
+            await medicalDocsApi.update(docEditing, v);
+            await load();
+            setDocEditOpen(false);
+          }
+        }}
+        onDelete={
+          docEditing
+            ? async () => {
+                await medicalDocsApi.delete(docEditing);
+                await load();
+              }
+            : undefined
+        }
+        deleteSubject={docInitial?.title || "this document"}
+        testID="doc-editor"
       />
     </SafeAreaView>
   );
