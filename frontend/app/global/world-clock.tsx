@@ -116,7 +116,9 @@ export default function WorldClockScreen() {
         key: "tz",
         label: "Timezone",
         kind: "select",
-        options: directory.map((d) => ({ label: `${d.label}  ·  ${d.tz}`, value: d.tz })),
+        options: directory
+          .filter((d, i, a) => a.findIndex((x) => x.tz === d.tz) === i)
+          .map((d) => ({ label: `${d.label}  ·  ${d.tz}`, value: d.tz })),
       },
       { key: "is_home", label: "Set as Home", kind: "boolean" },
       { key: "notes", label: "Notes (optional)", kind: "text" },
