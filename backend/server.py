@@ -6005,6 +6005,13 @@ app.include_router(
     make_career_files_router(db, get_current_user_id, EMERGENT_LLM_KEY, LlmChat, UserMessage)
 )
 
+# Mount Career Intelligence sub-router (Enhancements 4c, 4d, 4e)
+from career_intelligence import make_router as make_career_intel_router  # noqa: E402
+
+app.include_router(
+    make_career_intel_router(db, get_current_user_id, EMERGENT_LLM_KEY, LlmChat, UserMessage)
+)
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,

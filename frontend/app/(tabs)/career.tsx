@@ -30,8 +30,8 @@ import { EditModal, Field } from "@/src/components/EditModal";
 const STAGES = [
   { key: "matched", label: "Matches", color: colors.primaryGlow },
   { key: "applied", label: "Applied", color: "#A855F7" },
-  { key: "screening", label: "Screening", color: colors.warning },
-  { key: "interview", label: "Interview", color: "#EC4899" },
+  { key: "screening", label: "Screen", color: colors.warning },
+  { key: "interview", label: "Intrvw", color: "#EC4899" },
   { key: "offer", label: "Offer", color: colors.success },
 ];
 
@@ -344,9 +344,17 @@ export default function CareerHome() {
             <Text style={styles.quickTitle}>Resume Gen</Text>
             <Text style={styles.quickSub}>Tailored ATS</Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.quickCard}
+            onPress={() => router.push("/career-intel" as any)}
+            testID="open-career-intel"
+            activeOpacity={0.85}
+          >
+            <Sparkles color={colors.warning} size={20} />
+            <Text style={styles.quickTitle}>Career Intel</Text>
+            <Text style={styles.quickSub}>Interview · Letters · Jobs</Text>
+          </TouchableOpacity>
         </View>
-
-        {/* 4. Top Job Matches */}
         <Text style={styles.sectionLabel}>Top Job Matches</Text>
         <View style={{ gap: spacing.md }}>
           {topMatches.length === 0 && (

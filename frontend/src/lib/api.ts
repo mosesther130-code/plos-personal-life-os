@@ -450,6 +450,18 @@ export const careerFilesApi = {
     ),
 };
 
+// ----------------- Career Intelligence (Enhancements 4c, 4d, 4e) -----------------
+export const careerIntelApi = {
+  interviewPrep: (data: { application_id?: string; job_description_text?: string; job_description_file_id?: string }) =>
+    request<any>("/career-intel/interview-prep", { method: "POST", body: data }),
+  letter: (data: any) =>
+    request<any>("/career-intel/letter", { method: "POST", body: data }),
+  letterDownload: (data: { subject: string; body: string; format: "pdf" | "docx" }) =>
+    request<any>("/career-intel/letter/download", { method: "POST", body: data }),
+  jobSearch: (data: { refresh?: boolean; filters?: any }) =>
+    request<any>("/career-intel/job-search", { method: "POST", body: data || {} }),
+};
+
 // ----------------- Seed -----------------
 // ----------------- Travel Advisor -----------------
 export const travelApi = {
