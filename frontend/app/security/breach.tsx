@@ -169,17 +169,20 @@ export default function Breach() {
                 <TouchableOpacity
                   key={m.account_id}
                   style={styles.monRow}
-                  onPress={() =>
+                  onPress={() => {
+                    const sensitive = m.account_type === "phone" || m.account_type === "ssn_last4";
                     setAcctModal({
                       open: true,
                       item: {
                         account_id: m.account_id,
                         account_type: m.account_type,
-                        identifier: m.identifier ?? m.masked_identifier ?? "",
+                        // For phone/SSN we only have a mask back from the server,
+                        // so leave the identifier blank to force the user to retype.
+                        identifier: sensitive ? "" : (m.identifier ?? ""),
                         label: m.label || "",
                       },
-                    })
-                  }
+                    });
+                  }}
                   testID={`monitored-${m.account_id}`}
                 >
                   <View style={styles.monTypeBadge}>

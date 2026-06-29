@@ -160,4 +160,4 @@ class TestJurisdiction:
         assert "DeKalb County Police Department" in s.get("title", ""), f"title not overridden: {s.get('title')}"
         # links should include the online_report_url
         links = s.get("links", [])
-        assert any("dekalbcountyga" in (l.get("url", "") or "") for l in links), f"links not updated: {links}"
+        assert any("dekalbcountyga" in (lk.get("url", "") or "") for lk in links), f"links not updated: {links}"
