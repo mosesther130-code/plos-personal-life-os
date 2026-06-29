@@ -321,8 +321,8 @@ export default function CareerHome() {
             activeOpacity={0.85}
           >
             <Compass color="#A855F7" size={20} />
-            <Text style={styles.quickTitle}>Career Path</Text>
-            <Text style={styles.quickSub}>3 AI-mapped paths</Text>
+            <Text style={styles.quickTitle} numberOfLines={1}>Career Path</Text>
+            <Text style={styles.quickSub} numberOfLines={2}>3 AI-mapped paths</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.quickCard}
@@ -331,8 +331,8 @@ export default function CareerHome() {
             activeOpacity={0.85}
           >
             <FileText color={colors.success} size={20} />
-            <Text style={styles.quickTitle}>Resume Hub</Text>
-            <Text style={styles.quickSub}>Upload, build, download</Text>
+            <Text style={styles.quickTitle} numberOfLines={1}>Resume Hub</Text>
+            <Text style={styles.quickSub} numberOfLines={2}>Upload, build, download</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.quickCard}
@@ -341,8 +341,8 @@ export default function CareerHome() {
             activeOpacity={0.85}
           >
             <FileText color={colors.primaryGlow} size={20} />
-            <Text style={styles.quickTitle}>Resume Gen</Text>
-            <Text style={styles.quickSub}>Tailored ATS</Text>
+            <Text style={styles.quickTitle} numberOfLines={1}>Resume Gen</Text>
+            <Text style={styles.quickSub} numberOfLines={2}>Tailored ATS</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.quickCard}
@@ -351,8 +351,8 @@ export default function CareerHome() {
             activeOpacity={0.85}
           >
             <Sparkles color={colors.warning} size={20} />
-            <Text style={styles.quickTitle}>Career Intel</Text>
-            <Text style={styles.quickSub}>Interview · Letters · Jobs</Text>
+            <Text style={styles.quickTitle} numberOfLines={1}>Career Intel</Text>
+            <Text style={styles.quickSub} numberOfLines={2}>Interview · Letters · Jobs</Text>
           </TouchableOpacity>
         </View>
         <Text style={styles.sectionLabel}>Top Job Matches</Text>
@@ -486,7 +486,7 @@ function StatBox({
 }) {
   return (
     <View style={styles.statBox} testID={testID}>
-      <Text style={styles.statLabel}>{label}</Text>
+      <Text style={styles.statLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{label}</Text>
       <Text style={[styles.statValue, { color }]}>{value}</Text>
     </View>
   );
@@ -539,7 +539,7 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     fontSize: 10,
     fontWeight: "700",
-    letterSpacing: 1.2,
+    letterSpacing: 0.5,
     textTransform: "uppercase",
   },
   statValue: { fontSize: 26, fontWeight: "700", marginTop: 4 },
@@ -640,19 +640,21 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
 
-  // Quick row
-  quickRow: { flexDirection: "row", gap: spacing.md },
+  // Quick row (2x2 grid for better readability on 375px screens)
+  quickRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   quickCard: {
-    flex: 1,
+    width: "47.5%",
     backgroundColor: colors.surface,
     borderColor: colors.borderSubtle,
     borderWidth: 1,
     borderRadius: radius.lg,
-    padding: spacing.lg,
-    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    gap: 4,
+    minHeight: 92,
   },
-  quickTitle: { color: colors.textPrimary, fontWeight: "700", marginTop: 4 },
-  quickSub: { color: colors.textSecondary, fontSize: 12 },
+  quickTitle: { color: colors.textPrimary, fontWeight: "700", fontSize: 14, marginTop: 6 },
+  quickSub: { color: colors.textSecondary, fontSize: 11, lineHeight: 14 },
 
   // Match cards
   emptyCard: {
