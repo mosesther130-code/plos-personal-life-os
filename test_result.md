@@ -192,7 +192,56 @@ agent_communication:
 
     - agent: "main"
       message: |
-        Enhancement 12 — AI Document Summarizer implementation complete.
+        Biometric Unlock (P2) — feature complete.
+
+        NEW shared util /app/frontend/src/lib/biometric.ts:
+        - detectBiometricCapability() — returns {hardware, enrolled, available,
+          types, label} where label resolves to "Face ID" / "Touch ID" /
+          "Face Unlock" / "Fingerprint" based on OS + supported types.
+          Reports unavailable cleanly on web.
+        - authenticate() — wraps LocalAuthentication.authenticateAsync with
+          a "Use password" fallback.
+        - enableBiometricLogin(email, password) — stores credentials in
+          SecureStore (iOS Keychain / Android Keystore) and a flag.
+        - readStoredCredentials() — retrieves email+password after biometric
+          gate has succeeded.
+        - disableBiometricLogin() — wipes credentials and flag.
+
+        Login screen (/app/frontend/app/(auth)/login.tsx) rewritten:
+        - Auto-triggers the biometric prompt on first mount if hardware
+          available + enrolled + previously enabled.
+        - Renders a "Sign in with {Face ID|Touch ID|Fingerprint}" banner
+          (testID login-biometric-button) showing the masked stored email.
+        - On manual sign-in, if biometric is available but not yet enabled,
+          shows a one-time opt-in modal (testIDs enable-biometric-confirm /
+          enable-biometric-skip) which re-confirms via native prompt.
+        - Helpful inline hint when hardware is present but not enrolled.
+
+        Settings (/app/frontend/app/settings.tsx) — new Account row:
+        - testID open-biometric-toggle.
+        - Shows ON/OFF pill, dynamically labels with detected biometric type.
+        - Disabled if hardware unavailable; prompts to enroll if hardware
+          present but not enrolled.
+        - Enable flow opens a bottom-sheet (testIDs bio-password, bio-submit)
+          requiring the user's password; followed by a confirming biometric
+          prompt before credentials are stored.
+        - Disable flow shows a confirmation dialog and wipes credentials.
+
+        Web behavior: expo-local-authentication reports no hardware on web,
+        so the biometric UI gracefully hides on the web preview. No
+        regression on the standard email+password sign-in.
+
+        Please test the FRONTEND only (this is a pure client feature).
+        Coverage:
+        1. Settings page on web: biometric row is HIDDEN (no hardware).
+           Sign-in still works.
+        2. Login screen still functional (email + password sign-in).
+        3. Hidden biometric banner is correctly gated by capability check.
+        4. No console errors. testIDs above all match component instances.
+
+        Native testing (iOS simulator / device) is out of scope for the
+        web testing agent; document that the iOS/Android flow requires a
+        development build (won't fire on Expo Go web).
         FINAL enhancement in the 12-step roadmap.
 
         NEW backend (/app/backend/doc_summarizer.py — mounted in server.py):
