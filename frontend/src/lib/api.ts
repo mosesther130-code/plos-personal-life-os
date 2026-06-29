@@ -111,6 +111,18 @@ export const financeApi = {
       method: "POST",
       body: { extra_payment, refinance_apr },
     }),
+  generateReport: (data: {
+    report_type: "statement_income" | "statement_expenses" | "snapshot" | "detailed";
+    format: "pdf" | "docx" | "csv";
+    start_date: string;
+    end_date: string;
+  }) =>
+    request<{
+      filename: string;
+      mime_type: string;
+      content_base64: string;
+      size_bytes: number;
+    }>("/finance/reports/generate", { method: "POST", body: data }),
 };
 
 // ----------------- Assets / Investments -----------------

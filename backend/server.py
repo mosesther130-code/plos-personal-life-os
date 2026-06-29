@@ -1004,6 +1004,46 @@ class MortgageScenarioRequest(BaseModel):
     refinance_term_months: int = 360
 
 
+# --------------------------- Finance: Downloadable Reports -----------------
+class FinanceReportRequest(BaseModel):
+    report_type: str  # statement_income | statement_expenses | snapshot | detailed
+    format: str  # pdf | docx | csv
+    start_date: str  # YYYY-MM-DD
+    end_date: str  # YYYY-MM-DD
+
+
+@api_router.post("/finance/reports/generate")
+async def generate_finance_report(
+    payload: FinanceReportRequest, user_id: str = Depends(get_current_user_id)
+):
+    import base64 as _b64
+    from reports import generate_report
+
+    user = clean_doc(await db.users.find_one({"user_id": user_id})) or {"user_id": user_id}
+    income = [clean_doc(d) async for d in db.income_sources.find({"user_id": user_id})]
+    expenses = [clean_doc(d) async for d in db.expenses.find({"user_id": user_id})]
+    debts = [clean_doc(d) async for d in db.debts.find({"user_id": user_id})]
+    assets = [clean_doc(d) async for d in db.assets.find({"user_id": user_id})]
+    investments = [clean_doc(d) async for d in db.investments.find({"user_id": user_id})]
+    try:
+        filename, mime, data = generate_report(
+            payload.report_type, payload.format,
+            payload.start_date, payload.end_date,
+            user, income, expenses, debts, assets, investments,
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        logger.exception("report generation failed")
+        raise HTTPException(status_code=500, detail=f"Report generation failed: {e}")
+    return {
+        "filename": filename,
+        "mime_type": mime,
+        "content_base64": _b64.b64encode(data).decode("ascii"),
+        "size_bytes": len(data),
+    }
+
+
 @api_router.post("/finance/mortgage-scenarios")
 async def mortgage_scenarios(
     payload: MortgageScenarioRequest, user_id: str = Depends(get_current_user_id)

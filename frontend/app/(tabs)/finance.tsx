@@ -18,11 +18,13 @@ import {
   CreditCard,
   ChevronRight,
   Edit3,
+  Download,
 } from "lucide-react-native";
 
 import { financeApi } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
 import { EditModal, Field } from "@/src/components/EditModal";
+import { ReportsModal } from "@/src/components/ReportsModal";
 import { categoryMeta } from "@/src/lib/categories";
 
 const fmtUSD = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
@@ -87,6 +89,7 @@ export default function Finance() {
   const [expenseModal, setExpenseModal] = useState<{ open: boolean; item?: any }>({
     open: false,
   });
+  const [reportsOpen, setReportsOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -178,7 +181,18 @@ export default function Finance() {
           />
         }
       >
-        <Text style={styles.h1}>Financial Snapshot</Text>
+        <View style={styles.titleRow}>
+          <Text style={styles.h1}>Financial Snapshot</Text>
+          <TouchableOpacity
+            style={styles.reportBtn}
+            onPress={() => setReportsOpen(true)}
+            testID="open-reports"
+            activeOpacity={0.85}
+          >
+            <Download size={14} color={colors.primaryGlow} />
+            <Text style={styles.reportBtnText}>Reports</Text>
+          </TouchableOpacity>
+        </View>
 
         {/* 1. Summary row */}
         <View style={styles.summaryRow} testID="snapshot-summary-row">
@@ -374,6 +388,8 @@ export default function Finance() {
         onDelete={expenseModal.item ? onDeleteExpense : undefined}
         testID="expense-modal"
       />
+
+      <ReportsModal visible={reportsOpen} onClose={() => setReportsOpen(false)} />
     </SafeAreaView>
   );
 }
@@ -414,12 +430,30 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   loader: { flex: 1, alignItems: "center", justifyContent: "center" },
   scroll: { padding: spacing.xl, paddingTop: spacing.lg },
+  titleRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: spacing.lg,
+  },
+  reportBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: colors.primaryMuted,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.primaryGlow,
+  },
+  reportBtnText: { color: colors.primaryGlow, fontSize: 12, fontWeight: "700" },
   h1: {
     color: colors.textPrimary,
     fontSize: 28,
     fontWeight: "300",
     letterSpacing: -0.5,
-    marginBottom: spacing.lg,
+    marginBottom: 0,
   },
 
   // Summary row
