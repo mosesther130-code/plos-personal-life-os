@@ -204,7 +204,13 @@ def make_router(db, get_current_user_id):
             raise HTTPException(
                 status_code=400, detail="product description must be at least 3 characters"
             )
-        result = await _run_claude_finder(user_id, payload.model_dump())
+        try:
+            result = await _run_claude_finder(user_id, payload.model_dump())
+        except Exception as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"AI deal finder is temporarily unavailable: {str(e)[:160]}",
+            )
         return {**result, "ran_at": datetime.now(timezone.utc).isoformat()}
 
     @router.post("/searches/{search_id}/refresh")
@@ -216,7 +222,13 @@ def make_router(db, get_current_user_id):
         )
         if not existing:
             raise HTTPException(status_code=404, detail="Search not found")
-        result = await _run_claude_finder(user_id, existing)
+        try:
+            result = await _run_claude_finder(user_id, existing)
+        except Exception as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"AI deal finder is temporarily unavailable: {str(e)[:160]}",
+            )
         now = datetime.now(timezone.utc).isoformat()
         await db.deal_searches.update_one(
             {"user_id": user_id, "id": search_id},
