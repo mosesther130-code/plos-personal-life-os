@@ -6069,6 +6069,11 @@ from world_clock import make_router as make_world_clock_router  # noqa: E402
 
 app.include_router(make_world_clock_router(db, get_current_user_id))
 
+# Mount Deal Finder sub-router (Enhancement 9)
+from deal_finder import make_router as make_deal_finder_router  # noqa: E402
+
+app.include_router(make_deal_finder_router(db, get_current_user_id))
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,

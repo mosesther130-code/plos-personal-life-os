@@ -192,8 +192,35 @@ agent_communication:
 
     - agent: "main"
       message: |
-        Enhancement 8 — Global Tools (World Clock + Time Zone Converter + AI Best
-        Meeting Time) implementation complete.
+        Enhancement 9 — Shopping & Deals: AI Product Deal Finder implementation
+        complete.
+
+        NEW backend (/app/backend/deal_finder.py — mounted in server.py):
+        1. GET /api/shopping/deal-finder/retailers → 16 common US retailers
+        2. GET /api/shopping/deal-finder/searches → autoseeds 1 search on first
+           call (65-inch 4K OLED TV) and returns all saved.
+        3. POST/PUT/DELETE /api/shopping/deal-finder/searches → CRUD
+        4. POST /api/shopping/deal-finder/find → ad-hoc Claude AI call,
+           returns {deals: [...], summary, ran_at}. Each deal has
+           retailer, model, est_price_usd, original_price_usd, savings_pct,
+           pros, cons, confidence, buy_url_hint.
+        5. POST /api/shopping/deal-finder/searches/{id}/refresh → re-runs AI
+           for a saved search and persists last_results/last_summary/last_run_at.
+
+        Frontend (/app/frontend/app/shopping/deal-finder.tsx — NEW):
+        - Form: Product description, Max/Target price, Urgency pills (4),
+          Quality pills (3), Retailers pills (16, multi-select), Notes
+        - Buttons: "Find Deals Now" (testID df-find) and "Save Search" (df-save)
+        - Results section (testID df-results) displays AI summary + ranked
+          deal cards (testID prefix df-deal-) with price, savings %, confidence
+          pill, pros/cons, and tap-to-open URL hint.
+        - Saved Searches section (testID prefix saved-) with re-run
+          (saved-run-{id}) and delete (saved-delete-{id}) actions.
+
+        Hub: added "AI Deal Finder" tile to /shopping (testID hub-deal-finder).
+
+        Please test both backend (CRUD + AI + refresh) and frontend (form fill,
+        find, save, run-saved, delete-saved). Auth: test1@plos.app / test123.
 
         NEW backend (/app/backend/world_clock.py — mounted in server.py):
         1. GET /api/world-clock/directory → curated list of cities + IANA timezones

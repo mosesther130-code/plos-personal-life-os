@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
-import { ArrowLeft, Tag, Zap, Package, ChevronRight, Wallet } from "lucide-react-native";
+import { ArrowLeft, Tag, Zap, Package, ChevronRight, Wallet, Sparkles } from "lucide-react-native";
 import { colors, spacing, radius } from "@/src/lib/theme";
 import { shoppingApi } from "@/src/lib/api";
 
@@ -51,6 +51,15 @@ export default function ShoppingHub() {
             <Text style={styles.savingsSub}>Across {summary.deals} active deal{summary.deals === 1 ? "" : "s"}</Text>
           </View>
         </View>
+
+        <TouchableOpacity style={[styles.tile, { borderColor: colors.primaryMuted }]} onPress={() => router.push("/shopping/deal-finder")} testID="hub-deal-finder" activeOpacity={0.85}>
+          <View style={[styles.tileIcon, { backgroundColor: "rgba(59,130,246,0.15)" }]}><Sparkles color={colors.primaryGlow} size={22} /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.tileTitle}>AI Deal Finder</Text>
+            <Text style={styles.tileSub}>Find the best price across retailers · Claude 4.5</Text>
+          </View>
+          <ChevronRight size={16} color={colors.textTertiary} />
+        </TouchableOpacity>
 
         <TouchableOpacity style={styles.tile} onPress={() => router.push("/shopping/deals")} testID="hub-deals" activeOpacity={0.85}>
           <View style={[styles.tileIcon, { backgroundColor: "rgba(236,72,153,0.15)" }]}><Tag color="#EC4899" size={22} /></View>

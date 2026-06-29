@@ -484,6 +484,28 @@ export const securityExtrasApi = {
   getPoliceStep: () => request<any>("/security/identity-theft/police-step"),
 };
 
+// ----------------- Deal Finder (Enhancement 9) -----------------
+export const dealFinderApi = {
+  retailers: () => request<{ retailers: string[] }>("/shopping/deal-finder/retailers"),
+  listSearches: () =>
+    request<{ searches: any[] }>("/shopping/deal-finder/searches"),
+  createSearch: (d: any) =>
+    request<any>("/shopping/deal-finder/searches", { method: "POST", body: d }),
+  updateSearch: (id: string, d: any) =>
+    request<any>(`/shopping/deal-finder/searches/${id}`, {
+      method: "PUT",
+      body: d,
+    }),
+  deleteSearch: (id: string) =>
+    request<any>(`/shopping/deal-finder/searches/${id}`, { method: "DELETE" }),
+  find: (d: any) =>
+    request<any>("/shopping/deal-finder/find", { method: "POST", body: d }),
+  refresh: (id: string) =>
+    request<any>(`/shopping/deal-finder/searches/${id}/refresh`, {
+      method: "POST",
+    }),
+};
+
 // ----------------- World Clock / Global Tools (Enhancement 8) -----------------
 export const worldClockApi = {
   directory: () => request<{ timezones: any[] }>("/world-clock/directory"),
