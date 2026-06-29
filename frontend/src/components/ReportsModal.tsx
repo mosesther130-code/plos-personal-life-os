@@ -15,7 +15,7 @@ import {
 import DatePickerCompat from "@/src/components/DatePickerCompat";
 import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
-import { X, FileText, FileSpreadsheet, Download, Calendar } from "lucide-react-native";
+import { X, FileText, FileSpreadsheet, Download, Calendar, CheckCircle2 } from "lucide-react-native";
 
 import { financeApi } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
@@ -76,6 +76,14 @@ export function ReportsModal({ visible, onClose }: Props) {
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
   const [loading, setLoading] = useState(false);
+  // After generation, we hold a "ready" object so the user has a visible Save button
+  const [ready, setReady] = useState<{
+    blobUrl?: string;
+    base64?: string;
+    filename: string;
+    mime: string;
+    sizeBytes: number;
+  } | null>(null);
 
   // CSV is only valid for statements; auto-switch to pdf when user picks a non-statement type
   const csvAvailable = reportType.startsWith("statement_");
@@ -87,24 +95,42 @@ export function ReportsModal({ visible, onClose }: Props) {
     setStartDate(firstOfYear);
     setEndDate(today);
     setLoading(false);
+    if (ready?.blobUrl) {
+      try {
+        URL.revokeObjectURL(ready.blobUrl);
+      } catch {}
+    }
+    setReady(null);
   };
 
-  const downloadWeb = (b64: string, filename: string, mime: string) => {
+  const closeAll = () => {
+    reset();
+    onClose();
+  };
+
+  // Try to auto-trigger the download; many iframes block this silently, so we
+  // also keep the blob URL around for a visible "Save File" link.
+  const tryAutoDownload = (blobUrl: string, filename: string) => {
+    try {
+      // @ts-ignore
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = filename;
+      a.rel = "noopener";
+      // @ts-ignore
+      document.body.appendChild(a);
+      a.click();
+      // @ts-ignore
+      document.body.removeChild(a);
+    } catch {}
+  };
+
+  const prepareWebBlob = (b64: string, mime: string): string => {
     const bytes = base64ToBytes(b64);
     // @ts-ignore - Blob exists in web
     const blob = new Blob([bytes], { type: mime });
-    // @ts-ignore - URL exists in web
-    const url = URL.createObjectURL(blob);
-    // @ts-ignore - document exists in web
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
     // @ts-ignore
-    document.body.appendChild(a);
-    a.click();
-    // @ts-ignore
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return URL.createObjectURL(blob);
   };
 
   const saveAndShareNative = async (b64: string, filename: string, mime: string) => {
@@ -138,12 +164,24 @@ export function ReportsModal({ visible, onClose }: Props) {
         end_date: isoDate(endDate),
       });
       if (Platform.OS === "web") {
-        downloadWeb(res.content_base64, res.filename, res.mime_type);
+        const blobUrl = prepareWebBlob(res.content_base64, res.mime_type);
+        // Try the auto-download (works in standalone tabs; often blocked in sandboxed iframes)
+        tryAutoDownload(blobUrl, res.filename);
+        setReady({
+          blobUrl,
+          filename: res.filename,
+          mime: res.mime_type,
+          sizeBytes: res.size_bytes,
+        });
       } else {
         await saveAndShareNative(res.content_base64, res.filename, res.mime_type);
+        setReady({
+          base64: res.content_base64,
+          filename: res.filename,
+          mime: res.mime_type,
+          sizeBytes: res.size_bytes,
+        });
       }
-      onClose();
-      reset();
     } catch (e: any) {
       Alert.alert("Report failed", e?.message || "Could not generate the report.");
     } finally {
@@ -151,12 +189,17 @@ export function ReportsModal({ visible, onClose }: Props) {
     }
   };
 
+  const reshareNative = async () => {
+    if (!ready?.base64) return;
+    await saveAndShareNative(ready.base64, ready.filename, ready.mime);
+  };
+
   return (
     <Modal
       visible={visible}
       animationType="slide"
       transparent
-      onRequestClose={onClose}
+      onRequestClose={closeAll}
       testID="reports-modal"
     >
       <View style={styles.backdrop}>
@@ -166,11 +209,87 @@ export function ReportsModal({ visible, onClose }: Props) {
               <Text style={styles.title}>Download Reports</Text>
               <Text style={styles.subtitle}>Export your finances as PDF, Word, or CSV</Text>
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn} testID="reports-close">
+            <TouchableOpacity onPress={closeAll} style={styles.closeBtn} testID="reports-close">
               <X size={18} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
+          {/* SUCCESS STATE — shown after generation. The visible anchor link is the
+              reliable "user-initiated" download trigger that works inside iframes. */}
+          {ready ? (
+            <View style={styles.successCard} testID="report-ready">
+              <View style={styles.successHeader}>
+                <CheckCircle2 size={24} color={colors.success} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.successTitle}>Report ready</Text>
+                  <Text style={styles.successSub}>{ready.filename}</Text>
+                  <Text style={styles.successMeta}>
+                    {(ready.sizeBytes / 1024).toFixed(1)} KB · {ready.mime.split("/").pop()?.toUpperCase()}
+                  </Text>
+                </View>
+              </View>
+
+              {Platform.OS === "web" ? (
+                // Real anchor element — user-initiated click bypasses iframe download blocking
+                React.createElement(
+                  "a",
+                  {
+                    href: ready.blobUrl,
+                    download: ready.filename,
+                    style: {
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 8,
+                      padding: 14,
+                      borderRadius: 12,
+                      backgroundColor: "#1E40AF",
+                      color: "#fff",
+                      textDecoration: "none",
+                      fontSize: 14,
+                      fontWeight: 700,
+                      marginTop: 16,
+                    },
+                    "data-testid": "save-file-anchor",
+                  },
+                  "⬇  Save File to Device",
+                )
+              ) : (
+                <TouchableOpacity
+                  style={styles.shareBtn}
+                  onPress={reshareNative}
+                  testID="reshare-native"
+                  activeOpacity={0.85}
+                >
+                  <Download size={16} color="#fff" />
+                  <Text style={styles.shareBtnText}>Open Share Sheet</Text>
+                </TouchableOpacity>
+              )}
+
+              <View style={styles.successActions}>
+                <TouchableOpacity
+                  style={styles.againBtn}
+                  onPress={() => setReady(null)}
+                  testID="generate-another"
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.againBtnText}>Generate Another</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.doneBtn}
+                  onPress={closeAll}
+                  testID="reports-done"
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.doneBtnText}>Done</Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.hint}>
+                If your browser auto-blocked the download, tap “Save File to Device” above.
+              </Text>
+            </View>
+          ) : (
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: spacing.lg }}>
             {/* Date range */}
             <Text style={styles.sectionLabel}>DATE RANGE</Text>
@@ -299,6 +418,7 @@ export function ReportsModal({ visible, onClose }: Props) {
               )}
             </TouchableOpacity>
           </ScrollView>
+          )}
 
           {showStartPicker ? (
             <DatePickerCompat
@@ -430,4 +550,51 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   generateBtnText: { color: "#fff", fontSize: 14, fontWeight: "700" },
+
+  // Success state
+  successCard: {
+    backgroundColor: colors.bg,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.success,
+    padding: spacing.lg,
+    marginTop: spacing.sm,
+  },
+  successHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: spacing.md,
+  },
+  successTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: "700" },
+  successSub: { color: colors.textSecondary, fontSize: 12, marginTop: 4 },
+  successMeta: { color: colors.textTertiary, fontSize: 11, marginTop: 2 },
+  shareBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    paddingVertical: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: spacing.md,
+  },
+  shareBtnText: { color: "#fff", fontSize: 14, fontWeight: "700" },
+  successActions: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.md },
+  againBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.primaryGlow,
+    alignItems: "center",
+  },
+  againBtnText: { color: colors.primaryGlow, fontSize: 13, fontWeight: "700" },
+  doneBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceElevated,
+    alignItems: "center",
+  },
+  doneBtnText: { color: colors.textPrimary, fontSize: 13, fontWeight: "700" },
 });
