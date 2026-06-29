@@ -387,6 +387,23 @@ export const studentLoansApi = {
   dailyTip: () => request<any>("/student-loans/daily-tip"),
 };
 
+// ----------------- Mortgage (Enhancement 3) -----------------
+export const mortgageApi = {
+  listServicers: () =>
+    request<{ servicers: any[]; non_bank_templates: any[]; bank_templates: any[] }>(
+      "/mortgage/servicers"
+    ),
+  createServicer: (d: any) =>
+    request<any>("/mortgage/servicers", { method: "POST", body: d }),
+  updateServicer: (id: string, d: any) =>
+    request<any>(`/mortgage/servicers/${id}`, { method: "PUT", body: d }),
+  deleteServicer: (id: string) =>
+    request<any>(`/mortgage/servicers/${id}`, { method: "DELETE" }),
+  intelligence: () =>
+    request<any>("/mortgage/intelligence", { method: "POST", body: {} }),
+  dailyTip: () => request<any>("/mortgage/daily-tip"),
+};
+
 // ----------------- Seed -----------------
 // ----------------- Travel Advisor -----------------
 export const travelApi = {

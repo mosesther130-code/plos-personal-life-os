@@ -483,15 +483,26 @@ export default function DebtManager() {
         )}
 
         {hasMortgage && (
-          <TouchableOpacity
-            style={styles.mortgageBtn}
-            onPress={() => router.push("/finance/mortgage-analyzer")}
-            testID="open-mortgage-analyzer"
-            activeOpacity={0.85}
-          >
-            <HomeIcon color={colors.primaryGlow} size={18} />
-            <Text style={styles.mortgageBtnText}>Open Mortgage Analyzer</Text>
-          </TouchableOpacity>
+          <>
+            <TouchableOpacity
+              style={styles.mortgageBtn}
+              onPress={() => router.push("/mortgage" as any)}
+              testID="open-mortgage-advisor"
+              activeOpacity={0.85}
+            >
+              <HomeIcon color={colors.primaryGlow} size={18} />
+              <Text style={styles.mortgageBtnText}>Open Mortgage Advisor</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.mortgageBtn, { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderSubtle }]}
+              onPress={() => router.push("/finance/mortgage-analyzer")}
+              testID="open-mortgage-analyzer"
+              activeOpacity={0.85}
+            >
+              <HomeIcon color={colors.textSecondary} size={18} />
+              <Text style={[styles.mortgageBtnText, { color: colors.textSecondary }]}>Open Mortgage Scenarios</Text>
+            </TouchableOpacity>
+          </>
         )}
 
         <View style={{ height: 40 }} />

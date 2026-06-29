@@ -5991,6 +5991,13 @@ app.include_router(
     make_student_loans_router(db, get_current_user_id, EMERGENT_LLM_KEY, LlmChat, UserMessage)
 )
 
+# Mount Mortgage sub-router (Enhancement 3)
+from mortgage_loans import make_router as make_mortgage_router  # noqa: E402
+
+app.include_router(
+    make_mortgage_router(db, get_current_user_id, EMERGENT_LLM_KEY, LlmChat, UserMessage)
+)
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
