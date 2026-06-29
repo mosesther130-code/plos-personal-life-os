@@ -6086,6 +6086,11 @@ app.include_router(
     make_account_mgmt_router(db, get_current_user_id, hash_password, verify_password)
 )
 
+# Mount AI Document Summarizer sub-router (Enhancement 12)
+from doc_summarizer import make_router as make_doc_summarizer_router  # noqa: E402
+
+app.include_router(make_doc_summarizer_router(db, get_current_user_id))
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,

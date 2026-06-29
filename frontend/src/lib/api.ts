@@ -484,6 +484,47 @@ export const securityExtrasApi = {
   getPoliceStep: () => request<any>("/security/identity-theft/police-step"),
 };
 
+// ----------------- AI Document Summarizer (Enhancement 12) -----------------
+export const docSummarizerApi = {
+  focuses: () =>
+    request<{ focuses: { value: string; label: string; instruction: string }[] }>(
+      "/doc-summarizer/focuses"
+    ),
+  history: () =>
+    request<{ history: any[]; total: number }>("/doc-summarizer/history"),
+  get: (id: string) => request<any>(`/doc-summarizer/history/${id}`),
+  delete: (id: string) =>
+    request<any>(`/doc-summarizer/history/${id}`, { method: "DELETE" }),
+  summarize: async (
+    file: File | Blob,
+    opts: { focus?: string; save?: boolean; filename?: string }
+  ) => {
+    const token = await getToken();
+    const fd = new FormData();
+    const name = opts.filename || (file as any).name || "document.bin";
+    fd.append("file", file as any, name);
+    fd.append("focus", opts.focus || "general");
+    fd.append("save", String(!!opts.save));
+    const baseUrl = (process.env.EXPO_PUBLIC_BACKEND_URL || "") + "/api";
+    const res = await fetch(`${baseUrl}/doc-summarizer/summarize`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: fd as any,
+    });
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`;
+      try {
+        const j = await res.json();
+        msg = j?.detail || msg;
+      } catch {
+        // ignore
+      }
+      throw new Error(msg);
+    }
+    return res.json();
+  },
+};
+
 // ----------------- Account Management (Enhancement 11) -----------------
 export const accountApi = {
   me: () => request<any>("/auth/me"),

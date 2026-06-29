@@ -192,7 +192,50 @@ agent_communication:
 
     - agent: "main"
       message: |
-        Enhancement 11 — Settings: Account Management CRUD with 2-step delete.
+        Enhancement 12 — AI Document Summarizer implementation complete.
+        FINAL enhancement in the 12-step roadmap.
+
+        NEW backend (/app/backend/doc_summarizer.py — mounted in server.py):
+        1. GET /api/doc-summarizer/focuses → 7 focus presets (general, financial,
+           medical, legal, technical, academic, action_items) with full
+           instruction text.
+        2. POST /api/doc-summarizer/summarize (multipart):
+           - file: PDF | image (jpg/png/heic) | DOCX | TXT
+           - focus: one of the 7 preset values
+           - save: "true"/"false" — whether to persist to history
+           - Text extraction: pypdf for PDFs, python-docx for DOCX, raw read for
+             TXT, Claude vision for images.
+           - Returns {summary_id, tldr, summary, key_points[], action_items[],
+             flags[], topics[], saved, ...}
+           - Max 12 MB. Empty/invalid focus/unsupported MIME → 400.
+           - AI failure → 503 with friendly detail.
+        3. GET /api/doc-summarizer/history → list saved (no full text in list)
+        4. GET /api/doc-summarizer/history/{id} → fetch one
+        5. DELETE /api/doc-summarizer/history/{id} → remove
+
+        Frontend (/app/frontend/app/tools/doc-summarizer.tsx — NEW screen):
+        - Upload drop area (testID ds-pick) using expo-document-picker
+        - 7 focus pills (testID ds-focus-{value}) with active state and
+          live-updating instruction caption
+        - Save toggle (testID ds-save-toggle)
+        - Summarize button (testID ds-summarize) calls Claude
+        - Result panel (testID ds-result) shows: tldr badge, summary text,
+          topics chips, key points checklist, action items with priority
+          color, flags with severity color
+        - History list at bottom (testID prefix ds-hist-{id}; per-row open
+          ds-hist-open-{id} and delete ds-hist-delete-{id})
+
+        Discovery: Added a "AI Doc Summarizer" tile in the More tab
+        (route /tools/doc-summarizer).
+
+        docSummarizerApi added to /app/frontend/src/lib/api.ts with
+        multipart upload via fetch + FormData.
+
+        Please test BOTH backend (focuses, history CRUD, multipart upload of
+        a small TXT and a small PDF, error paths) and frontend (pick file,
+        choose focus, summarize, save toggle, history open + delete).
+        Auth: test1@plos.app / test123. AI calls may be skipped if LLM key
+        budget is exhausted (acceptable — verify backend returns 503 cleanly).
 
         NEW backend (/app/backend/account_mgmt.py — mounted in server.py):
         1. POST /api/auth/change-password {current_password, new_password}

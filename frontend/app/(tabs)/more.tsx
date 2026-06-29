@@ -20,6 +20,7 @@ import {
   Settings as SettingsIcon,
   ChevronRight,
   ShieldCheck,
+  FileSearch,
 } from "lucide-react-native";
 
 import { colors, spacing, radius } from "@/src/lib/theme";
@@ -57,6 +58,14 @@ const MODULES: ModuleItem[] = [
     icon: Building2,
     color: colors.warning,
     route: "/business",
+  },
+  {
+    key: "doc-summarizer",
+    title: "AI Doc Summarizer",
+    subtitle: "Summarize PDFs, images, DOCX",
+    icon: FileSearch,
+    color: "#10B981",
+    route: "/tools/doc-summarizer",
   },
   {
     key: "global",
