@@ -462,6 +462,15 @@ export const careerIntelApi = {
     request<any>("/career-intel/job-search", { method: "POST", body: data || {} }),
 };
 
+// ----------------- Investment Markets (Enhancement 5) -----------------
+export const investmentMarketsApi = {
+  list: () => request<{ markets: any[]; snapshot: any; risk_tolerance: number }>("/investment-markets/list"),
+  create: (d: any) => request<any>("/investment-markets/", { method: "POST", body: d }),
+  update: (id: string, d: any) =>
+    request<any>(`/investment-markets/${id}`, { method: "PUT", body: d }),
+  delete: (id: string) => request<any>(`/investment-markets/${id}`, { method: "DELETE" }),
+};
+
 // ----------------- Seed -----------------
 // ----------------- Travel Advisor -----------------
 export const travelApi = {

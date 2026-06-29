@@ -6012,6 +6012,13 @@ app.include_router(
     make_career_intel_router(db, get_current_user_id, EMERGENT_LLM_KEY, LlmChat, UserMessage)
 )
 
+# Mount Investment Markets sub-router (Enhancement 5)
+from investment_markets import make_router as make_markets_router  # noqa: E402
+
+app.include_router(
+    make_markets_router(db, get_current_user_id, gather_user_context, _user_finance_snapshot)
+)
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
