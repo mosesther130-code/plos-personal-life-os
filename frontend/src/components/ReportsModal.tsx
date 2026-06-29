@@ -79,6 +79,7 @@ export function ReportsModal({ visible, onClose }: Props) {
   // After generation, we hold a "ready" object so the user has a visible Save button
   const [ready, setReady] = useState<{
     blobUrl?: string;
+    dataUrl?: string;
     base64?: string;
     filename: string;
     mime: string;
@@ -165,10 +166,12 @@ export function ReportsModal({ visible, onClose }: Props) {
       });
       if (Platform.OS === "web") {
         const blobUrl = prepareWebBlob(res.content_base64, res.mime_type);
+        const dataUrl = `data:${res.mime_type};base64,${res.content_base64}`;
         // Try the auto-download (works in standalone tabs; often blocked in sandboxed iframes)
         tryAutoDownload(blobUrl, res.filename);
         setReady({
           blobUrl,
+          dataUrl,
           filename: res.filename,
           mime: res.mime_type,
           sizeBytes: res.size_bytes,
@@ -230,30 +233,60 @@ export function ReportsModal({ visible, onClose }: Props) {
               </View>
 
               {Platform.OS === "web" ? (
-                // Real anchor element — user-initiated click bypasses iframe download blocking
-                React.createElement(
-                  "a",
-                  {
-                    href: ready.blobUrl,
-                    download: ready.filename,
-                    style: {
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 8,
-                      padding: 14,
-                      borderRadius: 12,
-                      backgroundColor: "#1E40AF",
-                      color: "#fff",
-                      textDecoration: "none",
-                      fontSize: 14,
-                      fontWeight: 700,
-                      marginTop: 16,
+                <>
+                  {/* PRIMARY: data-URL anchor opened in a new tab. Works inside
+                      sandboxed iframes because target=_blank breaks out of the
+                      sandbox into a normal browser tab that can save files. */}
+                  {React.createElement(
+                    "a",
+                    {
+                      href: ready.dataUrl,
+                      download: ready.filename,
+                      target: "_blank",
+                      rel: "noopener noreferrer",
+                      style: {
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 8,
+                        padding: 14,
+                        borderRadius: 12,
+                        backgroundColor: "#1E40AF",
+                        color: "#fff",
+                        textDecoration: "none",
+                        fontSize: 14,
+                        fontWeight: 700,
+                        marginTop: 16,
+                      },
+                      "data-testid": "save-file-anchor",
                     },
-                    "data-testid": "save-file-anchor",
-                  },
-                  "⬇  Save File to Device",
-                )
+                    "⬇  Save / Open in New Tab",
+                  )}
+
+                  {/* FALLBACK: explicit window.open call — sometimes a programmatic
+                      open succeeds even when an anchor click fails. */}
+                  <TouchableOpacity
+                    style={styles.openWindowBtn}
+                    onPress={() => {
+                      try {
+                        // @ts-ignore
+                        const w = window.open(ready.dataUrl, "_blank", "noopener,noreferrer");
+                        if (!w) {
+                          Alert.alert(
+                            "Popup blocked",
+                            "Your browser blocked the new tab. Tap the blue button above instead.",
+                          );
+                        }
+                      } catch {
+                        Alert.alert("Could not open file");
+                      }
+                    }}
+                    testID="open-window"
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.openWindowText}>Open in New Tab</Text>
+                  </TouchableOpacity>
+                </>
               ) : (
                 <TouchableOpacity
                   style={styles.shareBtn}
@@ -286,7 +319,8 @@ export function ReportsModal({ visible, onClose }: Props) {
               </View>
 
               <Text style={styles.hint}>
-                If your browser auto-blocked the download, tap “Save File to Device” above.
+                Tap "Save / Open in New Tab" — your browser will open the file in a new tab
+                where you can save it (Ctrl/Cmd+S) or PDF viewer's built-in download button.
               </Text>
             </View>
           ) : (
@@ -597,4 +631,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   doneBtnText: { color: colors.textPrimary, fontSize: 13, fontWeight: "700" },
+  openWindowBtn: {
+    paddingVertical: 10,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    alignItems: "center",
+    marginTop: spacing.sm,
+  },
+  openWindowText: { color: colors.textSecondary, fontSize: 12, fontWeight: "600" },
 });
