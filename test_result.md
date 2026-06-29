@@ -189,3 +189,34 @@ agent_communication:
            an Add button. Verify the EditModal opens, saves, and edits items (use testID
            "add-monitored" and "monitored-{id}").
         Auth: test1@plos.app / test123
+
+    - agent: "main"
+      message: |
+        Enhancement 7 — Safety & Local implementation complete.
+
+        NEW backend (/app/backend/safety_local.py — mounted in server.py):
+        1. Offline Maps CRUD at /api/local/offline-maps (GET autoseeds Georgia + Bulacan
+           on first call, POST, PUT, DELETE).
+        2. Live Travel Map at /api/local/travel-map → finds the nearest upcoming trip
+           and returns {trip, origin, destination, distance_miles} using a tiny city
+           gazetteer.
+        3. GPS Alerts:
+           - GET/PUT /api/local/gps-alerts/settings
+           - POST /api/local/gps-alerts/check {lat, lon} → returns dynamic alerts list
+        4. Local Media at /api/local/media?lat=&lon=  → returns local TV + radio
+           streams for GA/NY/CA bboxes, national fallback otherwise.
+
+        Frontend (/app/frontend/app/safety-local/index.tsx):
+        - Offline Maps section now CRUD with EditModal (testID "add-offline-region",
+          row testID "offline-{id}")
+        - New "Live Travel Map" section with SVG mini-map (testID "travel-map-card"
+          or "travel-empty" when no trip)
+        - New "GPS Navigation Alerts" section with 5 toggle switches
+          (testIDs: gps-toggle-enabled, gps-toggle-weather, gps-toggle-crime,
+           gps-toggle-advisories, gps-toggle-speed) and dynamic alerts banner
+        - New "Local Media" section listing TV + radio stations (rows clickable to
+          open stream URLs in browser)
+
+        Please test BOTH backend & frontend for Enhancement 7. Auth still test1@plos.app
+        / test123. test1 user already has a trip ("Manila & Bulacan") and DeKalb county
+        from E6 testing, so the Live Travel Map should populate.

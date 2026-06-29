@@ -3701,26 +3701,12 @@ async def satellite_status(user_id: str = Depends(get_current_user_id)):
     }
 
 
-@api_router.get("/local/offline-maps")
-async def offline_maps(user_id: str = Depends(get_current_user_id)):
+@api_router.get("/local/offline-maps-legacy-mock")
+async def offline_maps_legacy(user_id: str = Depends(get_current_user_id)):
+    """Deprecated mock. Real CRUD is at /api/local/offline-maps (safety_local.py)."""
     return {
         "is_mocked": True,
-        "regions": [
-            {
-                "id": "ga_usa",
-                "name": "Georgia, USA",
-                "size_mb": 180,
-                "status": "downloaded",
-                "last_updated": datetime.now(timezone.utc).isoformat(),
-            },
-            {
-                "id": "bulacan_ph",
-                "name": "Bulacan Province, Philippines",
-                "size_mb": 45,
-                "status": "downloaded",
-                "last_updated": datetime.now(timezone.utc).isoformat(),
-            },
-        ],
+        "regions": [],
     }
 
 
@@ -6072,6 +6058,11 @@ app.include_router(
 from security_extras import make_router as make_security_extras_router  # noqa: E402
 
 app.include_router(make_security_extras_router(db, get_current_user_id))
+
+# Mount Safety & Local Enhanced sub-router (Enhancement 7)
+from safety_local import make_router as make_safety_local_router  # noqa: E402
+
+app.include_router(make_safety_local_router(db, get_current_user_id))
 
 app.add_middleware(
     CORSMiddleware,

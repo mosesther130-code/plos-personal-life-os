@@ -51,14 +51,37 @@ import {
   RefreshCw,
   Utensils,
   Info,
+  Pencil,
+  Plus,
+  Plane,
+  Bell,
+  Tv,
 } from "lucide-react-native";
 import * as Location from "expo-location";
 
-import { localApi } from "@/src/lib/api";
+import { localApi, localExtrasApi } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
+import { EditModal, type Field } from "@/src/components/EditModal";
 
 const DEFAULT_LAT = 33.749;
 const DEFAULT_LON = -84.388;
+
+const OFFLINE_FIELDS: Field[] = [
+  { key: "name", label: "Region Name", kind: "text", placeholder: "e.g. Florida, USA" },
+  {
+    key: "region_type",
+    label: "Type",
+    kind: "select",
+    options: [
+      { label: "Country", value: "country" },
+      { label: "State / Province", value: "state" },
+      { label: "Metro / City", value: "metro" },
+      { label: "Custom Area", value: "custom" },
+    ],
+  },
+  { key: "size_mb", label: "Estimated Size (MB)", kind: "number", suffix: "MB" },
+  { key: "notes", label: "Notes (optional)", kind: "text" },
+];
 
 function WeatherIcon({ name, size = 26, color = colors.primaryGlow }: { name: string; size?: number; color?: string }) {
   const props = { size, color };
@@ -100,6 +123,21 @@ export default function SafetyLocal() {
   const [sosConfirm, setSosConfirm] = useState<{ visible: boolean; test: boolean }>({ visible: false, test: false });
   const [vinInput, setVinInput] = useState("");
   const [inviteModal, setInviteModal] = useState<{ open: boolean; name: string; link?: string }>({ open: false, name: "" });
+  // Enhancement 7 state
+  const [offlineRegions, setOfflineRegions] = useState<any[]>([]);
+  const [offlineTotalMb, setOfflineTotalMb] = useState(0);
+  const [offlineModal, setOfflineModal] = useState<{ open: boolean; item?: any }>({ open: false });
+  const [travelMap, setTravelMap] = useState<any | null>(null);
+  const [gpsSettings, setGpsSettings] = useState<any>({
+    enabled: true,
+    severe_weather: true,
+    crime_geofence: true,
+    travel_advisories: true,
+    speed_alerts: false,
+    radius_miles: 5,
+  });
+  const [gpsAlerts, setGpsAlerts] = useState<any[]>([]);
+  const [media, setMedia] = useState<any>({ tv: [], radio: [] });
   const pulse = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -143,7 +181,10 @@ export default function SafetyLocal() {
 
   const loadAll = useCallback(async (c?: { lat: number; lon: number }) => {
     const pos = c || coords || { lat: DEFAULT_LAT, lon: DEFAULT_LON };
-    const [weather, nearby, gas, food, products, vehicle, family, satellite, offlineMaps] = await Promise.all([
+    const [
+      weather, nearby, gas, food, products, vehicle, family, satellite,
+      offlineMaps, travel, gpsSet, gpsCheck, mediaResp,
+    ] = await Promise.all([
       localApi.weather(pos.lat, pos.lon).catch(() => ({})),
       localApi.nearby().catch(() => ({})),
       localApi.gas().catch(() => ({})),
@@ -152,10 +193,52 @@ export default function SafetyLocal() {
       localApi.recallsVehicle(2015, "Toyota", "RAV4").catch(() => ({ recalls: [] })),
       localApi.family().catch(() => ({ members: [] })),
       localApi.satelliteStatus().catch(() => ({})),
-      localApi.offlineMaps().catch(() => ({ regions: [] })),
+      localExtrasApi.listOfflineMaps().catch(() => ({ regions: [], total_size_mb: 0 })),
+      localExtrasApi.travelMap().catch(() => ({ trip: null })),
+      localExtrasApi.gpsAlertSettings().catch(() => null),
+      localExtrasApi.checkGpsAlerts(pos.lat, pos.lon).catch(() => ({ alerts: [] })),
+      localExtrasApi.media(pos.lat, pos.lon).catch(() => ({ tv: [], radio: [] })),
     ]);
-    setData({ weather, nearby, gas, food, products, vehicle, family, satellite, offlineMaps });
+    setData({ weather, nearby, gas, food, products, vehicle, family, satellite });
+    setOfflineRegions(offlineMaps.regions || []);
+    setOfflineTotalMb(offlineMaps.total_size_mb || 0);
+    setTravelMap(travel);
+    if (gpsSet) setGpsSettings(gpsSet);
+    setGpsAlerts(gpsCheck?.alerts || []);
+    setMedia(mediaResp);
   }, [coords]);
+
+  // Enhancement 7 — Offline Maps handlers
+  const saveOfflineRegion = async (vals: any) => {
+    const body = { ...vals, size_mb: Number(vals.size_mb) || 0 };
+    if (offlineModal.item) {
+      await localExtrasApi.updateOfflineMap(offlineModal.item.id, body);
+    } else {
+      await localExtrasApi.createOfflineMap(body);
+    }
+    const r = await localExtrasApi.listOfflineMaps();
+    setOfflineRegions(r.regions || []);
+    setOfflineTotalMb(r.total_size_mb || 0);
+  };
+  const deleteOfflineRegion = async () => {
+    if (!offlineModal.item) return;
+    await localExtrasApi.deleteOfflineMap(offlineModal.item.id);
+    const r = await localExtrasApi.listOfflineMaps();
+    setOfflineRegions(r.regions || []);
+    setOfflineTotalMb(r.total_size_mb || 0);
+  };
+
+  // Enhancement 7 — GPS Alerts toggles
+  const toggleGpsSetting = async (key: string, val: boolean) => {
+    const next = { ...gpsSettings, [key]: val };
+    setGpsSettings(next);
+    try {
+      await localExtrasApi.updateGpsAlertSettings(next);
+    } catch (_e) {
+      // revert on failure
+      setGpsSettings(gpsSettings);
+    }
+  };
 
   useEffect(() => {
     (async () => {
@@ -236,7 +319,6 @@ export default function SafetyLocal() {
   const vehicle = data.vehicle || {};
   const family = data.family || { members: [] };
   const sat = data.satellite || {};
-  const off = data.offlineMaps || { regions: [] };
 
   const recallsByTab: any =
     recallTab === "food" ? food : recallTab === "products" ? products : vehicle;
@@ -554,28 +636,166 @@ export default function SafetyLocal() {
           <View style={styles.card}><Text style={styles.empty}>No active recalls found.</Text></View>
         )}
 
-        {/* OFFLINE MAPS */}
-        <Section label="Offline Maps" />
-        {(off.regions || []).map((r: any) => (
-          <View key={r.id} style={styles.offlineCard} testID={`offline-${r.id}`}>
-            <Download size={14} color={colors.success} />
-            <View style={{ flex: 1, marginLeft: spacing.sm }}>
-              <Text style={styles.offlineName}>{r.name}</Text>
-              <Text style={styles.offlineSub}>{r.size_mb} MB · last updated today</Text>
-            </View>
-            <CheckCircle2 size={14} color={colors.success} />
+        {/* LIVE TRAVEL MAP */}
+        <Section label="Live Travel Map" />
+        <TravelMapCard travel={travelMap} onPress={(id) => id && router.push(`/travel/${id}` as any)} />
+
+        {/* GPS NAVIGATION ALERTS */}
+        <Section
+          label="GPS Navigation Alerts"
+          trailing={
+            <View style={[styles.gpsLiveDot, { backgroundColor: gpsSettings.enabled ? colors.success : colors.textTertiary }]} />
+          }
+        />
+        {gpsAlerts.length > 0 && (
+          <View style={{ gap: spacing.sm }}>
+            {gpsAlerts.map((a: any) => (
+              <View
+                key={a.alert_id}
+                style={[
+                  styles.alertBanner,
+                  alertBgFromType(a.severity),
+                ]}
+                testID={`gps-alert-${a.type}`}
+              >
+                <Bell size={14} color={colors.warning} />
+                <Text style={[styles.alertText, { color: colors.warning }]} numberOfLines={3}>
+                  <Text style={{ fontWeight: "700" }}>{a.title}: </Text>{a.message}
+                </Text>
+              </View>
+            ))}
           </View>
-        ))}
-        <TouchableOpacity
-          style={styles.manageBtn}
-          onPress={() => Alert.alert("Manage Downloads", "Offline map tile bundling will be enabled in a future update.") }
-        >
-          <MapIcon size={14} color={colors.textSecondary} />
-          <Text style={styles.manageText}>Manage Downloads</Text>
-        </TouchableOpacity>
-        <View style={styles.mockedRow}>
-          <Text style={styles.mockedText}>MOCKED · Offline map tile bundling will be enabled in a future update.</Text>
+        )}
+        {gpsAlerts.length === 0 && (
+          <View style={styles.card}>
+            <Text style={styles.empty}>All clear · no active GPS alerts.</Text>
+          </View>
+        )}
+        <View style={styles.gpsSettingsCard} testID="gps-settings-card">
+          <GpsToggleRow
+            label="Master switch"
+            value={gpsSettings.enabled}
+            onChange={(v) => toggleGpsSetting("enabled", v)}
+            testID="gps-toggle-enabled"
+          />
+          <GpsToggleRow
+            label="Severe weather alerts"
+            value={gpsSettings.severe_weather}
+            onChange={(v) => toggleGpsSetting("severe_weather", v)}
+            testID="gps-toggle-weather"
+          />
+          <GpsToggleRow
+            label="Crime geofence alerts"
+            value={gpsSettings.crime_geofence}
+            onChange={(v) => toggleGpsSetting("crime_geofence", v)}
+            testID="gps-toggle-crime"
+          />
+          <GpsToggleRow
+            label="Travel advisory alerts"
+            value={gpsSettings.travel_advisories}
+            onChange={(v) => toggleGpsSetting("travel_advisories", v)}
+            testID="gps-toggle-advisories"
+          />
+          <GpsToggleRow
+            label="Speed alerts (driving)"
+            value={gpsSettings.speed_alerts}
+            onChange={(v) => toggleGpsSetting("speed_alerts", v)}
+            testID="gps-toggle-speed"
+          />
         </View>
+
+        {/* OFFLINE MAPS — CRUD */}
+        <Section
+          label="Offline Maps"
+          trailing={
+            <TouchableOpacity
+              style={styles.addBtnSmall}
+              onPress={() => setOfflineModal({ open: true })}
+              testID="add-offline-region"
+            >
+              <Plus size={14} color="#fff" />
+              <Text style={styles.addBtnText}>Add</Text>
+            </TouchableOpacity>
+          }
+        />
+        <View style={styles.offlineSummary}>
+          <MapIcon size={14} color={colors.primaryGlow} />
+          <Text style={styles.offlineSummaryText}>
+            {offlineRegions.length} region{offlineRegions.length === 1 ? "" : "s"} · {offlineTotalMb} MB total
+          </Text>
+        </View>
+        {offlineRegions.length === 0 ? (
+          <View style={styles.card}><Text style={styles.empty}>No offline regions yet. Tap “Add” to start.</Text></View>
+        ) : (
+          offlineRegions.map((r: any) => (
+            <TouchableOpacity
+              key={r.id}
+              style={styles.offlineCard}
+              onPress={() => setOfflineModal({ open: true, item: r })}
+              testID={`offline-${r.id}`}
+            >
+              <Download size={14} color={colors.success} />
+              <View style={{ flex: 1, marginLeft: spacing.sm }}>
+                <Text style={styles.offlineName}>{r.name}</Text>
+                <Text style={styles.offlineSub}>
+                  {(r.region_type || "region").toUpperCase()} · {r.size_mb || 0} MB
+                  {r.notes ? ` · ${r.notes}` : ""}
+                </Text>
+              </View>
+              <Pencil size={14} color={colors.textTertiary} />
+            </TouchableOpacity>
+          ))
+        )}
+
+        {/* LOCAL MEDIA */}
+        <Section label="Local Media" />
+        {media?.source && (
+          <Text style={styles.mediaSource} numberOfLines={1}>{media.source}</Text>
+        )}
+        {(media.tv || []).length > 0 && (
+          <View style={{ gap: spacing.xs }}>
+            <Text style={styles.mediaGroupLabel}>TV</Text>
+            {(media.tv || []).map((s: any) => (
+              <TouchableOpacity
+                key={`tv-${s.name}`}
+                style={styles.mediaRow}
+                onPress={() => Linking.openURL(s.stream_url).catch(() => {})}
+                testID={`media-tv-${s.name}`}
+              >
+                <Tv size={16} color={colors.primaryGlow} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.mediaName}>{s.name}</Text>
+                  <Text style={styles.mediaMeta}>
+                    Ch {s.channel} · {s.city} · {s.genre}
+                  </Text>
+                </View>
+                <ChevronRight size={14} color={colors.textTertiary} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+        {(media.radio || []).length > 0 && (
+          <View style={{ gap: spacing.xs, marginTop: spacing.sm }}>
+            <Text style={styles.mediaGroupLabel}>Radio</Text>
+            {(media.radio || []).map((s: any) => (
+              <TouchableOpacity
+                key={`radio-${s.name}`}
+                style={styles.mediaRow}
+                onPress={() => Linking.openURL(s.stream_url).catch(() => {})}
+                testID={`media-radio-${s.name}`}
+              >
+                <Radio size={16} color={colors.warning} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.mediaName}>{s.name}</Text>
+                  <Text style={styles.mediaMeta}>
+                    {s.frequency} · {s.city} · {s.genre}
+                  </Text>
+                </View>
+                <ChevronRight size={14} color={colors.textTertiary} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
         <View style={{ height: 80 }} />
       </ScrollView>
@@ -655,7 +875,120 @@ export default function SafetyLocal() {
           </View>
         </View>
       </Modal>
+      {/* Offline Region Edit Modal (Enhancement 7) */}
+      <EditModal
+        visible={offlineModal.open}
+        title={offlineModal.item ? "Edit Offline Region" : "Add Offline Region"}
+        fields={OFFLINE_FIELDS}
+        initial={offlineModal.item}
+        onClose={() => setOfflineModal({ open: false })}
+        onSubmit={saveOfflineRegion}
+        onDelete={offlineModal.item ? deleteOfflineRegion : undefined}
+        deleteSubject={offlineModal.item?.name}
+      />
     </SafeAreaView>
+  );
+}
+
+function alertBgFromType(severity?: string) {
+  if (severity === "extreme") return { backgroundColor: "rgba(239,68,68,0.15)", borderColor: "rgba(239,68,68,0.5)" };
+  if (severity === "severe") return { backgroundColor: "rgba(245,158,11,0.15)", borderColor: "rgba(245,158,11,0.5)" };
+  return { backgroundColor: "rgba(245,158,11,0.10)", borderColor: "rgba(245,158,11,0.30)" };
+}
+
+function GpsToggleRow({
+  label,
+  value,
+  onChange,
+  testID,
+}: {
+  label: string;
+  value: boolean;
+  onChange: (v: boolean) => void;
+  testID?: string;
+}) {
+  return (
+    <View style={styles.gpsToggleRow}>
+      <Text style={styles.gpsToggleLabel}>{label}</Text>
+      <Switch
+        value={!!value}
+        onValueChange={onChange}
+        trackColor={{ false: colors.surfaceElevated, true: colors.primary }}
+        thumbColor="#fff"
+        testID={testID}
+      />
+    </View>
+  );
+}
+
+function TravelMapCard({
+  travel,
+  onPress,
+}: {
+  travel: any;
+  onPress?: (tripId?: string) => void;
+}) {
+  if (!travel || !travel.trip) {
+    return (
+      <View style={styles.travelEmpty} testID="travel-empty">
+        <Plane size={18} color={colors.textTertiary} />
+        <Text style={styles.travelEmptyText}>No upcoming trip. Add one in the Travel module.</Text>
+      </View>
+    );
+  }
+  const t = travel.trip;
+  const dest = travel.destination || {};
+  const origin = travel.origin || {};
+  const W = 340;
+  const H = 130;
+  // Project lat/lon into the SVG (simple linear scale across the world ±180/±90)
+  const project = (lat: number, lon: number) => ({
+    x: ((lon + 180) / 360) * W,
+    y: ((90 - lat) / 180) * H,
+  });
+  const o = project(origin.lat ?? 0, origin.lon ?? 0);
+  const d = project(dest.lat ?? 0, dest.lon ?? 0);
+  return (
+    <TouchableOpacity
+      onPress={() => onPress?.(t.trip_id)}
+      style={styles.travelCard}
+      testID="travel-map-card"
+      activeOpacity={0.85}
+    >
+      <View style={styles.mapCard}>
+        <Svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`}>
+          <Defs>
+            <RadialGradient id="g2" cx="50%" cy="50%" r="75%">
+              <Stop offset="0%" stopColor="#1A3A5C" />
+              <Stop offset="100%" stopColor="#0A1A2B" />
+            </RadialGradient>
+          </Defs>
+          <Rect width={W} height={H} fill="url(#g2)" rx={12} />
+          {/* Latitude lines */}
+          {[0.25, 0.5, 0.75].map((y, i) => (
+            <Rect key={`la-${i}`} x={0} y={H * y} width={W} height={0.6} fill="rgba(255,255,255,0.08)" />
+          ))}
+          {/* Curved-ish flight path (straight line for simplicity) */}
+          <Rect x={Math.min(o.x, d.x)} y={Math.min(o.y, d.y) + 0.5} width={Math.abs(d.x - o.x) || 1} height={1} fill={colors.primaryGlow} />
+          {/* Origin */}
+          <Circle cx={o.x} cy={o.y} r={5} fill="#10B981" stroke="#fff" strokeWidth={1.5} />
+          {/* Destination */}
+          <Circle cx={d.x} cy={d.y} r={5} fill={colors.danger} stroke="#fff" strokeWidth={1.5} />
+        </Svg>
+      </View>
+      <View style={styles.travelMeta}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.travelDest}>{t.destination_name}</Text>
+          <Text style={styles.travelSub} numberOfLines={1}>
+            {origin.label} → {dest.label}
+          </Text>
+          <Text style={styles.travelTrip}>
+            {(t.purpose || "trip").replace("_", " ")} · {t.status} · {travel.distance_miles?.toLocaleString() ?? "—"} mi
+          </Text>
+        </View>
+        <ChevronRight size={14} color={colors.textTertiary} />
+      </View>
+    </TouchableOpacity>
   );
 }
 
@@ -956,4 +1289,59 @@ const styles = StyleSheet.create({
   modalConfirmText: { color: "#fff", fontWeight: "700" },
   linkBox: { backgroundColor: colors.surfaceElevated, padding: spacing.sm, borderRadius: radius.sm },
   linkBoxText: { color: colors.primaryGlow, fontSize: 12, fontFamily: "monospace" as any },
+
+  // Enhancement 7 styles
+  addBtnSmall: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: colors.primary, paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.sm,
+  },
+  addBtnText: { color: "#fff", fontSize: 11, fontWeight: "700", letterSpacing: 0.3 },
+  offlineSummary: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 2 },
+  offlineSummaryText: { color: colors.textSecondary, fontSize: 12 },
+  gpsLiveDot: { width: 8, height: 8, borderRadius: 4 },
+  gpsSettingsCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.borderSubtle,
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
+    marginTop: spacing.sm,
+  },
+  gpsToggleRow: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderSubtle,
+  },
+  gpsToggleLabel: { color: colors.textPrimary, fontSize: 13 },
+  travelEmpty: {
+    flexDirection: "row", alignItems: "center", gap: spacing.sm,
+    backgroundColor: colors.surface, borderColor: colors.borderSubtle, borderWidth: 1,
+    borderRadius: radius.md, padding: spacing.md,
+  },
+  travelEmptyText: { color: colors.textTertiary, fontSize: 12, flex: 1 },
+  travelCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.primaryMuted,
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    overflow: "hidden",
+  },
+  travelMeta: {
+    flexDirection: "row", alignItems: "center", gap: spacing.sm,
+    padding: spacing.md,
+  },
+  travelDest: { color: colors.textPrimary, fontWeight: "700", fontSize: 14 },
+  travelSub: { color: colors.textSecondary, fontSize: 11, marginTop: 2 },
+  travelTrip: { color: colors.textTertiary, fontSize: 10, marginTop: 2, textTransform: "capitalize" },
+  mediaSource: { color: colors.textTertiary, fontSize: 10, fontStyle: "italic" },
+  mediaGroupLabel: { color: colors.textTertiary, fontSize: 10, fontWeight: "700", letterSpacing: 1, textTransform: "uppercase", marginTop: 4 },
+  mediaRow: {
+    flexDirection: "row", alignItems: "center", gap: spacing.sm,
+    backgroundColor: colors.surface, borderColor: colors.borderSubtle, borderWidth: 1,
+    borderRadius: radius.md, padding: spacing.md,
+  },
+  mediaName: { color: colors.textPrimary, fontWeight: "700", fontSize: 13 },
+  mediaMeta: { color: colors.textTertiary, fontSize: 11, marginTop: 2 },
 });

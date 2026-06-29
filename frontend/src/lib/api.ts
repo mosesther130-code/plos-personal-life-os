@@ -484,6 +484,34 @@ export const securityExtrasApi = {
   getPoliceStep: () => request<any>("/security/identity-theft/police-step"),
 };
 
+// ----------------- Safety & Local Enhancements (Enhancement 7) -----------------
+export const localExtrasApi = {
+  // Offline Maps CRUD (overrides legacy /local/offline-maps)
+  listOfflineMaps: () =>
+    request<{ regions: any[]; total_size_mb: number; is_mocked: boolean }>(
+      "/local/offline-maps"
+    ),
+  createOfflineMap: (d: any) =>
+    request<any>("/local/offline-maps", { method: "POST", body: d }),
+  updateOfflineMap: (id: string, d: any) =>
+    request<any>(`/local/offline-maps/${id}`, { method: "PUT", body: d }),
+  deleteOfflineMap: (id: string) =>
+    request<any>(`/local/offline-maps/${id}`, { method: "DELETE" }),
+  // Live Travel Map
+  travelMap: () => request<any>("/local/travel-map"),
+  // GPS Alerts
+  gpsAlertSettings: () => request<any>("/local/gps-alerts/settings"),
+  updateGpsAlertSettings: (d: any) =>
+    request<any>("/local/gps-alerts/settings", { method: "PUT", body: d }),
+  checkGpsAlerts: (lat: number, lon: number) =>
+    request<any>("/local/gps-alerts/check", { method: "POST", body: { lat, lon } }),
+  // Local Media
+  media: (lat?: number, lon?: number) =>
+    request<any>(
+      `/local/media${lat != null && lon != null ? `?lat=${lat}&lon=${lon}` : ""}`
+    ),
+};
+
 // ----------------- Seed -----------------
 // ----------------- Travel Advisor -----------------
 export const travelApi = {

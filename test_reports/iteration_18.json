@@ -1,0 +1,45 @@
+{
+  "summary": "Enhancement 7 — Safety & Local tested end-to-end. Backend (/api/local/*): 10/11 pytest cases passed. All 4 Offline Maps CRUD endpoints (list+auto-seed Georgia/Bulacan, create Florida, update, delete) pass. Live Travel Map returns Manila destination (lat~14.6, lon~120.98) with positive distance_miles=8701.9 for test1's existing 'Manila & Bulacan' trip. GPS alerts default settings, PUT-then-GET persistence (severe_weather:false, speed_alerts:true), and POST /check all pass. Local Media: Atlanta coords correctly return GA with WSB-TV and WABE 90.1 FM; (0,0) coords correctly return NATIONAL_FALLBACK (matched:false). ONE minor backend data issue: GET /api/local/media?lat=40.0&lon=-74.0 returns matched:false because NY bounding box in STATE_BOUNDING_BOXES is (min_lat=40.4) — lat=40.0 falls in NJ. The spec asked for NY match; recommend lowering NY min_lat to 40.0 OR adjusting the test coordinate to ~40.7128. Frontend (/safety-local): login → page loads, travel-map-card present with text 'Manila & Bulacan' and 'Decatur, GA → Manila, Philippines · 8,701.9 mi'. All 5 GPS toggles (enabled/weather/crime/advisories/speed) present and tappable; toggling severe_weather and reloading confirms persistence via PUT /gps-alerts/settings. Offline Maps section: add-offline-region opens EditModal (testIDs rendered as 'undefined-name/region_type-metro/save/delete' because <EditModal/> is not given a testID prop — same minor issue as iteration 17 breach.tsx); fill name=Atlanta Metro, type=Metro/City, size=85, notes=Local, Save → new offline-<uuid> row appears; tap row → modal reopens, click delete → confirm dialog 'Yes, delete' → row removed. Local Media section renders 3 TV rows (WSB-TV, 11Alive, FOX 5) and 3 Radio rows (WABE, Power 96.1, V-103) with correct testID prefixes. Smoke-checked weather-card / sos-button / satellite-card / invite-family still render — no regressions.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/local/media?lat=40.0&lon=-74.0", "issue": "Returns matched:false because NY bounding box min_lat=40.4 in STATE_BOUNDING_BOXES (safety_local.py:193). lat=40.0/lon=-74.0 is in central NJ. Either expand NY bbox to min_lat=40.0 or change test coords to (40.7128, -74.006)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "EditModal in /app/frontend/app/safety-local/index.tsx (offline-region modal)", "issue": "EditModal is not passed a testID prop, so child elements render as 'undefined-name', 'undefined-region_type-metro', 'undefined-save', 'undefined-delete' rather than something like 'offline-edit-modal-name'. Tests still work via literal strings, but cleaner to pass testID. Same pattern as iteration 17 breach.tsx."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_safety_local.py",
+    "/app/test_reports/pytest/iteration_18_results.xml"
+  ],
+  "action_items": [
+    "Optional (backend): Decide whether to extend NY bounding box min_lat from 40.4 to 40.0 in safety_local.py:193 so that lat=40.0/lon=-74.0 matches NY, or document that NJ should fall through to NATIONAL_FALLBACK. Today the test spec coord (40.0, -74.0) yields matched:false.",
+    "Optional polish (frontend): Pass a testID prop to <EditModal> inside the OFFLINE MAPS card in /app/frontend/app/safety-local/index.tsx (e.g. testID=\"offline-edit-modal\") so child IDs become 'offline-edit-modal-name' instead of 'undefined-name'.",
+    "Non-blocking RN web warnings logged: 'shadow* style props deprecated, use boxShadow' and 'props.pointerEvents deprecated, use style.pointerEvents' — upstream library noise; safe to ignore."
+  ],
+  "critical_code_review_comments": [
+    "safety_local.py: _strip() correctly removes _id and user_id before returning offline_maps rows.",
+    "Auto-seed for offline_maps fires only on first call (count_documents==0) — idempotent.",
+    "GPS alerts: GpsAlertSettings defaults to enabled:true, severe_weather:true, crime_geofence:true, travel_advisories:true, speed_alerts:false, radius_miles:5.0. The PUT endpoint uses upsert which correctly creates+updates the doc.",
+    "Travel map: destination lookup uses CITY_COORDS gazetteer keyed by lowercased city name. Manila/Bulacan are both present. Fallback to country-coords if city not found, with final fallback to (0,0).",
+    "Live travel map distance for test1 (Atlanta → Manila) computes ~8701.9 mi which matches haversine expectation.",
+    "_state_from_coords uses simple lat/lon bbox lookup; bounds for NY (40.4–45.0, -79.8–-71.8) exclude lat=40.0 (which is NJ). Behavior is technically correct; the spec coord is the issue, not the code.",
+    "No mongodb _id leakage anywhere — verified across all endpoints.",
+    "/app/frontend/app/safety-local/index.tsx is 1348 lines — exceeds 700-line guideline. Consider splitting into per-section subcomponents (weather, gps-settings, offline-maps, media, etc.) for future maintainability. NOT a blocker."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_safety_local.py"
+  ],
+  "success_rate": {"backend": "91% (10/11)", "frontend": "100% (4/4 flows)"},
+  "seed_data_creation": "Backend tests transiently create and delete a Florida offline map (cleaned up). After this run, test1's gps_alert_settings document is persisted with {enabled:true, severe_weather:true, crime_geofence:true, travel_advisories:true, speed_alerts:true, radius_miles:10} (the frontend toggle test re-enabled severe_weather). Offline maps for test1 currently has the two auto-seeded rows only (Georgia, Bulacan) — Atlanta Metro row created during the frontend flow was deleted as part of the test.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend tests live at /app/backend/tests/test_safety_local.py (run via `pytest tests/test_safety_local.py` from /app/backend). The one failing case (test_10_media_ny) is a coordinate-vs-bounding-box mismatch — either fix safety_local.py STATE_BOUNDING_BOXES NY entry (min_lat 40.4 → 40.0) or change the test coord to (40.7128, -74.006). Frontend EditModal children get 'undefined-*' testIDs because <EditModal/> in safety-local/index.tsx isn't given a testID prop (line ~700 area). Travel-map-card renders correctly for test1's 'Manila & Bulacan' trip.",
+  "rca_of_issue": "test_10_media_ny failure RCA: STATE_BOUNDING_BOXES (safety_local.py:193) defines NY as (min_lat=40.4, max_lat=45.0, min_lon=-79.8, max_lon=-71.8). The spec-mandated test point (lat=40.0, lon=-74.0) lies in central NJ — below NY's southern boundary. So _state_from_coords returns None and the endpoint correctly falls back to NATIONAL_FALLBACK with matched:false. Mitigation: either (a) extend NY bbox to min_lat=40.0 to encompass the NYC harbor area (NYC proper is 40.7128, so currently a NYC user works), or (b) use a real NY coord like (40.7128, -74.006) for the contract test."
+}
