@@ -5998,6 +5998,13 @@ app.include_router(
     make_mortgage_router(db, get_current_user_id, EMERGENT_LLM_KEY, LlmChat, UserMessage)
 )
 
+# Mount Career Files sub-router (Enhancement 4a)
+from career_files import make_router as make_career_files_router  # noqa: E402
+
+app.include_router(
+    make_career_files_router(db, get_current_user_id, EMERGENT_LLM_KEY, LlmChat, UserMessage)
+)
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,

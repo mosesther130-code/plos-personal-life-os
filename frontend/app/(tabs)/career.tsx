@@ -326,6 +326,16 @@ export default function CareerHome() {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.quickCard}
+            onPress={() => router.push("/resume-hub" as any)}
+            testID="open-resume-hub"
+            activeOpacity={0.85}
+          >
+            <FileText color={colors.success} size={20} />
+            <Text style={styles.quickTitle}>Resume Hub</Text>
+            <Text style={styles.quickSub}>Upload, build, download</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.quickCard}
             onPress={() => router.push("/career/resume-generator")}
             testID="open-resume-generator"
             activeOpacity={0.85}

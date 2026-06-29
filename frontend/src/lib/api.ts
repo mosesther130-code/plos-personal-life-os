@@ -404,6 +404,52 @@ export const mortgageApi = {
   dailyTip: () => request<any>("/mortgage/daily-tip"),
 };
 
+// ----------------- Career Files (Enhancement 4a) -----------------
+export const careerFilesApi = {
+  listFiles: (kind?: "resume" | "job_description" | "other") =>
+    request<{ files: any[] }>(`/career-files/list${kind ? `?kind=${kind}` : ""}`),
+  getFileMeta: (file_id: string) =>
+    request<any>(`/career-files/file/${file_id}`),
+  downloadFile: (file_id: string) =>
+    request<any>(`/career-files/file/${file_id}/download`),
+  deleteFile: (file_id: string) =>
+    request<any>(`/career-files/file/${file_id}`, { method: "DELETE" }),
+  uploadFile: async (file: File | Blob, opts: { kind: string; label?: string; filename?: string }) => {
+    const token = await getToken();
+    const fd = new FormData();
+    // Always include the filename explicitly — Blob.name is not preserved through FormData
+    const name = opts.filename || (file as any).name || "upload.bin";
+    fd.append("file", file as any, name);
+    fd.append("kind", opts.kind);
+    if (opts.label) fd.append("label", opts.label);
+    const baseUrl = (process.env.EXPO_PUBLIC_BACKEND_URL || "") + "/api";
+    const res = await fetch(`${baseUrl}/career-files/upload`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: fd as any,
+    });
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`;
+      try {
+        const j = await res.json();
+        msg = j?.detail || msg;
+      } catch {}
+      throw new Error(msg);
+    }
+    return res.json();
+  },
+  getResumeDraft: () => request<{ draft: any | null }>("/career-files/resume-draft"),
+  saveResumeDraft: (draft: any) =>
+    request<any>("/career-files/resume-draft", { method: "PUT", body: { draft } }),
+  polishResume: () =>
+    request<any>("/career-files/resume-draft/polish", { method: "POST", body: {} }),
+  downloadResume: (format: "pdf" | "docx") =>
+    request<{ filename: string; mime_type: string; content_base64: string; size_bytes: number }>(
+      "/career-files/resume-draft/download",
+      { method: "POST", body: { format } }
+    ),
+};
+
 // ----------------- Seed -----------------
 // ----------------- Travel Advisor -----------------
 export const travelApi = {
