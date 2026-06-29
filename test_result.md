@@ -101,3 +101,91 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+
+user_problem_statement: |
+  Enhancement 6 — Identity & Security (PLOS Roadmap).
+  - Replace the static "Monitoring" hero on the Breach Monitor screen with an editable
+    "Monitored Accounts" list. Users can Add/Edit/Delete items (types: email, phone,
+    username, ssn_last4). Sensitive identifiers (phone, ssn_last4) must be masked on
+    return.
+  - Dynamically render the "File a police report" step inside the Identity Theft Guide
+    based on the user's home_county / home_state from user_profile.
+
+backend:
+  - task: "Monitored accounts CRUD (/api/security/monitored-accounts)"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/security_extras.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Implemented GET (auto-seeds primary email on first load, masks phone/ssn), POST (validates account_type), PUT, DELETE. Mounted via make_security_extras_router in server.py."
+  - task: "Jurisdiction lookup (/api/security/jurisdiction & /identity-theft/police-step)"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/security_extras.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Module-level lookup_jurisdiction added. Returns directory entry (DeKalb, Fulton, Gwinnett, Cobb, Clayton, Henry GA) when matched, fallback otherwise."
+  - task: "Identity Theft Guide police_report step dynamic rewrite"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "/api/security/identity-theft-guide now merges jurisdiction data into the police_report step (title, description, links, jurisdiction object)."
+
+frontend:
+  - task: "Breach Monitor — Monitored Accounts CRUD UI"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/security/breach.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Hero card replaced with editable list. Add button opens EditModal. Tapping a row opens EditModal in edit mode with Delete confirmation. Wired to /api/security/monitored-accounts."
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 1
+  run_ui: true
+
+test_plan:
+  current_focus:
+    - "Monitored accounts CRUD (/api/security/monitored-accounts)"
+    - "Jurisdiction lookup (/api/security/jurisdiction & /identity-theft/police-step)"
+    - "Identity Theft Guide police_report step dynamic rewrite"
+    - "Breach Monitor — Monitored Accounts CRUD UI"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+    - agent: "main"
+      message: |
+        Enhancement 6 implementation complete. Please verify:
+        1. POST /api/security/monitored-accounts with each account_type (email, phone, username, ssn_last4)
+        2. GET should mask phone/ssn_last4 (no raw identifier returned for those types)
+        3. PUT/DELETE round-trip
+        4. /api/security/identity-theft-guide should return a police_report step whose
+           title/links reflect either the matched county (set test1's home_county="DeKalb"
+           home_state="GA") or the fallback message when not set.
+        5. Frontend: Breach Monitor page should show the Monitored Accounts card with
+           an Add button. Verify the EditModal opens, saves, and edits items (use testID
+           "add-monitored" and "monitored-{id}").
+        Auth: test1@plos.app / test123

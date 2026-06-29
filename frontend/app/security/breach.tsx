@@ -12,10 +12,27 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { ArrowLeft, AlertOctagon, KeyRound, CheckCircle, ShieldCheck } from "lucide-react-native";
+import { ArrowLeft, AlertOctagon, KeyRound, CheckCircle, ShieldCheck, Pencil, Plus } from "lucide-react-native";
 
-import { securityApi } from "@/src/lib/api";
+import { securityApi, securityExtrasApi } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
+import { EditModal, type Field } from "@/src/components/EditModal";
+
+const ACCT_FIELDS: Field[] = [
+  {
+    key: "account_type",
+    label: "Account Type",
+    kind: "select",
+    options: [
+      { label: "Email", value: "email" },
+      { label: "Phone", value: "phone" },
+      { label: "Username", value: "username" },
+      { label: "SSN (last 4)", value: "ssn_last4" },
+    ],
+  },
+  { key: "identifier", label: "Identifier", kind: "text" },
+  { key: "label", label: "Label (optional)", kind: "text" },
+];
 
 export default function Breach() {
   const router = useRouter();
@@ -25,6 +42,29 @@ export default function Breach() {
   const [keyInput, setKeyInput] = useState("");
   const [keyBusy, setKeyBusy] = useState(false);
   const [resolveBusy, setResolveBusy] = useState<string | null>(null);
+  const [monitored, setMonitored] = useState<any[]>([]);
+  const [acctModal, setAcctModal] = useState<{ open: boolean; item?: any }>({ open: false });
+
+  const loadMonitored = useCallback(async () => {
+    try {
+      const r = await securityExtrasApi.listMonitored();
+      setMonitored(r.accounts || []);
+    } catch (_e) {}
+  }, []);
+
+  const onSaveAcct = async (vals: any) => {
+    if (acctModal.item) {
+      await securityExtrasApi.updateMonitored(acctModal.item.account_id, vals);
+    } else {
+      await securityExtrasApi.createMonitored(vals);
+    }
+    await loadMonitored();
+  };
+  const onDeleteAcct = async () => {
+    if (!acctModal.item) return;
+    await securityExtrasApi.deleteMonitored(acctModal.item.account_id);
+    await loadMonitored();
+  };
 
   const load = useCallback(async () => {
     const r = await securityApi.breaches();
@@ -34,11 +74,11 @@ export default function Breach() {
   useEffect(() => {
     (async () => {
       try {
-        await load();
+        await Promise.all([load(), loadMonitored()]);
       } catch (_e) {}
       setLoading(false);
     })();
-  }, [load]);
+  }, [load, loadMonitored]);
 
   const saveKey = async () => {
     setKeyBusy(true);
@@ -102,13 +142,60 @@ export default function Breach() {
         )}
 
         <View style={styles.heroCard}>
-          <Text style={styles.heroLabel}>Monitoring</Text>
-          <Text style={styles.heroEmail} numberOfLines={1}>
-            {data?.checked_email || "—"}
-          </Text>
-          <Text style={styles.heroSub}>
-            {active.length} active · {resolved.length} resolved
-          </Text>
+          <View style={styles.heroHead}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.heroLabel}>Monitored Accounts</Text>
+              <Text style={styles.heroSub}>
+                {monitored.length} tracked · {active.length} active · {resolved.length} resolved
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.addBtn}
+              onPress={() => setAcctModal({ open: true })}
+              testID="add-monitored"
+            >
+              <Plus size={14} color="#fff" />
+              <Text style={styles.addBtnText}>Add</Text>
+            </TouchableOpacity>
+          </View>
+
+          {monitored.length === 0 ? (
+            <Text style={styles.emptyMonitored}>
+              No accounts being monitored. Tap “Add” to track an email, phone, username, or last 4 of SSN.
+            </Text>
+          ) : (
+            <View style={{ gap: spacing.xs, marginTop: spacing.sm }}>
+              {monitored.map((m) => (
+                <TouchableOpacity
+                  key={m.account_id}
+                  style={styles.monRow}
+                  onPress={() =>
+                    setAcctModal({
+                      open: true,
+                      item: {
+                        account_id: m.account_id,
+                        account_type: m.account_type,
+                        identifier: m.identifier ?? m.masked_identifier ?? "",
+                        label: m.label || "",
+                      },
+                    })
+                  }
+                  testID={`monitored-${m.account_id}`}
+                >
+                  <View style={styles.monTypeBadge}>
+                    <Text style={styles.monTypeText}>{(m.account_type || "").toUpperCase()}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.monIdent} numberOfLines={1}>
+                      {m.identifier || m.masked_identifier || "—"}
+                    </Text>
+                    {!!m.label && <Text style={styles.monLabel} numberOfLines={1}>{m.label}</Text>}
+                  </View>
+                  <Pencil size={14} color={colors.textTertiary} />
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
         </View>
 
         {/* HIBP Key */}
@@ -210,6 +297,21 @@ export default function Breach() {
 
         <View style={{ height: 80 }} />
       </ScrollView>
+
+      <EditModal
+        visible={acctModal.open}
+        title={acctModal.item ? "Edit Monitored Account" : "Add Monitored Account"}
+        fields={ACCT_FIELDS}
+        initial={acctModal.item}
+        onClose={() => setAcctModal({ open: false })}
+        onSubmit={onSaveAcct}
+        onDelete={acctModal.item ? onDeleteAcct : undefined}
+        deleteSubject={
+          acctModal.item
+            ? `${(acctModal.item.account_type || "").toUpperCase()} • ${acctModal.item.identifier || acctModal.item.label || ""}`
+            : undefined
+        }
+      />
     </SafeAreaView>
   );
 }
@@ -248,7 +350,39 @@ const styles = StyleSheet.create({
   },
   heroLabel: { color: colors.textTertiary, fontSize: 10, fontWeight: "700", letterSpacing: 1.2, textTransform: "uppercase" },
   heroEmail: { color: colors.textPrimary, fontSize: 18, fontWeight: "700" },
-  heroSub: { color: colors.textSecondary, fontSize: 12 },
+  heroSub: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
+  heroHead: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  addBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.sm,
+  },
+  addBtnText: { color: "#fff", fontSize: 11, fontWeight: "700", letterSpacing: 0.3 },
+  emptyMonitored: { color: colors.textTertiary, fontSize: 12, lineHeight: 18, marginTop: spacing.sm },
+  monRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceElevated,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+  },
+  monTypeBadge: {
+    backgroundColor: colors.primaryMuted,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 4,
+    minWidth: 56,
+    alignItems: "center",
+  },
+  monTypeText: { color: colors.primaryGlow, fontSize: 9, fontWeight: "800", letterSpacing: 0.5 },
+  monIdent: { color: colors.textPrimary, fontSize: 13, fontWeight: "600" },
+  monLabel: { color: colors.textTertiary, fontSize: 11, marginTop: 2 },
   keyCard: {
     backgroundColor: colors.surface,
     borderColor: colors.borderSubtle,

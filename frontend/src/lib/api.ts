@@ -471,6 +471,19 @@ export const investmentMarketsApi = {
   delete: (id: string) => request<any>(`/investment-markets/${id}`, { method: "DELETE" }),
 };
 
+// ----------------- Security Enhancements (Enhancement 6) -----------------
+export const securityExtrasApi = {
+  listMonitored: () => request<{ accounts: any[] }>("/security/monitored-accounts"),
+  createMonitored: (d: any) =>
+    request<any>("/security/monitored-accounts", { method: "POST", body: d }),
+  updateMonitored: (id: string, d: any) =>
+    request<any>(`/security/monitored-accounts/${id}`, { method: "PUT", body: d }),
+  deleteMonitored: (id: string) =>
+    request<any>(`/security/monitored-accounts/${id}`, { method: "DELETE" }),
+  getJurisdiction: () => request<any>("/security/jurisdiction"),
+  getPoliceStep: () => request<any>("/security/identity-theft/police-step"),
+};
+
 // ----------------- Seed -----------------
 // ----------------- Travel Advisor -----------------
 export const travelApi = {

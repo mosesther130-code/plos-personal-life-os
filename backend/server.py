@@ -124,6 +124,11 @@ class UserProfile(BaseModel):
     full_name: str
     date_of_birth: Optional[str] = None
     location_primary: Optional[str] = None
+    home_street: Optional[str] = None
+    home_city: Optional[str] = None
+    home_state: Optional[str] = None
+    home_zip: Optional[str] = None
+    home_county: Optional[str] = None
     financial_health_score: int = 0
     net_worth_usd: float = 0.0
     last_updated: str
@@ -133,6 +138,11 @@ class UserProfileUpdate(BaseModel):
     full_name: Optional[str] = None
     date_of_birth: Optional[str] = None
     location_primary: Optional[str] = None
+    home_street: Optional[str] = None
+    home_city: Optional[str] = None
+    home_state: Optional[str] = None
+    home_zip: Optional[str] = None
+    home_county: Optional[str] = None
     financial_health_score: Optional[int] = None
     net_worth_usd: Optional[float] = None
 
@@ -3128,10 +3138,11 @@ def _default_identity_theft_steps(lenders: List[str]) -> List[Dict[str, Any]]:
         {
             "step_id": "police_report",
             "title": "File a local police report",
-            "description": "Visit your local precinct (e.g. DeKalb County Police Department in DeKalb County, GA) with: photo ID, FTC affidavit, proof of address, and evidence of fraud.",
+            "description": "Visit your local precinct (your county police department) with: photo ID, FTC affidavit, proof of address, and evidence of fraud. PLOS will show the exact precinct, non-emergency phone, and online report link based on your home county — set it in Settings.",
             "links": [
-                {"label": "DeKalb County Police", "url": "https://www.dekalbcountyga.gov/police"}
+                {"label": "Find local agency", "url": "https://www.usa.gov/local-governments"}
             ],
+            "_dynamic_hint": "GET /api/security/identity-theft/police-step for jurisdiction-specific data",
         },
         {
             "step_id": "contact_financial",
@@ -3159,6 +3170,44 @@ async def get_identity_theft_guide(user_id: str = Depends(get_current_user_id)):
     debts = await db.debts.find({"user_id": user_id}, {"_id": 0}).to_list(50)
     lenders = list({d.get("lender") for d in debts if d.get("lender")})
     steps = _default_identity_theft_steps(lenders)
+
+    # Dynamically rewrite the police_report step based on the user's home county
+    try:
+        from security_extras import lookup_jurisdiction  # type: ignore
+    except Exception:
+        lookup_jurisdiction = None  # type: ignore
+    if lookup_jurisdiction is not None:
+        profile = await db.user_profile.find_one(
+            {"user_id": user_id}, {"_id": 0}
+        ) or {}
+        j = lookup_jurisdiction(profile.get("home_county"), profile.get("home_state"))
+        for s in steps:
+            if s.get("step_id") == "police_report":
+                if j.get("found"):
+                    s["title"] = f"File a police report at {j['department']}"
+                    s["description"] = (
+                        f"Visit your local precinct ({j['department']}) with: "
+                        f"photo ID, FTC affidavit, proof of address, and evidence of fraud. "
+                        f"Non-emergency line: {j['non_emergency_phone']}."
+                    )
+                    s["links"] = [
+                        {"label": "File online", "url": j["online_report_url"]},
+                    ]
+                else:
+                    s["description"] = (
+                        j.get("fallback_message")
+                        or "File a police report with your local law enforcement."
+                    ) + " Add your home county in Settings so PLOS can show your exact precinct."
+                    s["links"] = [
+                        {
+                            "label": "Find local agency",
+                            "url": j.get("fallback_url")
+                            or "https://www.usa.gov/local-governments",
+                        }
+                    ]
+                s["jurisdiction"] = j
+                break
+
     state = await db.identity_theft_checklist.find_one(
         {"user_id": user_id}, {"_id": 0}
     ) or {"completed": {}}
@@ -6018,6 +6067,11 @@ from investment_markets import make_router as make_markets_router  # noqa: E402
 app.include_router(
     make_markets_router(db, get_current_user_id, gather_user_context, _user_finance_snapshot)
 )
+
+# Mount Security Extras sub-router (Enhancement 6)
+from security_extras import make_router as make_security_extras_router  # noqa: E402
+
+app.include_router(make_security_extras_router(db, get_current_user_id))
 
 app.add_middleware(
     CORSMiddleware,
