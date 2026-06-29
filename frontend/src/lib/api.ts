@@ -362,6 +362,31 @@ export const shoppingApi = {
   unregisterProduct: (id: string) => request<any>(`/shopping/registered-products/${id}`, { method: "DELETE" }),
 };
 
+// ----------------- Student Loans (Enhancement 2) -----------------
+export const studentLoansApi = {
+  listLoans: () => request<{ loans: any[]; totals: any }>("/student-loans/list"),
+  listServicers: () => request<{ servicers: any[] }>("/student-loans/servicers"),
+  createServicer: (d: any) =>
+    request<any>("/student-loans/servicers", { method: "POST", body: d }),
+  updateServicer: (id: string, d: any) =>
+    request<any>(`/student-loans/servicers/${id}`, { method: "PUT", body: d }),
+  deleteServicer: (id: string) =>
+    request<any>(`/student-loans/servicers/${id}`, { method: "DELETE" }),
+  seedFederalServicers: () =>
+    request<any>("/student-loans/servicers/seed-federal", { method: "POST" }),
+  getExtras: (debt_id: string) =>
+    request<any>(`/student-loans/extras/${debt_id}`),
+  updateExtras: (
+    debt_id: string,
+    d: { deferment_active: boolean; deferment_end_date?: string | null }
+  ) => request<any>(`/student-loans/extras/${debt_id}`, { method: "PUT", body: d }),
+  repaymentPlans: (debt_id: string) =>
+    request<any>("/student-loans/repayment-plans", { method: "POST", body: { debt_id } }),
+  forgiveness: (debt_id: string) =>
+    request<any>("/student-loans/forgiveness", { method: "POST", body: { debt_id } }),
+  dailyTip: () => request<any>("/student-loans/daily-tip"),
+};
+
 // ----------------- Seed -----------------
 // ----------------- Travel Advisor -----------------
 export const travelApi = {

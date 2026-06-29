@@ -151,6 +151,7 @@ export default function DebtManager() {
   );
 
   const hasMortgage = debts.some((d) => d.debt_type === "mortgage");
+  const hasStudentLoan = debts.some((d) => d.debt_type === "student_loan");
 
   if (loading) {
     return (
@@ -468,6 +469,18 @@ export default function DebtManager() {
           <Calendar color="#fff" size={18} />
           <Text style={styles.payoffBtnText}>Build Full Payoff Plan</Text>
         </TouchableOpacity>
+
+        {hasStudentLoan && (
+          <TouchableOpacity
+            style={styles.mortgageBtn}
+            onPress={() => router.push("/student-loans" as any)}
+            testID="open-student-loans"
+            activeOpacity={0.85}
+          >
+            <GraduationCap color={colors.primaryGlow} size={18} />
+            <Text style={styles.mortgageBtnText}>Open Student Loans Center</Text>
+          </TouchableOpacity>
+        )}
 
         {hasMortgage && (
           <TouchableOpacity

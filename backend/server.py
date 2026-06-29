@@ -5984,6 +5984,13 @@ async def root():
 # Include router
 app.include_router(api_router)
 
+# Mount Student Loans sub-router (Enhancement 2)
+from student_loans import make_router as make_student_loans_router  # noqa: E402
+
+app.include_router(
+    make_student_loans_router(db, get_current_user_id, EMERGENT_LLM_KEY, LlmChat, UserMessage)
+)
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
