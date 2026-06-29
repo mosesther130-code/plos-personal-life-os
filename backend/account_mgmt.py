@@ -23,16 +23,18 @@ router = APIRouter(prefix="/api/auth", tags=["account-management"])
 # Module-level password helpers will be injected from server.py via factory
 class ChangePasswordRequest(BaseModel):
     current_password: str = Field(min_length=1)
-    new_password: str = Field(min_length=8, max_length=200)
+    new_password: str = Field(min_length=1)
 
-    @field_validator("new_password")
-    @classmethod
-    def _strength(cls, v: str) -> str:
-        if v.strip() != v:
-            raise ValueError("new_password may not have leading/trailing whitespace")
-        if not re.search(r"[A-Za-z]", v) or not re.search(r"[0-9]", v):
-            raise ValueError("new_password must contain at least one letter and one digit")
-        return v
+
+def _validate_new_password(pw: str) -> str | None:
+    """Return None if OK, else the reason it failed."""
+    if len(pw) < 8 or len(pw) > 200:
+        return "New password must be 8-200 characters"
+    if pw.strip() != pw:
+        return "New password may not have leading/trailing whitespace"
+    if not re.search(r"[A-Za-z]", pw) or not re.search(r"[0-9]", pw):
+        return "New password must contain at least one letter and one digit"
+    return None
 
 
 class DeleteAccountRequest(BaseModel):
@@ -89,6 +91,10 @@ def make_router(db, get_current_user_id, hash_password_fn, verify_password_fn):
                 status_code=400,
                 detail="New password must be different from the current password",
             )
+
+        strength_err = _validate_new_password(payload.new_password)
+        if strength_err:
+            raise HTTPException(status_code=400, detail=strength_err)
 
         now_iso = datetime.now(timezone.utc).isoformat()
         await db.users.update_one(
