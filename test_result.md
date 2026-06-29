@@ -192,7 +192,48 @@ agent_communication:
 
     - agent: "main"
       message: |
-        Enhancement 10 — Health & Wellbeing: Medical Documents CRUD complete.
+        Enhancement 11 — Settings: Account Management CRUD with 2-step delete.
+
+        NEW backend (/app/backend/account_mgmt.py — mounted in server.py):
+        1. POST /api/auth/change-password {current_password, new_password}
+           - verifies current via verify_password
+           - enforces new_password >=8 chars, letters+numbers
+           - rejects if new == current
+           - writes audit_logs entries on success/failure
+           - sets password_changed_at on user record
+        2. POST /api/auth/delete-account {password, confirm_text}
+           - confirm_text must equal "DELETE" (Pydantic validator → 422)
+           - verifies password
+           - cascade-deletes from EVERY user-scoped collection in the DB
+             (dynamic list_collection_names sweep, except audit_logs)
+           - returns {ok, collections_cleared, total_records}
+           - writes audit_logs entry with email + cleared counts
+
+        Frontend (/app/frontend/app/settings.tsx) fully rebuilt:
+        - Profile card now shows location info and has an edit pencil
+          (testID edit-profile-btn) → EditModal with full_name, dob, street,
+          city, state, zip, county.
+        - Account section: testID open-change-password opens a 3-field bottom
+          sheet (pw-current, pw-new, pw-confirm, pw-submit) with client-side
+          validation matching backend rules.
+        - Danger Zone card with testID open-delete-account opens a 2-step
+          modal:
+            * Step 1: type "DELETE" (testID del-confirm-text, button del-next)
+            * Step 2: enter password (testID del-password, button del-submit,
+              back button del-back). On success, signs out + replaces to login.
+        - Sign Out + Load Demo Data preserved.
+
+        accountApi added to /app/frontend/src/lib/api.ts:
+        me(), updateProfile(), changePassword(), deleteAccount().
+
+        Please test both backend (positive + negative paths) and frontend
+        (edit profile, change password, 2-step delete confirmation).
+        Auth: test1@plos.app / test123.
+
+        ⚠️ IMPORTANT: For the delete-account end-to-end test, register a
+        TEMPORARY user (e.g., temp_e11@plos.app) instead of test1, so the
+        main account stays intact for subsequent enhancements. After
+        deletion verify that login fails.
 
         Existing Health module already had CRUD for Insurance / Medications /
         Appointments. The missing piece was Medical Documents — now added.

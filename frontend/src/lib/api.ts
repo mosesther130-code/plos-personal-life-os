@@ -484,6 +484,23 @@ export const securityExtrasApi = {
   getPoliceStep: () => request<any>("/security/identity-theft/police-step"),
 };
 
+// ----------------- Account Management (Enhancement 11) -----------------
+export const accountApi = {
+  me: () => request<any>("/auth/me"),
+  updateProfile: (d: any) =>
+    request<any>("/profile", { method: "PUT", body: d }),
+  changePassword: (current_password: string, new_password: string) =>
+    request<{ ok: boolean; password_changed_at: string }>("/auth/change-password", {
+      method: "POST",
+      body: { current_password, new_password },
+    }),
+  deleteAccount: (password: string, confirm_text: string) =>
+    request<{ ok: boolean; total_records: number; collections_cleared: Record<string, number> }>(
+      "/auth/delete-account",
+      { method: "POST", body: { password, confirm_text } }
+    ),
+};
+
 // ----------------- Medical Documents (Enhancement 10) -----------------
 export const medicalDocsApi = {
   types: () => request<{ doc_types: string[] }>("/health/medical-docs/types"),

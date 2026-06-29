@@ -6079,6 +6079,13 @@ from medical_docs import make_router as make_medical_docs_router  # noqa: E402
 
 app.include_router(make_medical_docs_router(db, get_current_user_id))
 
+# Mount Account Management sub-router (Enhancement 11)
+from account_mgmt import make_router as make_account_mgmt_router  # noqa: E402
+
+app.include_router(
+    make_account_mgmt_router(db, get_current_user_id, hash_password, verify_password)
+)
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
