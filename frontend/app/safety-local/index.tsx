@@ -13,7 +13,7 @@ import {
   Animated,
   Easing,
   Platform,
-  Share,
+  Share, // legacy import kept to avoid touching unrelated code; safeShare wraps it
   Modal,
   TextInput,
   Switch,
@@ -62,6 +62,7 @@ import * as Location from "expo-location";
 import { localApi, localExtrasApi } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
 import { EditModal, type Field } from "@/src/components/EditModal";
+import { safeShare } from "@/src/lib/share";
 
 const DEFAULT_LAT = 33.749;
 const DEFAULT_LON = -84.388;
@@ -257,7 +258,12 @@ export default function SafetyLocal() {
         // Open share sheet w/ coordinates + dial 911
         const msg = `EMERGENCY! I need help. My location: ${pos.lat.toFixed(5)}, ${pos.lon.toFixed(5)}. Maps: https://maps.google.com/?q=${pos.lat},${pos.lon}`;
         try {
-          await Share.share({ message: msg });
+          await safeShare({
+            title: "Emergency SOS",
+            message: msg,
+            url: `https://maps.google.com/?q=${pos.lat},${pos.lon}`,
+            label: "Emergency location · copy and send",
+          });
         } catch (_e) {}
         if (Platform.OS !== "web") {
           Linking.openURL("tel:911").catch(() => {});
@@ -429,7 +435,12 @@ export default function SafetyLocal() {
             style={styles.shareBtn}
             onPress={async () => {
               const pos = coords || { lat: DEFAULT_LAT, lon: DEFAULT_LON };
-              await Share.share({ message: `My current location: ${pos.lat.toFixed(5)}, ${pos.lon.toFixed(5)} · https://maps.google.com/?q=${pos.lat},${pos.lon}` });
+              await safeShare({
+                title: "My location",
+                message: `My current location: ${pos.lat.toFixed(5)}, ${pos.lon.toFixed(5)}`,
+                url: `https://maps.google.com/?q=${pos.lat},${pos.lon}`,
+                label: "Location copied · paste into a message",
+              });
             }}
             testID="share-location"
           >
@@ -867,7 +878,7 @@ export default function SafetyLocal() {
                   {busy === "invite" ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.modalConfirmText}>Generate Link</Text>}
                 </TouchableOpacity>
               ) : (
-                <TouchableOpacity style={styles.modalConfirm} onPress={() => Share.share({ message: `Join my family on PLOS: ${inviteModal.link}` })}>
+                <TouchableOpacity style={styles.modalConfirm} onPress={() => safeShare({ title: "Invite to PLOS", message: `Join my family on PLOS: ${inviteModal.link}`, url: inviteModal.link, label: "Invite link copied" })}>
                   <Text style={styles.modalConfirmText}>Share</Text>
                 </TouchableOpacity>
               )}
