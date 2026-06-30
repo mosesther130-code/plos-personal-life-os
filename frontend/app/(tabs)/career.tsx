@@ -56,6 +56,18 @@ const criteriaFields: Field[] = [
       { value: "any", label: "Any" },
     ],
   },
+  {
+    key: "target_roles",
+    label: "Target Roles (comma-separated)",
+    kind: "text",
+    placeholder: "Senior Engineer, Tech Lead, Staff Engineer",
+  },
+  {
+    key: "target_locations",
+    label: "Target Locations (comma-separated)",
+    kind: "text",
+    placeholder: "Atlanta, Remote, NYC",
+  },
   { key: "auto_apply_review_first", label: "Review Before Auto-apply", kind: "boolean" },
   { key: "auto_cover_letter", label: "Auto-generate Cover Letter", kind: "boolean" },
 ];
@@ -114,9 +126,37 @@ export default function CareerHome() {
   };
 
   const onSaveCriteria = async (vals: any) => {
-    await careerApi.update(vals);
+    const csvToArray = (v: any): string[] => {
+      if (Array.isArray(v)) return v;
+      if (typeof v === "string") {
+        return v
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+      }
+      return [];
+    };
+    const payload: any = { ...vals };
+    payload.target_roles = csvToArray(vals.target_roles);
+    payload.target_locations = csvToArray(vals.target_locations);
+    if (vals.min_salary !== undefined && vals.min_salary !== "") {
+      payload.min_salary = Number(vals.min_salary) || 0;
+    }
+    await careerApi.update(payload);
     await load();
   };
+
+  const criteriaInitial = career
+    ? {
+        ...career,
+        target_roles: Array.isArray(career.target_roles)
+          ? career.target_roles.join(", ")
+          : career.target_roles || "",
+        target_locations: Array.isArray(career.target_locations)
+          ? career.target_locations.join(", ")
+          : career.target_locations || "",
+      }
+    : {};
 
   const topMatches = [...apps]
     .filter((a) => a.match_score)
@@ -462,9 +502,9 @@ export default function CareerHome() {
 
       <EditModal
         visible={criteriaOpen}
-        title="Job Search Criteria"
+        title="Edit Auto Job Search Criteria"
         fields={criteriaFields}
-        initial={career || {}}
+        initial={criteriaInitial}
         onClose={() => setCriteriaOpen(false)}
         onSubmit={onSaveCriteria}
         testID="criteria-modal"
