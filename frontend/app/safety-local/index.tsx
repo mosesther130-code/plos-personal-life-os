@@ -59,10 +59,12 @@ import {
 } from "lucide-react-native";
 import * as Location from "expo-location";
 
-import { localApi, localExtrasApi } from "@/src/lib/api";
+import { localApi, localExtrasApi, familyLocationsApi } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
 import { EditModal, type Field } from "@/src/components/EditModal";
 import { safeShare } from "@/src/lib/share";
+import { subscribeFamilyLocations, type FamilyLocationDoc } from "@/src/lib/firebase";
+import { useAuth } from "@/src/lib/auth-context";
 
 const DEFAULT_LAT = 33.749;
 const DEFAULT_LON = -84.388;
@@ -157,6 +159,19 @@ export default function SafetyLocal() {
   const [vinInput, setVinInput] = useState("");
   const [inviteModal, setInviteModal] = useState<{ open: boolean; name: string; link?: string }>({ open: false, name: "" });
   const [familyEdit, setFamilyEdit] = useState<{ open: boolean; item?: any }>({ open: false });
+  // ----- Firestore realtime family locations -----
+  const { user } = useAuth();
+  const [liveLocations, setLiveLocations] = useState<Record<string, FamilyLocationDoc>>({});
+  const [liveStatus, setLiveStatus] = useState<"connecting" | "live" | "off" | "error">("off");
+  const [simulateBusy, setSimulateBusy] = useState(false);
+  const [simulateResult, setSimulateResult] = useState<null | {
+    member_name: string;
+    bearing_deg: number;
+    distance_miles: number;
+    latency_ms: number | null;
+  }>(null);
+  const simulateSentAtRef = useRef<number | null>(null);
+  const simulateMemberIdRef = useRef<string | null>(null);
   // Enhancement 7 state
   const [offlineRegions, setOfflineRegions] = useState<any[]>([]);
   const [offlineTotalMb, setOfflineTotalMb] = useState(0);
@@ -328,6 +343,83 @@ export default function SafetyLocal() {
       setData((d: any) => ({ ...d, family: f }));
     } catch (_e) {}
     setBusy(null);
+  };
+
+  // ----- Firestore realtime family locations -----
+  // Subscribe to live updates and measure end-to-end latency when we
+  // trigger a "Simulate live update" so the user can see the listener fires.
+  useEffect(() => {
+    if (!user?.user_id) return;
+    setLiveStatus("connecting");
+    // Hydrate Firestore from MongoDB so the listener has baseline docs
+    // (idempotent — backend writes/merges).
+    familyLocationsApi
+      .sync()
+      .catch((e) => console.warn("family-locations/sync failed:", e));
+    const unsub = subscribeFamilyLocations(
+      user.user_id,
+      (docs) => {
+        setLiveStatus("live");
+        const byId: Record<string, FamilyLocationDoc> = {};
+        docs.forEach((d) => {
+          byId[d.user_id] = d;
+        });
+        setLiveLocations(byId);
+        // Latency check — if we just sent a simulate request, measure
+        // the time from request → snapshot for that exact member.
+        const startedAt = simulateSentAtRef.current;
+        const targetId = simulateMemberIdRef.current;
+        if (startedAt && targetId && byId[targetId]) {
+          const latency = Date.now() - startedAt;
+          simulateSentAtRef.current = null;
+          simulateMemberIdRef.current = null;
+          setSimulateResult((prev) =>
+            prev ? { ...prev, latency_ms: latency } : prev
+          );
+        }
+      },
+      (err) => {
+        console.warn("Firestore subscribe error:", err);
+        setLiveStatus("error");
+      }
+    );
+    return () => {
+      unsub();
+    };
+  }, [user?.user_id]);
+
+  const simulateLiveUpdate = async () => {
+    setSimulateBusy(true);
+    setSimulateResult(null);
+    try {
+      // Prefer "Isaac" if present; else first member
+      const members = data.family?.members || [];
+      const target =
+        members.find((m: any) => /isaac/i.test(m.name)) || members[0];
+      if (!target) {
+        Alert.alert("No family members", "Add a family member first.");
+        return;
+      }
+      simulateMemberIdRef.current = target.member_id;
+      simulateSentAtRef.current = Date.now();
+      const r = await familyLocationsApi.simulate({
+        member_id: target.member_id,
+        distance_miles: 0.5,
+        message: "On the move",
+      });
+      setSimulateResult({
+        member_name: r.name,
+        bearing_deg: r.bearing_deg,
+        distance_miles: r.distance_miles,
+        latency_ms: null, // filled when listener fires
+      });
+    } catch (e: any) {
+      simulateSentAtRef.current = null;
+      simulateMemberIdRef.current = null;
+      Alert.alert("Simulate failed", String(e?.message || e));
+    } finally {
+      setSimulateBusy(false);
+    }
   };
 
   const generateInvite = async () => {
@@ -544,16 +636,28 @@ export default function SafetyLocal() {
         </View>
 
         {/* FAMILY */}
-        <Section label="Family Locations" />
-        <FamilyMap members={family.members || []} />
-        {(family.members || []).map((m: any) => (
+        <Section
+          label="Family Locations"
+          trailing={
+            <View style={styles.liveRow}>
+              <View style={[styles.liveDot, { backgroundColor: liveStatus === "live" ? colors.success : liveStatus === "error" ? colors.danger : colors.textTertiary }]} />
+              <Text style={styles.liveLabel}>
+                {liveStatus === "live" ? "Realtime · Firestore" : liveStatus === "connecting" ? "Connecting…" : liveStatus === "error" ? "Listener error" : "Offline"}
+              </Text>
+            </View>
+          }
+        />
+        <FamilyMap members={family.members || []} live={liveLocations} />
+        {(family.members || []).map((m: any) => {
+          const live = liveLocations[m.member_id];
+          return (
           <View key={m.member_id} style={styles.famRow} testID={`family-${m.member_id}`}>
             <TouchableOpacity
               style={styles.famMain}
               onPress={() =>
                 Alert.alert(
                   m.name,
-                  `${m.relation || "Family"} · Last seen ${timeAgo(m.last_seen)}\n${m.last_address}${m.invite_status === "pending" ? "\n\nInvite pending — share link from invite modal." : ""}`
+                  `${m.relation || "Family"} · Last seen ${timeAgo(m.last_seen)}\n${m.last_address}${m.invite_status === "pending" ? "\n\nInvite pending — share link from invite modal." : ""}${live ? `\n\nLive (Firestore): ${live.latitude.toFixed(5)}, ${live.longitude.toFixed(5)}${live.message ? `\n"${live.message}"` : ""}` : ""}`
                 )
               }
               testID={`family-tap-${m.member_id}`}
@@ -566,12 +670,21 @@ export default function SafetyLocal() {
                   {m.name}
                   {m.relation ? <Text style={styles.famRelation}>{`  ·  ${m.relation}`}</Text> : null}
                 </Text>
-                <Text style={styles.famAddr} numberOfLines={1}>{m.last_address}</Text>
+                <Text style={styles.famAddr} numberOfLines={1}>
+                  {live
+                    ? `📍 ${live.latitude.toFixed(5)}, ${live.longitude.toFixed(5)}${live.trip_active ? " · moving" : ""}`
+                    : m.last_address}
+                </Text>
               </View>
               <View style={{ alignItems: "flex-end" }}>
-                <Text style={styles.famTime}>{timeAgo(m.last_seen)}</Text>
-                {m.invite_status === "pending" && (
+                <Text style={styles.famTime}>
+                  {live ? "live" : timeAgo(m.last_seen)}
+                </Text>
+                {m.invite_status === "pending" && !live && (
                   <Text style={styles.famPending}>Pending</Text>
+                )}
+                {live && live.trip_active && (
+                  <Text style={[styles.famPending, { color: colors.success }]}>Moving</Text>
                 )}
               </View>
             </TouchableOpacity>
@@ -585,7 +698,8 @@ export default function SafetyLocal() {
               <Pencil size={14} color={colors.textTertiary} />
             </TouchableOpacity>
           </View>
-        ))}
+          );
+        })}
         <View style={styles.famActions}>
           <TouchableOpacity
             style={styles.famBtn}
@@ -602,6 +716,39 @@ export default function SafetyLocal() {
             </Text>
           </TouchableOpacity>
         </View>
+        {/* Realtime Firestore — Simulate Live Update */}
+        <TouchableOpacity
+          style={styles.simulateBtn}
+          onPress={simulateLiveUpdate}
+          disabled={simulateBusy}
+          testID="simulate-live-update"
+        >
+          {simulateBusy ? (
+            <ActivityIndicator color="#fff" size="small" />
+          ) : (
+            <>
+              <Radio size={14} color="#fff" />
+              <Text style={styles.simulateBtnText}>Simulate Live Update · 0.5 mi</Text>
+            </>
+          )}
+        </TouchableOpacity>
+        {simulateResult && (
+          <View style={styles.simulateResultCard} testID="simulate-result">
+            <CheckCircle2 size={14} color={colors.success} />
+            <View style={{ flex: 1, marginLeft: spacing.sm }}>
+              <Text style={styles.simulateResultText}>
+                {simulateResult.member_name} moved {simulateResult.distance_miles} mi
+                {` `}@ {Math.round(simulateResult.bearing_deg)}°
+              </Text>
+              <Text style={styles.simulateResultMeta}>
+                Listener latency:{" "}
+                {simulateResult.latency_ms != null
+                  ? `${simulateResult.latency_ms} ms`
+                  : "awaiting snapshot…"}
+              </Text>
+            </View>
+          </View>
+        )}
         <View style={styles.mockedRow}>
           <Text style={styles.mockedText}>MOCKED · Real-time tracking activates when invited family members install PLOS.</Text>
         </View>
@@ -1136,9 +1283,36 @@ function ServiceRow({ icon, title, sub, phone, action }: { icon: React.ReactNode
   );
 }
 
-function FamilyMap({ members }: { members: any[] }) {
+function FamilyMap({ members, live }: { members: any[]; live?: Record<string, FamilyLocationDoc> }) {
   const W = 340;
   const H = 160;
+  // Bounding box: compute from live coords if present, else fall back to centred cluster.
+  const liveMembers = members
+    .map((m) => ({ ...m, _live: live?.[m.member_id] }))
+    .filter((m) => m._live);
+  let project = (_lat: number, _lon: number, i: number, total: number) => ({
+    cx: W * 0.55 + (i % 2 === 0 ? -8 : 8),
+    cy: H * 0.5 + Math.floor(i / 2) * 12,
+    r: 10,
+  });
+  if (liveMembers.length > 0) {
+    const lats = liveMembers.map((m) => m._live!.latitude);
+    const lons = liveMembers.map((m) => m._live!.longitude);
+    const minLat = Math.min(...lats);
+    const maxLat = Math.max(...lats);
+    const minLon = Math.min(...lons);
+    const maxLon = Math.max(...lons);
+    // Add 25% padding so single-point or tiny clusters still render.
+    const padLat = Math.max(0.005, (maxLat - minLat) * 0.25);
+    const padLon = Math.max(0.005, (maxLon - minLon) * 0.25);
+    const a = minLat - padLat, b = maxLat + padLat;
+    const c = minLon - padLon, d = maxLon + padLon;
+    project = (lat: number, lon: number) => ({
+      cx: ((lon - c) / (d - c)) * (W - 30) + 15,
+      cy: ((b - lat) / (b - a)) * (H - 30) + 15,
+      r: 10,
+    });
+  }
   return (
     <View style={styles.mapCard}>
       <Svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`}>
@@ -1156,22 +1330,30 @@ function FamilyMap({ members }: { members: any[] }) {
         {[0.25, 0.55, 0.8].map((x, i) => (
           <Rect key={`v${i}`} x={W * x} y={0} width={1.5} height={H} fill="rgba(255,255,255,0.10)" />
         ))}
-        {/* Pins cluster — both at ~center */}
-        {members.map((m: any, i: number) => (
-          <Circle
-            key={m.member_id}
-            cx={W * 0.55 + (i % 2 === 0 ? -8 : 8)}
-            cy={H * 0.5}
-            r={10}
-            fill={m.color}
-            stroke="#fff"
-            strokeWidth={2}
-          />
-        ))}
+        {/* Pins — use live coords if present, otherwise cluster fallback */}
+        {members.map((m: any, i: number) => {
+          const liveDoc = live?.[m.member_id];
+          const pos = liveDoc
+            ? project(liveDoc.latitude, liveDoc.longitude, i, members.length)
+            : project(0, 0, i, members.length);
+          return (
+            <Circle
+              key={m.member_id}
+              cx={pos.cx}
+              cy={pos.cy}
+              r={pos.r}
+              fill={m.color}
+              stroke="#fff"
+              strokeWidth={2}
+            />
+          );
+        })}
       </Svg>
       <View style={styles.mapOverlay}>
         <MapPin size={11} color={colors.primaryGlow} />
-        <Text style={styles.mapOverlayText}>Oak View Elementary School</Text>
+        <Text style={styles.mapOverlayText}>
+          {liveMembers.length > 0 ? `Realtime · ${liveMembers.length} live` : "Oak View Elementary School"}
+        </Text>
       </View>
     </View>
   );
@@ -1303,6 +1485,23 @@ const styles = StyleSheet.create({
   },
   famRelation: { color: colors.textTertiary, fontSize: 11, fontWeight: "500" },
   famPending: { color: colors.warning, fontSize: 9, fontWeight: "700", marginTop: 2, letterSpacing: 0.5 },
+  liveRow: { flexDirection: "row", alignItems: "center", gap: 4 },
+  liveDot: { width: 8, height: 8, borderRadius: 4 },
+  liveLabel: { color: colors.textTertiary, fontSize: 10, fontWeight: "700", letterSpacing: 0.6 },
+  simulateBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    backgroundColor: colors.primary, paddingVertical: 11, borderRadius: radius.md,
+    marginTop: spacing.xs,
+  },
+  simulateBtnText: { color: "#fff", fontWeight: "700", fontSize: 12, letterSpacing: 0.3 },
+  simulateResultCard: {
+    flexDirection: "row", alignItems: "center",
+    backgroundColor: "rgba(16,185,129,0.10)",
+    borderColor: "rgba(16,185,129,0.40)", borderWidth: 1,
+    borderRadius: radius.md, padding: spacing.sm,
+  },
+  simulateResultText: { color: colors.textPrimary, fontSize: 12, fontWeight: "700" },
+  simulateResultMeta: { color: colors.textSecondary, fontSize: 11, marginTop: 2 },
   famAvatar: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
   famInitials: { color: "#fff", fontWeight: "700", fontSize: 12 },
   famName: { color: colors.textPrimary, fontWeight: "700", fontSize: 13 },

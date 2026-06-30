@@ -1,1 +1,6 @@
 .env
+
+# Firebase credentials (DO NOT COMMIT)
+firebase-admin.json
+google-services.json
+GoogleService-Info.plist

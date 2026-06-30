@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { authApi, setToken, clearToken } from "./api";
+import { registerForPushIfNeeded, resetPushRegistration } from "./push";
 import { storage } from "@/src/utils/storage";
 
 const TOKEN_KEY = "plos_auth_token";
@@ -47,6 +48,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await setToken(res.token);
     const me = await authApi.me();
     setUser(me);
+    // Register for push (native only; web is a no-op). Non-blocking.
+    registerForPushIfNeeded().catch(() => {});
   }, []);
 
   const signUp = useCallback(
@@ -55,6 +58,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await setToken(res.token);
       const me = await authApi.me();
       setUser(me);
+      registerForPushIfNeeded().catch(() => {});
     },
     []
   );
@@ -62,6 +66,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = useCallback(async () => {
     await clearToken();
     setUser(null);
+    resetPushRegistration();
   }, []);
 
   return (

@@ -6152,6 +6152,16 @@ from integrations import make_router as make_integrations_router  # noqa: E402
 
 app.include_router(make_integrations_router(db, get_current_user_id))
 
+# Mount Push Notifications (Firebase Cloud Messaging via Emergent relay)
+from push import make_router as make_push_router  # noqa: E402
+
+app.include_router(make_push_router(get_current_user_id))
+
+# Mount Family Locations real-time sync (Firestore Admin SDK writes)
+from family_locations_router import make_router as make_family_locations_router  # noqa: E402
+
+app.include_router(make_family_locations_router(db, get_current_user_id))
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,

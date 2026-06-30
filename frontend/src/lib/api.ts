@@ -758,4 +758,56 @@ export const legalApi = {
   debtRights: () => request<any>("/legal/debt-rights"),
 };
 
+// ----------------- Push Notifications (Firebase via Emergent relay) ----
+export const pushApi = {
+  register: (platform: string, device_token: string) =>
+    request<{ status: string; reason?: string }>("/register-push", {
+      method: "POST",
+      body: { user_id: "", platform, device_token },
+    }),
+  categories: () =>
+    request<{ categories: { key: string; label: string; trigger: string }[] }>(
+      "/push/categories"
+    ),
+  test: (data: {
+    category?: string;
+    title?: string;
+    message?: string;
+    action_url?: string;
+  }) =>
+    request<{ status: string; category?: string; reason?: string }>("/push/test", {
+      method: "POST",
+      body: data,
+    }),
+};
+
+// ----------------- Family Locations Realtime (Firestore) ---------------
+export const familyLocationsApi = {
+  status: () =>
+    request<{ firestore_available: boolean; collection: string; note: string }>(
+      "/family-locations/status"
+    ),
+  sync: () =>
+    request<{ ok: boolean; synced: number; members: any[] }>(
+      "/family-locations/sync",
+      { method: "POST" }
+    ),
+  simulate: (data: {
+    member_id?: string;
+    member_name?: string;
+    distance_miles?: number;
+    bearing_deg?: number;
+    message?: string;
+  }) =>
+    request<{
+      ok: boolean;
+      member_id: string;
+      name: string;
+      previous: { lat: number; lon: number };
+      new: { lat: number; lon: number };
+      bearing_deg: number;
+      distance_miles: number;
+    }>("/family-locations/simulate", { method: "POST", body: data }),
+};
+
 export const seedDemo = () => request<any>("/seed-demo", { method: "POST" });

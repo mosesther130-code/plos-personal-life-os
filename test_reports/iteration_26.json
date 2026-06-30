@@ -1,0 +1,68 @@
+{
+  "summary": "CRITICAL BLOCKER: Cloud Firestore API is DISABLED in GCP project 'plos-53fbd'. Backend firebase-admin client initialises (credential is valid), but every Firestore write returns HTTP 403 SERVICE_DISABLED with link https://console.developers.google.com/apis/api/firestore.googleapis.com/overview?project=plos-53fbd . As a result: (a) POST /api/family-locations/sync returns 200 but every member.result.ok is false; (b) POST /api/family-locations/simulate returns 200 with computed previous/new coords (haversine = 0.5 mi within tolerance) but the Firestore doc never actually updates; (c) the frontend listener stays on 'Connecting…' indefinitely and the simulate-result card stalls on 'Listener latency: awaiting snapshot…' — NO LATENCY VALUE COULD BE MEASURED. Backend pytest 7/8 passed (only sync result.ok failed). All push relay endpoints behave correctly with status='deferred' reason='key_placeholder' as expected.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/family-locations/sync (and /simulate side-effect)",
+        "issue": "Cloud Firestore API disabled for GCP project plos-53fbd. firebase-admin returns 403 SERVICE_DISABLED on every write. Endpoint masks the failure: HTTP 200 with members[*].result.ok=false. Frontend listener also fails (web JS SDK uses same disabled API), so real-time propagation cannot work. Fix: enable Cloud Firestore API at https://console.developers.google.com/apis/api/firestore.googleapis.com/overview?project=plos-53fbd then re-run.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "POST /api/family-locations/sync",
+        "issue": "Endpoint returns HTTP 200 + ok:true even when every per-member Firestore write fails. Should aggregate result.ok and surface a 503 (or at least ok:false) when none succeeded so the client can show 'Firestore unavailable' instead of silently looking healthy."
+      },
+      {
+        "endpoint": "POST /api/family-locations/simulate",
+        "issue": "Same masking: returns ok:true regardless of whether firestore_client.write_family_location succeeded. The 'firestore' field in the response is the raw write result and currently {ok:false, error:'403 SERVICE_DISABLED ...'}, but the top-level ok stays true."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Family Locations realtime listener",
+        "issue": "Listener status badge stays on 'Connecting…' forever (caused by Firestore API disabled — root cause same as backend). Web SDK never gets a snapshot, so the simulate-result card stalls on 'Listener latency: awaiting snapshot…' and the map pins do not move. After the Firestore API is enabled the existing code should work — no JS changes needed.",
+        "affected_testIDs": ["simulate-live-update", "simulate-result"]
+      }
+    ],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "shadow* style props", "issue": "Deprecation warnings logged repeatedly: '\"shadow*\" style props are deprecated. Use \"boxShadow\"'. Multiple files across the app."},
+      {"component": "props.pointerEvents", "issue": "'props.pointerEvents is deprecated. Use style.pointerEvents' warning fires on safety-local screen."},
+      {"component": "Animated useNativeDriver", "issue": "'Animated: useNativeDriver is not supported because the native animated module is missing. Falling back to JS-based animation.' on /safety-local screen — non-blocking on web but worth a pass."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_26_firebase.py",
+    "/app/test_reports/pytest/iteration_26_results.xml",
+    "/tmp/safety_screen.png",
+    "/tmp/family_section.png",
+    "/tmp/before_sim.png",
+    "/tmp/after_sim.png"
+  ],
+  "action_items": [
+    "[CRITICAL] Enable the Cloud Firestore API for GCP project plos-53fbd: open https://console.developers.google.com/apis/api/firestore.googleapis.com/overview?project=plos-53fbd and click ENABLE. Wait a few minutes for propagation, then re-run pytest backend/tests/test_iteration_26_firebase.py and the simulate flow. Until this is done, NO real-time latency proof is possible and the frontend listener will stay on 'Connecting…'.",
+    "[Important] Make /api/family-locations/sync and /simulate fail loudly when all Firestore writes return ok:false. Right now they return HTTP 200 / ok:true which hides Firestore outages from the caller.",
+    "[Nice-to-have] Replace 'shadow*' style props with 'boxShadow' to clear the deprecation warnings."
+  ],
+  "critical_code_review_comments": [
+    "backend/family_locations_router.py — /sync and /simulate do not propagate write failures: they call firestore_client.write_family_location which returns {ok:false, error:...} on failure, but the route still returns ok:true. Recommend: if all res['ok'] are false, raise 503 with the underlying error.",
+    "backend/firestore_client.py — write_family_location catches all exceptions and returns {ok:false}; consider logging at WARNING with the GCP error code so SERVICE_DISABLED is obvious from logs.",
+    "frontend/app/safety-local/index.tsx still exceeds 700 lines (carried over from iteration 25)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_26_firebase.py (new)"
+  ],
+  "success_rate": {
+    "backend": "87.5% (7/8 pytest cases — sync-result-ok fails because Firestore API disabled)",
+    "frontend": "Login + navigation + UI render passed; realtime propagation FAILED (no snapshot ever received; latency unmeasurable)"
+  },
+  "seed_data_creation": "None. Used existing seeded family members (Ken, Aunt Mae) for sync + simulate.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "After the Cloud Firestore API is enabled at https://console.developers.google.com/apis/api/firestore.googleapis.com/overview?project=plos-53fbd, re-run: (1) `pytest /app/backend/tests/test_iteration_26_firebase.py -v` — all 8 must pass; (2) Playwright flow on /safety-local — listener badge should switch to green 'Realtime · Firestore' within ~3s of mount, and clicking [data-testid=simulate-live-update] should populate [data-testid=simulate-result] with 'Listener latency: NNN ms' where NNN ≤ 2000. The frontend code (firebase.ts subscribeFamilyLocations + safety-local/index.tsx onSnapshot wiring) looks correct — no code changes expected, just GCP config.",
+  "rca_of_issue": "Root cause: the GCP project plos-53fbd was created via Firebase console but the Cloud Firestore API was never enabled at the GCP API level. firebase-admin authenticates fine (service-account JSON is valid) and `firestore.client()` succeeds, but the very first RPC (set / get / onSnapshot) returns google.api_core.exceptions.PermissionDenied: 403 with reason='SERVICE_DISABLED' and message 'Cloud Firestore API has not been used in project plos-53fbd before or it is disabled.' Reproduction: (a) login as test1@plos.app; (b) POST /api/family-locations/sync — observe members[*].result.ok=false with the SERVICE_DISABLED error; (c) load /safety-local in the web app — observe listener badge stuck on 'Connecting…' forever; (d) tap Simulate Live Update — observe simulate-result text stuck on 'awaiting snapshot…'. Mitigation: visit https://console.developers.google.com/apis/api/firestore.googleapis.com/overview?project=plos-53fbd and enable the API; if Firestore was never provisioned in the project, also create the (default) database in Firestore native mode (test mode is fine for now per the in-code TODO). No code change is required."
+}

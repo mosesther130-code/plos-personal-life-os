@@ -38,3 +38,7 @@ yarn-error.*
 *.tsbuildinfo
 
 app-example
+
+# Firebase credentials (DO NOT COMMIT)
+google-services.json
+GoogleService-Info.plist
