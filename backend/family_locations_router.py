@@ -72,6 +72,10 @@ def make_router(db, get_current_user_id):
 
         Used on app open / first Safety module load so the listener has
         baseline docs to render. Pending invites get sharing_active=false.
+
+        Returns 503 if ANY Firestore write fails (e.g. API disabled,
+        database not created) so the frontend can surface the issue
+        instead of showing a misleading "all good" state.
         """
         if not firestore_client.is_available():
             raise HTTPException(
@@ -82,6 +86,7 @@ def make_router(db, get_current_user_id):
             {"user_id": user_id}, {"_id": 0}
         ).to_list(50)
         written = []
+        failures: list = []
         # Default to Atlanta if member has no lat/lon yet (mocked seed data)
         for idx, m in enumerate(members):
             lat = m.get("lat")
@@ -105,7 +110,29 @@ def make_router(db, get_current_user_id):
             written.append(
                 {"member_id": m["member_id"], "name": m.get("name"), "result": res}
             )
-        return {"ok": True, "synced": len(written), "members": written}
+            if not res or not res.get("ok"):
+                failures.append(res or {"error": "unknown"})
+        if failures and len(failures) == len(written) and written:
+            # Every single write failed → almost always means the Firestore
+            # API is disabled in GCP or the database hasn't been created.
+            err = (failures[0] or {}).get("error", "")
+            hint = ""
+            if "SERVICE_DISABLED" in err or "has not been used" in err:
+                hint = (
+                    " — enable Cloud Firestore API at "
+                    "https://console.developers.google.com/apis/api/"
+                    "firestore.googleapis.com/overview?project=plos-53fbd"
+                )
+            raise HTTPException(
+                status_code=503,
+                detail=f"All Firestore writes failed{hint}",
+            )
+        return {
+            "ok": len(failures) == 0,
+            "synced": len(written) - len(failures),
+            "failed": len(failures),
+            "members": written,
+        }
 
     @r.post("/simulate")
     async def simulate_move(
@@ -167,6 +194,19 @@ def make_router(db, get_current_user_id):
             trip_active=True,
             message=body.message or "On the move",
         )
+        if not res or not res.get("ok"):
+            err = (res or {}).get("error", "")
+            hint = ""
+            if "SERVICE_DISABLED" in err or "has not been used" in err:
+                hint = (
+                    " — enable Cloud Firestore API at "
+                    "https://console.developers.google.com/apis/api/"
+                    "firestore.googleapis.com/overview?project=plos-53fbd"
+                )
+            raise HTTPException(
+                status_code=503,
+                detail=f"Firestore write failed{hint}",
+            )
         return {
             "ok": True,
             "member_id": member["member_id"],

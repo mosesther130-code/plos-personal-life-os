@@ -163,6 +163,7 @@ export default function SafetyLocal() {
   const { user } = useAuth();
   const [liveLocations, setLiveLocations] = useState<Record<string, FamilyLocationDoc>>({});
   const [liveStatus, setLiveStatus] = useState<"connecting" | "live" | "off" | "error">("off");
+  const [liveError, setLiveError] = useState<string | null>(null);
   const [simulateBusy, setSimulateBusy] = useState(false);
   const [simulateResult, setSimulateResult] = useState<null | {
     member_name: string;
@@ -351,11 +352,19 @@ export default function SafetyLocal() {
   useEffect(() => {
     if (!user?.user_id) return;
     setLiveStatus("connecting");
-    // Hydrate Firestore from MongoDB so the listener has baseline docs
-    // (idempotent — backend writes/merges).
-    familyLocationsApi
-      .sync()
-      .catch((e) => console.warn("family-locations/sync failed:", e));
+    setLiveError(null);
+    // Hydrate Firestore from MongoDB so the listener has baseline docs.
+    familyLocationsApi.sync().catch((e: any) => {
+      const msg = String(e?.message || e || "");
+      const friendly = /firestore\.googleapis\.com|SERVICE_DISABLED|has not been used|not initialised|not enabled/i.test(
+        msg
+      )
+        ? "Cloud Firestore API is disabled for project plos-53fbd. Enable it at console.developers.google.com and create the (default) database in native mode, then retry."
+        : msg;
+      console.warn("family-locations/sync failed:", msg);
+      setLiveError(friendly);
+      setLiveStatus("error");
+    });
     const unsub = subscribeFamilyLocations(
       user.user_id,
       (docs) => {
@@ -648,6 +657,12 @@ export default function SafetyLocal() {
           }
         />
         <FamilyMap members={family.members || []} live={liveLocations} />
+        {liveError ? (
+          <View style={styles.liveErrorCard} testID="firestore-error-banner">
+            <AlertTriangle size={14} color={colors.warning} />
+            <Text style={styles.liveErrorText}>{liveError}</Text>
+          </View>
+        ) : null}
         {(family.members || []).map((m: any) => {
           const live = liveLocations[m.member_id];
           return (
@@ -1488,6 +1503,13 @@ const styles = StyleSheet.create({
   liveRow: { flexDirection: "row", alignItems: "center", gap: 4 },
   liveDot: { width: 8, height: 8, borderRadius: 4 },
   liveLabel: { color: colors.textTertiary, fontSize: 10, fontWeight: "700", letterSpacing: 0.6 },
+  liveErrorCard: {
+    flexDirection: "row", alignItems: "flex-start", gap: spacing.sm,
+    backgroundColor: "rgba(245,158,11,0.10)",
+    borderColor: "rgba(245,158,11,0.40)", borderWidth: 1,
+    borderRadius: radius.md, padding: spacing.sm,
+  },
+  liveErrorText: { color: colors.textPrimary, fontSize: 11, lineHeight: 16, flex: 1 },
   simulateBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
     backgroundColor: colors.primary, paddingVertical: 11, borderRadius: radius.md,
