@@ -3661,13 +3661,69 @@ async def invite_family(
     name = (body.get("name") or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="Name required")
+    relation = (body.get("relation") or "Family").strip()
+    color = body.get("color") or "#3B82F6"
     invite_token = str(uuid.uuid4())[:8]
+    parts = [p for p in name.split() if p]
+    initials = ("".join(p[0] for p in parts[:2]).upper()) or name[:2].upper()
+    member = {
+        "member_id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "name": name,
+        "relation": relation,
+        "color": color,
+        "initials": initials,
+        "last_seen": datetime.now(timezone.utc).isoformat(),
+        "last_address": "Invite pending — location will appear once they join",
+        "lat": None,
+        "lon": None,
+        "invite_status": "pending",
+        "invite_token": invite_token,
+        "invited_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.family_members.insert_one(member)
     return {
         "ok": True,
+        "member_id": member["member_id"],
         "invite_link": f"https://plos.app/invite/{invite_token}",
         "name": name,
         "expires_in": "7 days",
     }
+
+
+@api_router.put("/local/family/members/{member_id}")
+async def update_family_member(
+    member_id: str,
+    body: Dict[str, Any],
+    user_id: str = Depends(get_current_user_id),
+):
+    allowed = {"name", "relation", "color"}
+    upd = {k: v for k, v in body.items() if k in allowed and v is not None}
+    if "name" in upd:
+        parts = [p for p in str(upd["name"]).split() if p]
+        upd["initials"] = (
+            "".join(p[0] for p in parts[:2]).upper() or str(upd["name"])[:2].upper()
+        )
+    if not upd:
+        raise HTTPException(status_code=400, detail="No editable fields provided")
+    r = await db.family_members.update_one(
+        {"user_id": user_id, "member_id": member_id}, {"$set": upd}
+    )
+    if r.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Family member not found")
+    return {"ok": True}
+
+
+@api_router.delete("/local/family/members/{member_id}")
+async def delete_family_member(
+    member_id: str, user_id: str = Depends(get_current_user_id)
+):
+    r = await db.family_members.delete_one(
+        {"user_id": user_id, "member_id": member_id}
+    )
+    if r.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Family member not found")
+    return {"ok": True}
 
 
 @api_router.put("/local/family/pause")

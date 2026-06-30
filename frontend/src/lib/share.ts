@@ -52,20 +52,43 @@ export async function safeShare(opts: {
 
   // ---------- CLIPBOARD FALLBACK ----------
   const payload = url ? `${message}\n${url}` : message;
+  let clipboardOk = false;
   try {
     await Clipboard.setStringAsync(payload);
-    if (Platform.OS === "web" && typeof window !== "undefined") {
-      window.alert(`${label || "Copied to clipboard"}\n\n${payload}`);
-    } else {
-      Alert.alert(label || "Copied to clipboard", payload);
-    }
-    return "copied";
-  } catch (_e) {
-    if (Platform.OS === "web" && typeof window !== "undefined") {
-      window.alert(`${label || "Share"}\n\n${payload}`);
-    } else {
-      Alert.alert(label || "Share", payload);
-    }
-    return "failed";
+    clipboardOk = true;
+  } catch {
+    clipboardOk = false;
   }
+
+  // On web, prefer dispatching to a custom in-app modal listener if registered.
+  // Otherwise fall back to window.prompt (which lets the user manually copy
+  // the pre-selected text — reliable in iframes where window.alert may be
+  // dismissable and clipboard may silently fail).
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    try {
+      // Dispatch a custom event so any in-app <ShareFallbackHost /> can
+      // present a nicer dialog. If no listener exists, fall through.
+      const ev = new CustomEvent("plos:share-fallback", {
+        detail: { title: label || title || "Share", payload, copied: clipboardOk },
+      });
+      window.dispatchEvent(ev);
+      // Also use window.prompt as a guaranteed-visible fallback. prompt()
+      // lets the user CMD/CTRL+C the selected text — works in every iframe.
+      try {
+        (window as any).prompt(
+          `${label || "Share"} — copy with ⌘/Ctrl+C or paste from clipboard:`,
+          payload
+        );
+      } catch {
+        // some browsers block prompt in iframes; ignore
+      }
+    } catch {
+      // ignore
+    }
+    return clipboardOk ? "copied" : "failed";
+  }
+
+  // Native fallback
+  Alert.alert(label || "Share", payload);
+  return clipboardOk ? "copied" : "failed";
 }

@@ -284,8 +284,21 @@ export const localApi = {
     }),
   vehicles: () => request<{ vehicles: any[] }>("/local/vehicles"),
   family: () => request<any>("/local/family"),
-  inviteFamily: (name: string) =>
-    request<any>("/local/family/invite", { method: "POST", body: { name } }),
+  inviteFamily: (name: string, relation?: string, color?: string) =>
+    request<any>("/local/family/invite", {
+      method: "POST",
+      body: { name, relation, color },
+    }),
+  updateFamilyMember: (
+    member_id: string,
+    data: { name?: string; relation?: string; color?: string }
+  ) =>
+    request<any>(`/local/family/members/${member_id}`, {
+      method: "PUT",
+      body: data,
+    }),
+  deleteFamilyMember: (member_id: string) =>
+    request<any>(`/local/family/members/${member_id}`, { method: "DELETE" }),
   pauseLocation: (paused: boolean) =>
     request<any>("/local/family/pause", { method: "PUT", body: { paused } }),
   satelliteStatus: () => request<any>("/local/satellite-status"),

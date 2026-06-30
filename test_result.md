@@ -175,7 +175,71 @@ test_plan:
   test_all: false
   test_priority: "high_first"
 
+## Iteration 25 — Local Intelligence & Safety fixes (Share Location + Family Edit/Delete)
+
+backend:
+  - task: "PUT/DELETE /api/local/family/members/{member_id}"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py (lines 3694-3726)"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: |
+            Iteration 25 — backend pytest /app/backend/tests/test_family_crud.py: 4/4 passed.
+            1) POST invite → PUT name/relation/color → GET confirms persistence + initials regenerated to "R" for "Renamed".
+            2) DELETE returns {ok:true} and GET no longer lists the member.
+            3) PUT/DELETE on bogus id → 404.
+            4) PUT with no editable fields → 400.
+
+frontend:
+  - task: "Family member per-row Edit/Delete (pencil + EditModal)"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/safety-local/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: |
+            Iteration 25 — Playwright on web preview (390x844). Pencil testID family-edit-{id} opens
+            EditModal with title "Edit Family Member" and pre-filled name (e.g. "Isaac"). Renaming +
+            Save closes modal and the new name appears in the list. Tapping Delete → Confirm removes
+            the row. Backend access log shows PUT and DELETE 200s for member_id.
+
+  - task: "Share My Location web fallback (safeShare)"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/lib/share.ts + /app/frontend/app/safety-local/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: |
+            Iteration 25 — tapping testID share-location no longer throws. With a window.prompt spy
+            installed, exactly 1 prompt() invocation captured with payload
+            "My current location: 33.74900, -84.38800\\nhttps://maps.google.com/?q=33.749,-84.388".
+            The plos:share-fallback CustomEvent also fired (1 event observed). Invite Family flow
+            also exercised: name "Aunt Mae" → Generate Link → https://plos.app/invite/382391d6
+            visible → Share button clicked without uncaught error.
+
 agent_communication:
+    - agent: "testing"
+      message: |
+        Iteration 25 — Share Location + Family Edit/Delete fixes VERIFIED.
+        Backend: 4/4 pytest assertions pass (PUT/DELETE happy path + 404 + 400 edge cases).
+        Frontend: edit-modal opens with prefilled values, save updates row, delete-confirm removes
+        row, share-location no longer throws on web (window.prompt + plos:share-fallback fallback
+        chain both fire), and Invite Family regression is clean (link generated, share clicked
+        without uncaught errors). No action items. See /app/test_reports/iteration_25.json.
+
     - agent: "main"
       message: |
         Enhancement 6 implementation complete. Please verify:

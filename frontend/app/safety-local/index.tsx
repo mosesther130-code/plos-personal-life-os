@@ -67,6 +67,38 @@ import { safeShare } from "@/src/lib/share";
 const DEFAULT_LAT = 33.749;
 const DEFAULT_LON = -84.388;
 
+const FAMILY_FIELDS: Field[] = [
+  { key: "name", label: "Name", kind: "text", placeholder: "e.g. Mom" },
+  {
+    key: "relation",
+    label: "Relation",
+    kind: "select",
+    options: [
+      { label: "Spouse", value: "Spouse" },
+      { label: "Parent", value: "Parent" },
+      { label: "Child", value: "Child" },
+      { label: "Sibling", value: "Sibling" },
+      { label: "Friend", value: "Friend" },
+      { label: "Family", value: "Family" },
+      { label: "Other", value: "Other" },
+    ],
+  },
+  {
+    key: "color",
+    label: "Pin Color",
+    kind: "select",
+    options: [
+      { label: "Blue", value: "#3B82F6" },
+      { label: "Green", value: "#10B981" },
+      { label: "Red", value: "#EF4444" },
+      { label: "Amber", value: "#F59E0B" },
+      { label: "Purple", value: "#A855F7" },
+      { label: "Pink", value: "#EC4899" },
+      { label: "Cyan", value: "#06B6D4" },
+    ],
+  },
+];
+
 const OFFLINE_FIELDS: Field[] = [
   { key: "name", label: "Region Name", kind: "text", placeholder: "e.g. Florida, USA" },
   {
@@ -124,6 +156,7 @@ export default function SafetyLocal() {
   const [sosConfirm, setSosConfirm] = useState<{ visible: boolean; test: boolean }>({ visible: false, test: false });
   const [vinInput, setVinInput] = useState("");
   const [inviteModal, setInviteModal] = useState<{ open: boolean; name: string; link?: string }>({ open: false, name: "" });
+  const [familyEdit, setFamilyEdit] = useState<{ open: boolean; item?: any }>({ open: false });
   // Enhancement 7 state
   const [offlineRegions, setOfflineRegions] = useState<any[]>([]);
   const [offlineTotalMb, setOfflineTotalMb] = useState(0);
@@ -303,8 +336,29 @@ export default function SafetyLocal() {
     try {
       const r = await localApi.inviteFamily(inviteModal.name.trim());
       setInviteModal((s) => ({ ...s, link: r.invite_link }));
+      // refresh list so the new pending row appears immediately
+      const f = await localApi.family();
+      setData((d: any) => ({ ...d, family: f }));
     } catch (_e) {}
     setBusy(null);
+  };
+
+  const saveFamilyMember = async (vals: any) => {
+    if (!familyEdit.item) return;
+    await localApi.updateFamilyMember(familyEdit.item.member_id, {
+      name: (vals.name || "").trim(),
+      relation: vals.relation,
+      color: vals.color,
+    });
+    const f = await localApi.family();
+    setData((d: any) => ({ ...d, family: f }));
+  };
+
+  const deleteFamilyMember = async () => {
+    if (!familyEdit.item) return;
+    await localApi.deleteFamilyMember(familyEdit.item.member_id);
+    const f = await localApi.family();
+    setData((d: any) => ({ ...d, family: f }));
   };
 
   if (loading) {
@@ -493,29 +547,44 @@ export default function SafetyLocal() {
         <Section label="Family Locations" />
         <FamilyMap members={family.members || []} />
         {(family.members || []).map((m: any) => (
-          <TouchableOpacity
-            key={m.member_id}
-            style={styles.famRow}
-            onPress={() =>
-              Alert.alert(
-                m.name,
-                `Last seen ${timeAgo(m.last_seen)} · ${m.last_address}\n\nTrip history (mock): 7:45 AM — Home → Oak View Elementary School (3.1 mi)`
-              )
-            }
-            testID={`family-${m.member_id}`}
-          >
-            <View style={[styles.famAvatar, { backgroundColor: m.color }]}>
-              <Text style={styles.famInitials}>{m.initials}</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.famName}>{m.name}</Text>
-              <Text style={styles.famAddr} numberOfLines={1}>{m.last_address}</Text>
-            </View>
-            <View style={{ alignItems: "flex-end" }}>
-              <Text style={styles.famTime}>{timeAgo(m.last_seen)}</Text>
-              <ChevronRight size={14} color={colors.textTertiary} />
-            </View>
-          </TouchableOpacity>
+          <View key={m.member_id} style={styles.famRow} testID={`family-${m.member_id}`}>
+            <TouchableOpacity
+              style={styles.famMain}
+              onPress={() =>
+                Alert.alert(
+                  m.name,
+                  `${m.relation || "Family"} · Last seen ${timeAgo(m.last_seen)}\n${m.last_address}${m.invite_status === "pending" ? "\n\nInvite pending — share link from invite modal." : ""}`
+                )
+              }
+              testID={`family-tap-${m.member_id}`}
+            >
+              <View style={[styles.famAvatar, { backgroundColor: m.color }]}>
+                <Text style={styles.famInitials}>{m.initials}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.famName}>
+                  {m.name}
+                  {m.relation ? <Text style={styles.famRelation}>{`  ·  ${m.relation}`}</Text> : null}
+                </Text>
+                <Text style={styles.famAddr} numberOfLines={1}>{m.last_address}</Text>
+              </View>
+              <View style={{ alignItems: "flex-end" }}>
+                <Text style={styles.famTime}>{timeAgo(m.last_seen)}</Text>
+                {m.invite_status === "pending" && (
+                  <Text style={styles.famPending}>Pending</Text>
+                )}
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.famEditBtn}
+              onPress={() => setFamilyEdit({ open: true, item: m })}
+              testID={`family-edit-${m.member_id}`}
+              accessibilityLabel={`Edit ${m.name}`}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Pencil size={14} color={colors.textTertiary} />
+            </TouchableOpacity>
+          </View>
         ))}
         <View style={styles.famActions}>
           <TouchableOpacity
@@ -897,6 +966,18 @@ export default function SafetyLocal() {
         onDelete={offlineModal.item ? deleteOfflineRegion : undefined}
         deleteSubject={offlineModal.item?.name}
       />
+      {/* Family Member Edit Modal */}
+      <EditModal
+        visible={familyEdit.open}
+        title="Edit Family Member"
+        fields={FAMILY_FIELDS}
+        initial={familyEdit.item}
+        onClose={() => setFamilyEdit({ open: false })}
+        onSubmit={saveFamilyMember}
+        onDelete={deleteFamilyMember}
+        deleteSubject={familyEdit.item?.name}
+        testID="family-edit-modal"
+      />
     </SafeAreaView>
   );
 }
@@ -1207,10 +1288,21 @@ const styles = StyleSheet.create({
   },
   mapOverlayText: { color: "#fff", fontSize: 10 },
   famRow: {
-    flexDirection: "row", alignItems: "center", gap: spacing.sm,
+    flexDirection: "row", alignItems: "center",
     backgroundColor: colors.surface, borderColor: colors.borderSubtle, borderWidth: 1,
-    borderRadius: radius.md, padding: spacing.md,
+    borderRadius: radius.md, paddingRight: spacing.sm,
   },
+  famMain: {
+    flex: 1, flexDirection: "row", alignItems: "center", gap: spacing.sm,
+    padding: spacing.md,
+  },
+  famEditBtn: {
+    width: 32, height: 32, borderRadius: radius.sm,
+    alignItems: "center", justifyContent: "center",
+    backgroundColor: colors.surfaceElevated,
+  },
+  famRelation: { color: colors.textTertiary, fontSize: 11, fontWeight: "500" },
+  famPending: { color: colors.warning, fontSize: 9, fontWeight: "700", marginTop: 2, letterSpacing: 0.5 },
   famAvatar: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
   famInitials: { color: "#fff", fontWeight: "700", fontSize: 12 },
   famName: { color: colors.textPrimary, fontWeight: "700", fontSize: 13 },
