@@ -485,6 +485,24 @@ export const securityExtrasApi = {
 };
 
 // ----------------- AI Document Summarizer (Enhancement 12) -----------------
+export const integrationsApi = {
+  mapsNearby: (lat: number, lon: number, type = "restaurant", radius = 1500) =>
+    request<any>(`/maps/nearby?lat=${lat}&lon=${lon}&type=${type}&radius=${radius}`),
+  mapsDirections: (origin: string, destination: string, mode = "driving") =>
+    request<any>(`/maps/directions?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&mode=${mode}`),
+  mapsGeocode: (address: string) =>
+    request<any>(`/maps/geocode?address=${encodeURIComponent(address)}`),
+  exchangeRates: () => request<any>("/exchange/rates"),
+  weatherLive: (lat: number, lon: number) =>
+    request<any>(`/weather/live?lat=${lat}&lon=${lon}`),
+  alertsInbox: (unread = false) =>
+    request<{ alerts: any[]; count: number }>(`/alerts/inbox${unread ? "?unread_only=true" : ""}`),
+  markAlertRead: (id: string) =>
+    request<any>(`/alerts/inbox/${id}/read`, { method: "POST" }),
+  deleteAlert: (id: string) =>
+    request<any>(`/alerts/inbox/${id}`, { method: "DELETE" }),
+};
+
 export const docSummarizerApi = {
   focuses: () =>
     request<{ focuses: { value: string; label: string; instruction: string }[] }>(

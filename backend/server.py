@@ -6091,6 +6091,11 @@ from doc_summarizer import make_router as make_doc_summarizer_router  # noqa: E4
 
 app.include_router(make_doc_summarizer_router(db, get_current_user_id))
 
+# Mount third-party integrations (Maps, Currency, Weather, Alerts)
+from integrations import make_router as make_integrations_router  # noqa: E402
+
+app.include_router(make_integrations_router(db, get_current_user_id))
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
