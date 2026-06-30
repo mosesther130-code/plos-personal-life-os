@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -20,9 +21,10 @@ import {
   ListChecks,
   Compass,
   FileText,
+  RefreshCw,
 } from "lucide-react-native";
 
-import { careerApi } from "@/src/lib/api";
+import { careerApi, careerIntelApi } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
 import { ScoreRing } from "@/src/components/ScoreRing";
 import { EditModal, Field } from "@/src/components/EditModal";
@@ -91,6 +93,8 @@ export default function CareerHome() {
   const [refreshing, setRefreshing] = useState(false);
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [criteriaOpen, setCriteriaOpen] = useState(false);
+  const [liveJobs, setLiveJobs] = useState<any[]>([]);
+  const [liveJobsLoading, setLiveJobsLoading] = useState(false);
 
   const load = useCallback(async () => {
     const [c, p, a] = await Promise.all([
@@ -103,6 +107,18 @@ export default function CareerHome() {
     setApps(a);
   }, []);
 
+  const loadLiveJobs = useCallback(async (refresh = false) => {
+    setLiveJobsLoading(true);
+    try {
+      const r = await careerIntelApi.jobSearch({ refresh });
+      setLiveJobs(r?.results || []);
+    } catch (_e) {
+      setLiveJobs([]);
+    } finally {
+      setLiveJobsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -111,7 +127,9 @@ export default function CareerHome() {
       } catch (_e) {}
       setLoading(false);
     })();
-  }, [load]);
+    // Fetch live jobs in parallel (does its own loading state)
+    loadLiveJobs(false);
+  }, [load, loadLiveJobs]);
 
   const onAnalyze = async () => {
     setAnalysisLoading(true);
@@ -144,6 +162,8 @@ export default function CareerHome() {
     }
     await careerApi.update(payload);
     await load();
+    // Re-run live job search with the updated criteria
+    loadLiveJobs(true);
   };
 
   const criteriaInitial = career
@@ -158,10 +178,44 @@ export default function CareerHome() {
       }
     : {};
 
-  const topMatches = [...apps]
-    .filter((a) => a.match_score)
-    .sort((a, b) => b.match_score - a.match_score)
-    .slice(0, 4);
+  // "Top Job Matches" reflects the LIVE Career Intelligence job search
+  // (driven by the user's Auto Job Search Criteria). Falls back to
+  // application-pipeline matches if no live results yet.
+  const topMatches =
+    liveJobs.length > 0
+      ? [...liveJobs]
+          .sort((a: any, b: any) => (b.match_score || 0) - (a.match_score || 0))
+          .slice(0, 4)
+          .map((j: any) => ({
+            id: j.job_id || `${j.company}-${j.title}`,
+            role_title: j.title,
+            employer: j.company,
+            location: j.location,
+            work_type: j.work_type,
+            match_score: j.match_score,
+            salary_range: j.salary_range,
+            badges: [j.source].filter(Boolean),
+            url: j.url,
+            reasoning: j.match_reasoning,
+            isLive: true,
+          }))
+      : [...apps]
+          .filter((a) => a.match_score)
+          .sort((a, b) => b.match_score - a.match_score)
+          .slice(0, 4)
+          .map((j: any) => ({
+            id: j.application_id,
+            role_title: j.role_title,
+            employer: j.employer,
+            location: j.location,
+            work_type: j.work_type,
+            match_score: j.match_score,
+            salary_range: j.salary_range,
+            badges: j.badges,
+            url: undefined,
+            reasoning: undefined,
+            isLive: false,
+          }));
 
   if (loading) {
     return (
@@ -395,22 +449,49 @@ export default function CareerHome() {
             <Text style={styles.quickSub} numberOfLines={2}>Interview · Letters · Jobs</Text>
           </TouchableOpacity>
         </View>
-        <Text style={styles.sectionLabel}>Top Job Matches</Text>
+        <View style={styles.matchHeadRow}>
+          <Text style={styles.sectionLabel}>Top Job Matches</Text>
+          <TouchableOpacity
+            style={styles.refreshBtn}
+            onPress={() => loadLiveJobs(true)}
+            disabled={liveJobsLoading}
+            testID="refresh-top-matches"
+          >
+            {liveJobsLoading ? (
+              <ActivityIndicator size="small" color={colors.primaryGlow} />
+            ) : (
+              <RefreshCw size={12} color={colors.primaryGlow} />
+            )}
+            <Text style={styles.refreshBtnText}>
+              {liveJobsLoading ? "Searching…" : "Refresh"}
+            </Text>
+          </TouchableOpacity>
+        </View>
         <View style={{ gap: spacing.md }}>
           {topMatches.length === 0 && (
             <View style={styles.emptyCard}>
-              <Text style={styles.emptyText}>No matches yet.</Text>
+              <Text style={styles.emptyText}>
+                {liveJobsLoading
+                  ? "Searching for matches…"
+                  : "No matches yet. Update your Auto Job Search Criteria below or tap Refresh."}
+              </Text>
             </View>
           )}
           {topMatches.map((j) => (
             <TouchableOpacity
-              key={j.application_id}
+              key={j.id}
               style={styles.matchCard}
-              onPress={() =>
-                router.push(`/career/resume-generator?application_id=${j.application_id}`)
-              }
+              onPress={() => {
+                if (j.isLive && j.url) {
+                  Linking.openURL(j.url).catch(() => {});
+                } else if (!j.isLive) {
+                  router.push(`/career/resume-generator?application_id=${j.id}`);
+                } else {
+                  router.push("/career-intel");
+                }
+              }}
               activeOpacity={0.85}
-              testID={`match-card-${j.application_id}`}
+              testID={`match-card-${j.id}`}
             >
               <View style={styles.matchHead}>
                 <View style={styles.logoBox}>
@@ -458,6 +539,11 @@ export default function CareerHome() {
                   </View>
                 ))}
               </View>
+              {j.reasoning && (
+                <Text style={styles.matchReasoning} numberOfLines={2}>
+                  {j.reasoning}
+                </Text>
+              )}
             </TouchableOpacity>
           ))}
         </View>
@@ -590,6 +676,29 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 1.5,
     textTransform: "uppercase",
+  },
+  matchHeadRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 4,
+  },
+  refreshBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: colors.primaryMuted,
+    borderRadius: radius.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  refreshBtnText: { color: colors.primaryGlow, fontSize: 11, fontWeight: "700" },
+  matchReasoning: {
+    color: colors.textTertiary,
+    fontSize: 11,
+    fontStyle: "italic",
+    marginTop: 4,
+    lineHeight: 16,
   },
 
   // Funnel

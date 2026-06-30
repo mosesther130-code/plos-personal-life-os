@@ -280,8 +280,8 @@ def make_router(db, get_current_user_id, emergent_llm_key, llm_chat_cls, user_ms
         resume = await _get_resume_context(user_id)
         target_roles = career.get("target_roles") or career.get("current_role") or ""
         target_locations = career.get("target_locations") or career.get("location") or "Atlanta, GA / Remote"
-        salary_min = career.get("salary_target_min") or 0
-        work_type = career.get("work_type") or "any"
+        salary_min = career.get("min_salary") or career.get("salary_target_min") or 0
+        work_type = career.get("work_type_pref") or career.get("work_type") or "any"
 
         filters = body.filters or {}
         date_filter = filters.get("date_posted", "30d")
