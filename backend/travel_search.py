@@ -152,7 +152,16 @@ no code fences):
     }}
   }},
   "philippines_note": "…" (ONLY set when destination country is Philippines;
-    otherwise "")
+    otherwise ""),
+  "deals_intelligence": {
+    "mistake_fare_alert":     {"show": true|false, "message": "…"},
+    "best_booking_window":    {"show": true|false, "message": "…"},
+    "flexible_dates_savings": {"show": true|false, "message": "…"},
+    "bundle_opportunity":     {"show": true|false, "message": "…"},
+    "asia_rate_alert":        {"show": true|false, "message": "…"}
+  },
+  "bundle_savings_estimate_usd": 50-200 integer,
+  "pro_tips": ["short route-specific tip 1", "…", … 4-6 items]
 }}
 
 Rules:
@@ -165,63 +174,181 @@ Rules:
 """
 
 
-# --- Deterministic booking URL constructors -------------------------------
+# --- Deterministic booking URL constructors (all 15 platforms) ------------
+ASIAN_COUNTRIES = {
+    "philippines", "ph", "thailand", "th", "vietnam", "vn", "indonesia", "id",
+    "south korea", "korea", "kr", "japan", "jp", "singapore", "sg",
+    "malaysia", "my", "cambodia", "kh", "laos", "la", "taiwan", "tw",
+    "hong kong", "hk", "macau", "china", "cn",
+}
+
+
+def _is_asian(country: str, destination: str = "") -> bool:
+    c = (country or "").lower().strip()
+    d = (destination or "").lower()
+    if c in ASIAN_COUNTRIES:
+        return True
+    return any(k in d for k in ("manila", "bulacan", "cebu", "davao", "bangkok",
+                                 "seoul", "tokyo", "singapore", "kuala lumpur",
+                                 "ho chi minh", "hanoi", "jakarta", "bali"))
+
+
 def _flight_urls(flight: Dict[str, Any], trip: Dict[str, Any]) -> Dict[str, str]:
     origin = flight.get("departure_airport") or "ATL"
     dest = flight.get("arrival_airport") or "MNL"
     dep = (trip.get("departure_date") or trip.get("start_date") or "")[:10]
     ret = (trip.get("return_date") or trip.get("end_date") or "")[:10]
-    return {
-        "google_flights": (
-            f"https://www.google.com/flights?hl=en#flt={origin}.{dest}.{dep}"
-            f"*{dest}.{origin}.{ret};c:USD;e:1;sd:1;t:f"
-        ),
-        "kayak": f"https://www.kayak.com/flights/{origin}-{dest}/{dep}/{ret}",
-        "expedia": (
-            "https://www.expedia.com/Flights-Search?trip=roundtrip&"
-            f"leg1=from%3A{origin}%2Cto%3A{dest}%2Cdeparture%3A{dep}&"
-            f"leg2=from%3A{dest}%2Cto%3A{origin}%2Cdeparture%3A{ret}"
-        ),
-        "priceline": (
-            f"https://www.priceline.com/m/fly/search/{origin}-{dest}-{dep}/{dest}-{origin}-{ret}/1/economy"
-        ),
-        "skyscanner": (
+    origin_city = (trip.get("origin_city") or "atlanta").lower().replace(" ", "-")
+    is_oneway = not ret
+    urls: Dict[str, str] = {}
+    # Google Flights
+    if is_oneway:
+        urls["google_flights"] = (
+            f"https://www.google.com/flights?hl=en#flt={origin}.{dest}.{dep};c:USD;e:1;sd:1;t:f"
+        )
+    else:
+        urls["google_flights"] = (
+            f"https://www.google.com/flights?hl=en#flt={origin}.{dest}.{dep}*"
+            f"{dest}.{origin}.{ret};c:USD;e:1;sd:1;t:f"
+        )
+    # Skyscanner
+    if is_oneway:
+        urls["skyscanner"] = (
             f"https://www.skyscanner.com/transport/flights/{origin.lower()}/"
-            f"{dest.lower()}/{dep}/{ret}/?adults=1&currency=USD"
+            f"{dest.lower()}/{dep}/?adults=1&currency=USD&locale=en-US"
+        )
+    else:
+        urls["skyscanner"] = (
+            f"https://www.skyscanner.com/transport/flights/{origin.lower()}/"
+            f"{dest.lower()}/{dep}/{ret}/?adults=1&currency=USD&locale=en-US"
+        )
+    urls["skyscanner_everywhere"] = (
+        f"https://www.skyscanner.com/transport/flights/{origin.lower()}/anywhere/"
+        f"{dep}/{ret}/?adults=1&currency=USD" if not is_oneway else
+        f"https://www.skyscanner.com/transport/flights/{origin.lower()}/anywhere/"
+        f"{dep}/?adults=1&currency=USD"
+    )
+    urls["skyscanner_cheapest_month"] = (
+        f"https://www.skyscanner.com/transport/flights/{origin.lower()}/"
+        f"{dest.lower()}/?adults=1&currency=USD&locale=en-US&market=US"
+    )
+    # Kayak
+    if is_oneway:
+        urls["kayak"] = (
+            f"https://www.kayak.com/flights/{origin}-{dest}/{dep}/1adults?sort=bestflight_a"
+        )
+    else:
+        urls["kayak"] = (
+            f"https://www.kayak.com/flights/{origin}-{dest}/{dep}/{ret}/1adults?sort=bestflight_a"
+        )
+    urls["kayak_flexible"] = (
+        f"https://www.kayak.com/flights/{origin}-{dest}/{dep}/{ret}/1adults"
+        f"?flexibility=3&sort=price_a"
+    ) if not is_oneway else urls["kayak"]
+    # Momondo
+    urls["momondo"] = (
+        f"https://www.momondo.com/flight-search/{origin}-{dest}/{dep}/{ret}?adults=1&currency=USD"
+        if not is_oneway else
+        f"https://www.momondo.com/flight-search/{origin}-{dest}/{dep}?adults=1&currency=USD&tripType=oneway"
+    )
+    # Expedia
+    urls["expedia"] = (
+        f"https://www.expedia.com/Flights-Search?trip=roundtrip"
+        f"&leg1=from%3A{origin}%2Cto%3A{dest}%2Cdeparture%3A{dep}%40dateType%3Dspecific"
+        f"&leg2=from%3A{dest}%2Cto%3A{origin}%2Cdeparture%3A{ret}%40dateType%3Dspecific"
+        f"&passengers=adults%3A1%2Cchildren%3A0%2Cinfantsinlap%3A0"
+        f"&options=cabinclass%3Aeconomy&mode=search"
+    )
+    # Priceline
+    urls["priceline"] = (
+        f"https://www.priceline.com/fly/search/{origin}/{dest}/{dep}/{ret}?adults=1"
+    )
+    # Going (was Scott's Cheap Flights)
+    urls["going"] = (
+        f"https://www.going.com/flights?origin={origin}&destination={dest}"
+    )
+    # Secret Flying
+    urls["secret_flying"] = (
+        f"https://www.secretflying.com/posts/?origin={origin_city}"
+    )
+    return urls
+
+
+def _hotel_urls(trip: Dict[str, Any]) -> Dict[str, str]:
+    dep = (trip.get("departure_date") or trip.get("start_date") or "")[:10]
+    ret = (trip.get("return_date") or trip.get("end_date") or dep)[:10]
+    dest = (trip.get("destination") or "Manila").replace(" ", "+")
+    country = (trip.get("country") or "Philippines").replace(" ", "+")
+    nights = trip.get("nights") or 5
+    try:
+        if not trip.get("nights") and dep and ret:
+            nights = max(1, (datetime.fromisoformat(ret) - datetime.fromisoformat(dep)).days)
+    except Exception:
+        pass
+    return {
+        "booking_com": (
+            f"https://www.booking.com/searchresults.html?ss={dest}%2C+{country}"
+            f"&checkin={dep}&checkout={ret}&group_adults=1&no_rooms=1&order=price"
         ),
-        "momondo": (
-            f"https://www.momondo.com/flight-search/{origin}-{dest}/{dep}/{ret}"
+        "hotels_com": (
+            f"https://www.hotels.com/search.do?destination={dest}"
+            f"&startDate={dep}&endDate={ret}&adults=1&sort=PRICE_LOW_TO_HIGH"
+        ),
+        "kayak": f"https://www.kayak.com/hotels/{dest}/{dep}/{ret}/1adults?sort=price_a",
+        "kayak_pricebreakers": (
+            f"https://www.kayak.com/hotels/{dest}/{dep}/{ret}/1adults"
+            f"?fs=dealType=PRICEBREAKER"
+        ),
+        "hoteltonight": f"https://www.hoteltonight.com/s/{dest}",
+        "priceline": (
+            f"https://www.priceline.com/relax/at/{dest}/from/{dep}/to/{ret}/rooms/1/guests/1"
+        ),
+        "priceline_express": (
+            f"https://www.priceline.com/relax/at/{dest}/from/{dep}/to/{ret}"
+            f"/rooms/1/guests/1?dealType=EXPRESS"
+        ),
+        "expedia": (
+            f"https://www.expedia.com/Hotel-Search?destination={dest}"
+            f"&startDate={dep}&endDate={ret}&adults=1&sort=PRICE_LOW_TO_HIGH"
+        ),
+        "agoda": (
+            f"https://www.agoda.com/search?city={dest}&checkIn={dep}"
+            f"&checkOut={ret}&rooms=1&adults=1&children=0&los={nights}"
+            f"&currency=USD&sort=priceLowToHigh&cid=1844104"
+        ),
+        "airbnb": (
+            f"https://www.airbnb.com/s/{dest}--{country}/homes?"
+            f"checkin={dep}&checkout={ret}&adults=1&price_max=150"
         ),
     }
 
 
-def _hotel_urls(dest_city: str, dep: str, ret: str) -> Dict[str, str]:
-    city = (dest_city or "Manila").replace(" ", "+")
+def _bundle_urls(trip: Dict[str, Any]) -> Dict[str, str]:
+    dep = (trip.get("departure_date") or trip.get("start_date") or "")[:10]
+    ret = (trip.get("return_date") or trip.get("end_date") or dep)[:10]
+    dest_city = (trip.get("destination") or "Manila").replace(" ", "+")
+    # Flight origin/dest airports (best-effort — fall back to city name if missing)
+    origin = "ATL"
+    dest = "MNL"
     return {
-        "booking_com": (
-            f"https://www.booking.com/searchresults.html?ss={city}&"
-            f"checkin={dep}&checkout={ret}&group_adults=1&no_rooms=1"
-        ),
-        "hotels_com": (
-            f"https://www.hotels.com/search.do?destination={city}"
-            f"&startDate={dep}&endDate={ret}&adults=1"
-        ),
         "expedia": (
-            f"https://www.expedia.com/Hotels?destination={city}"
-            f"&startDate={dep}&endDate={ret}&adults=1"
+            f"https://www.expedia.com/packages/fly-drive?origin={origin}"
+            f"&destination={dest}&startDate={dep}&endDate={ret}&adults=1"
         ),
-        "agoda": (
-            f"https://www.agoda.com/search?city={city}&checkIn={dep}"
-            f"&checkOut={ret}&rooms=1&adults=1&children=0&cid=1844104"
+        "orbitz": (
+            f"https://www.orbitz.com/packages/fly-drive?origin={origin}"
+            f"&destination={dest}&startDate={dep}&endDate={ret}&adults=1"
+        ),
+        "travelocity": (
+            f"https://www.travelocity.com/packages?origin={origin}"
+            f"&destination={dest}&startDate={dep}&endDate={ret}&adults=1"
+        ),
+        "travelzoo": (
+            f"https://www.travelzoo.com/travel-deals/?destination={dest_city}"
         ),
         "priceline": (
-            f"https://www.priceline.com/hotel/search?cityOrZip={city}"
-            f"&checkIn={dep}&checkOut={ret}&adults=1"
-        ),
-        "kayak": f"https://www.kayak.com/hotels/{city}/{dep}/{ret}/1adults",
-        "airbnb": (
-            f"https://www.airbnb.com/s/{city}--Philippines/homes?"
-            f"checkin={dep}&checkout={ret}&adults=1"
+            f"https://www.priceline.com/packages?origin={origin}"
+            f"&destination={dest}&startDate={dep}&endDate={ret}&adults=1"
         ),
     }
 
@@ -231,31 +358,54 @@ def _enrich(result: Dict[str, Any], trip: Dict[str, Any]) -> Dict[str, Any]:
     ret = (trip.get("return_date") or trip.get("end_date") or dep)[:10]
     dest_city = trip.get("destination") or "Manila"
     country = (trip.get("country") or "").lower()
-    is_philippines = "philippines" in country or "ph" == country
+    is_asian = _is_asian(country, dest_city)
+    is_philippines = "philippines" in country or country == "ph"
 
-    # Flights: add deterministic booking URLs to each option
+    # Flights: attach ALL 8 platform URLs to each flight card
     for f in result.get("flights", []) or []:
         f.update(_flight_urls(f, trip))
 
-    # Hotels: add deterministic booking URLs
-    hotel_urls = _hotel_urls(dest_city, dep, ret)
+    # Hotels: attach ALL 9 platform URLs to each hotel card
+    hotel_urls = _hotel_urls(trip)
     for h in result.get("hotels", []) or []:
         h["booking_url_booking_com"] = hotel_urls["booking_com"]
         h["booking_url_hotels_com"] = hotel_urls["hotels_com"]
+        h["booking_url_kayak"] = hotel_urls["kayak"]
+        h["booking_url_kayak_pricebreakers"] = hotel_urls["kayak_pricebreakers"]
+        h["booking_url_hoteltonight"] = hotel_urls["hoteltonight"]
+        h["booking_url_priceline"] = hotel_urls["priceline"]
+        h["booking_url_priceline_express"] = hotel_urls["priceline_express"]
         h["booking_url_expedia"] = hotel_urls["expedia"]
         h["booking_url_agoda"] = hotel_urls["agoda"]
-        h["booking_url_priceline"] = hotel_urls["priceline"]
-        h["booking_url_kayak"] = hotel_urls["kayak"]
+        h["booking_url_airbnb"] = hotel_urls["airbnb"]
 
+    # Nights
+    try:
+        nights = max(1, (datetime.fromisoformat(ret) - datetime.fromisoformat(dep)).days)
+    except Exception:
+        nights = trip.get("nights") or 5
+
+    result["bundles"] = _bundle_urls(trip)
     result["extras"] = {
-        "airbnb_url": hotel_urls["airbnb"] if is_philippines else None,
+        "airbnb_url": hotel_urls["airbnb"],
         "philippines_mode": is_philippines,
+        "asian_mode": is_asian,
+        "nights": nights,
+        "long_stay": nights >= 7,
+        "monthly_stay": nights >= 28,
         "bulacan_note": (
             "Pro tip: For Bulacan accommodation, search hotels in Malolos or "
             "San Jose del Monte rather than Manila — closer to Eden Heights "
             "and significantly cheaper. Also consider Airbnb private homes in "
             "Bulacan province."
         ) if is_philippines else None,
+        "airbnb_long_stay_note": (
+            "Airbnb offers automatic monthly discounts of 20-50% for stays "
+            "over 28 nights — ideal for extended Eden Heights development trips."
+        ) if nights >= 28 else (
+            "For stays of 7+ nights, compare Airbnb's weekly rates — often "
+            "20-30% less than nightly × 7."
+        ) if nights >= 7 else None,
     }
     return result
 
