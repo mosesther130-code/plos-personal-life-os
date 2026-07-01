@@ -166,7 +166,7 @@ export default function CareerTailor() {
           ) : resumes.length === 0 ? (
             <TouchableOpacity
               style={styles.emptyCard}
-              onPress={() => router.push("/career/resume-vault" as any)}
+              onPress={() => router.push("/resume-hub" as any)}
               testID="tailor-goto-vault"
             >
               <FileText size={22} color={colors.textTertiary} />
@@ -174,7 +174,7 @@ export default function CareerTailor() {
               <Text style={styles.emptyText}>Upload one first so Claude has something to tailor.</Text>
               <View style={styles.linkBtn}>
                 <Plus size={13} color={colors.primaryGlow} />
-                <Text style={styles.linkBtnText}>Open Resume Vault</Text>
+                <Text style={styles.linkBtnText}>Open Resume Hub</Text>
               </View>
             </TouchableOpacity>
           ) : (
@@ -206,7 +206,7 @@ export default function CareerTailor() {
               })}
               <TouchableOpacity
                 style={styles.addCard}
-                onPress={() => router.push("/career/resume-vault" as any)}
+                onPress={() => router.push("/resume-hub" as any)}
                 testID="tailor-add-resume"
               >
                 <Plus size={22} color={colors.primaryGlow} />

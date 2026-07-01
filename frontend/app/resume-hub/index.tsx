@@ -38,6 +38,7 @@ import {
 import { careerFilesApi } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
 import { EditModal, type Field } from "@/src/components/EditModal";
+import { ResumeVaultPanel } from "@/src/components/ResumeVaultPanel";
 
 const ACCEPT = "application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,image/png,image/jpeg";
 
@@ -107,6 +108,7 @@ const emptyDraft = () => ({
 
 export default function ResumeHub() {
   const router = useRouter();
+  const [tab, setTab] = useState<"vault" | "builder">("vault");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [files, setFiles] = useState<any[]>([]);
@@ -380,7 +382,8 @@ export default function ResumeHub() {
     await persistDraft({ ...draft, awards: next });
   };
 
-  const resumeFiles = files.filter((f) => f.kind === "resume");
+  // resumeFiles now live in the Vault tab (user_resumes collection).
+  // Keeping the filter derived only for reference/back-compat elsewhere.
   const jdFiles = files.filter((f) => f.kind === "job_description");
   const otherFiles = files.filter((f) => f.kind === "other");
 
@@ -404,17 +407,35 @@ export default function ResumeHub() {
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primaryGlow} />}
         >
+          {/* Tab switcher */}
+          <View style={styles.tabRow}>
+            <TouchableOpacity
+              style={[styles.tabBtn, tab === "vault" && styles.tabBtnActive]}
+              onPress={() => setTab("vault")}
+              testID="tab-vault"
+            >
+              <Text style={[styles.tabText, tab === "vault" && styles.tabTextActive]}>
+                Vault
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tabBtn, tab === "builder" && styles.tabBtnActive]}
+              onPress={() => setTab("builder")}
+              testID="tab-builder"
+            >
+              <Text style={[styles.tabText, tab === "builder" && styles.tabTextActive]}>
+                Builder
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {tab === "vault" ? (
+            <ResumeVaultPanel />
+          ) : (
+          <>
           {/* Quick Actions */}
           <Text style={styles.sectionTitle}>Quick Actions</Text>
           <View style={styles.actionGrid}>
-            <ActionTile
-              icon={<Upload color="#fff" size={18} />}
-              label="Upload Resume"
-              loading={uploading === "resume"}
-              onPress={() => pickAndUpload("resume")}
-              bg={colors.primary}
-              testID="upload-resume"
-            />
             <ActionTile
               icon={<FilePlus color="#fff" size={18} />}
               label="Create Resume"
@@ -623,12 +644,14 @@ export default function ResumeHub() {
             </View>
           )}
 
-          {/* Files */}
-          <FileListSection title="My Resumes" files={resumeFiles} onDownload={downloadCareerFile} onDelete={deleteFile} kind="resume" />
+          {/* Files — hide "My Resumes" (now lives in the Vault tab).
+              Keep JD + Other for the Builder tab. */}
           <FileListSection title="Job Descriptions" files={jdFiles} onDownload={downloadCareerFile} onDelete={deleteFile} kind="job_description" />
           <FileListSection title="Other Career Files" files={otherFiles} onDownload={downloadCareerFile} onDelete={deleteFile} kind="other" />
 
           <View style={{ height: 80 }} />
+          </>
+          )}
         </ScrollView>
       )}
 
@@ -804,6 +827,16 @@ const styles = StyleSheet.create({
   },
   headerTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: "700" },
   scroll: { paddingHorizontal: spacing.xl, paddingTop: spacing.md, gap: spacing.md },
+  tabRow: {
+    flexDirection: "row", backgroundColor: colors.surface,
+    borderColor: colors.borderSubtle, borderWidth: 1, borderRadius: radius.md, padding: 3,
+  },
+  tabBtn: {
+    flex: 1, alignItems: "center", paddingVertical: 9, borderRadius: radius.sm,
+  },
+  tabBtnActive: { backgroundColor: colors.primaryMuted },
+  tabText: { color: colors.textSecondary, fontSize: 13, fontWeight: "700" },
+  tabTextActive: { color: colors.primaryGlow },
 
   sectionTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: "700", marginTop: spacing.md },
   sectionHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: spacing.md },

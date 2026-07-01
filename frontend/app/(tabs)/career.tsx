@@ -422,16 +422,6 @@ export default function CareerHome() {
           <Text style={styles.tailorCtaText}>Tailor Resume for a Job</Text>
           <Sparkles size={12} color="rgba(255,255,255,0.85)" />
         </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.vaultLink}
-          onPress={() => router.push("/career/resume-vault" as any)}
-          testID="open-vault"
-          activeOpacity={0.7}
-        >
-          <FileText size={12} color={colors.primaryGlow} />
-          <Text style={styles.vaultLinkText}>Manage Resume Vault</Text>
-          <ChevronRight size={12} color={colors.primaryGlow} />
-        </TouchableOpacity>
 
         {/* Path advisor + Resume Generator quick links */}
         <View style={styles.quickRow}>
