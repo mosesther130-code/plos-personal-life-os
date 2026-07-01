@@ -11,6 +11,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -261,7 +262,14 @@ export function ShareLocationSheet({
                 <X size={18} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
-            <View style={styles.coordCard} testID="share-sheet-coords">
+
+            <ScrollView
+              style={styles.scrollView}
+              contentContainerStyle={styles.scrollContent}
+              showsVerticalScrollIndicator
+              bounces={false}
+            >
+              <View style={styles.coordCard} testID="share-sheet-coords">
               {refreshing ? (
                 <ActivityIndicator size="small" color={colors.textTertiary} />
               ) : (
@@ -356,6 +364,7 @@ export function ShareLocationSheet({
                 Once your family installs Life360, their locations will also appear on the PLOS Safety map via the Life360 API integration — coming in a future PLOS update.
               </Text>
             </View>
+            </ScrollView>
 
             {/* Cancel */}
             <TouchableOpacity style={styles.cancelBtn} onPress={onClose} testID="share-sheet-cancel">
@@ -411,13 +420,14 @@ const styles = StyleSheet.create({
   },
   sheet: {
     backgroundColor: colors.surface, borderTopLeftRadius: 22, borderTopRightRadius: 22,
-    paddingHorizontal: spacing.md, paddingTop: 8, paddingBottom: spacing.xxl,
+    paddingHorizontal: spacing.md, paddingTop: 8, paddingBottom: spacing.md,
     borderTopWidth: 1, borderTopColor: colors.borderSubtle,
-    // shadow (iOS + Android)
     shadowColor: "#000", shadowOpacity: 0.35, shadowRadius: 20,
     shadowOffset: { width: 0, height: -6 }, elevation: 20,
-    maxHeight: "92%",
+    maxHeight: "88%", minHeight: 480,
   },
+  scrollView: { flexGrow: 0, flexShrink: 1 },
+  scrollContent: { paddingBottom: spacing.sm },
   handle: {
     width: 40, height: 4, borderRadius: 2, backgroundColor: colors.borderSubtle,
     alignSelf: "center", marginBottom: 8,
