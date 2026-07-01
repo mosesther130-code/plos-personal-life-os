@@ -6096,6 +6096,19 @@ app.include_router(
     make_career_files_router(db, get_current_user_id, EMERGENT_LLM_KEY, LlmChat, UserMessage)
 )
 
+# Career Resume Vault (multi-resume storage + PDF/DOCX/TXT extraction)
+from career_resumes import make_router as make_career_resumes_router  # noqa: E402
+
+app.include_router(make_career_resumes_router(db, get_current_user_id))
+
+# Career AI Tailor (Claude Sonnet 4.5 → tailored resume + cover letter + interview qs
+# + PDF export + SendGrid email)
+from career_tailor import make_router as make_career_tailor_router  # noqa: E402
+
+app.include_router(
+    make_career_tailor_router(db, get_current_user_id, EMERGENT_LLM_KEY, LlmChat, UserMessage)
+)
+
 # Mount Career Intelligence sub-router (Enhancements 4c, 4d, 4e)
 from career_intelligence import make_router as make_career_intel_router  # noqa: E402
 

@@ -811,3 +811,100 @@ export const familyLocationsApi = {
 };
 
 export const seedDemo = () => request<any>("/seed-demo", { method: "POST" });
+
+// ----------------- Career Resume Vault + AI Tailor ---------------------
+export type ResumeFileType = "pdf" | "docx" | "doc" | "txt" | "paste";
+
+export const careerResumesApi = {
+  list: () =>
+    request<{ resumes: Array<any> }>("/career/resumes"),
+  get: (resume_id: string) =>
+    request<any>(`/career/resumes/${resume_id}`),
+  create: (data: {
+    name: string;
+    file_type: ResumeFileType;
+    content_b64?: string;
+    text?: string;
+  }) =>
+    request<any>("/career/resumes", { method: "POST", body: data }),
+  update: (
+    resume_id: string,
+    data: { name?: string; text?: string; is_default?: boolean }
+  ) =>
+    request<{ ok: boolean; updated: string[] }>(
+      `/career/resumes/${resume_id}`,
+      { method: "PUT", body: data }
+    ),
+  remove: (resume_id: string) =>
+    request<{ ok: boolean }>(`/career/resumes/${resume_id}`, {
+      method: "DELETE",
+    }),
+  setDefault: (resume_id: string) =>
+    request<{ ok: boolean }>(`/career/resumes/${resume_id}`, {
+      method: "PUT",
+      body: { is_default: true },
+    }),
+};
+
+export type TailorResult = {
+  ok: boolean;
+  version_id: string;
+  ats_score: number;
+  keywords_matched: string[];
+  keywords_missing: string[];
+  summary: string;
+  tailored_resume_md: string;
+  cover_letter_md: string;
+  interview_questions: string[];
+  email_status: { status: string; reason?: string } | null;
+};
+
+export const careerTailorApi = {
+  tailor: (data: {
+    resume_id?: string;
+    job_title: string;
+    company: string;
+    job_description: string;
+    job_url?: string;
+    tailor_resume?: boolean;
+    generate_cover_letter?: boolean;
+    generate_interview_questions?: boolean;
+    email_to_me?: boolean;
+    send_pdf?: boolean;
+  }) => request<TailorResult>("/career/tailor", { method: "POST", body: data }),
+  listVersions: () =>
+    request<{ versions: Array<any> }>("/career/tailor/versions"),
+  getVersion: (version_id: string) =>
+    request<any>(`/career/tailor/versions/${version_id}`),
+  deleteVersion: (version_id: string) =>
+    request<{ ok: boolean }>(`/career/tailor/versions/${version_id}`, {
+      method: "DELETE",
+    }),
+  download: (
+    version_id: string,
+    kind: "resume" | "cover" | "thankyou" | "followup" = "resume"
+  ) =>
+    request<{ filename: string; mime: string; content_b64: string; markdown: string }>(
+      `/career/tailor/versions/${version_id}/download?kind=${kind}`
+    ),
+  thankYou: (data: {
+    version_id: string;
+    interviewer_name: string;
+    topic_discussed: string;
+    email_to_me?: boolean;
+  }) => request<any>("/career/tailor/thankyou", { method: "POST", body: data }),
+  followUp: (data: {
+    version_id: string;
+    days_since_applied: number;
+    email_to_me?: boolean;
+  }) => request<any>("/career/tailor/followup", { method: "POST", body: data }),
+  saveApplication: (version_id: string) =>
+    request<{ ok: boolean; application_id: string }>(
+      "/career/tailor/save-application",
+      { method: "POST", body: { version_id } }
+    ),
+  emailStatus: () =>
+    request<{ sendgrid_ready: boolean; hint: string }>(
+      "/career/tailor/email/status"
+    ),
+};

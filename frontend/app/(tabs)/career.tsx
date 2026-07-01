@@ -22,9 +22,14 @@ import {
   Compass,
   FileText,
   RefreshCw,
+  ExternalLink,
+  Copy,
+  Wand2,
 } from "lucide-react-native";
+import * as Clipboard from "expo-clipboard";
 
 import { careerApi, careerIntelApi } from "@/src/lib/api";
+import { resolveJobApplyUrl } from "@/src/lib/job-urls";
 import { colors, spacing, radius } from "@/src/lib/theme";
 import { ScoreRing } from "@/src/components/ScoreRing";
 import { EditModal, Field } from "@/src/components/EditModal";
@@ -406,6 +411,28 @@ export default function CareerHome() {
           )}
         </View>
 
+        {/* Prominent AI Tailor CTA */}
+        <TouchableOpacity
+          style={styles.tailorCta}
+          onPress={() => router.push("/career/tailor" as any)}
+          testID="open-tailor"
+          activeOpacity={0.85}
+        >
+          <Wand2 size={16} color="#fff" />
+          <Text style={styles.tailorCtaText}>Tailor Resume for a Job</Text>
+          <Sparkles size={12} color="rgba(255,255,255,0.85)" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.vaultLink}
+          onPress={() => router.push("/career/resume-vault" as any)}
+          testID="open-vault"
+          activeOpacity={0.7}
+        >
+          <FileText size={12} color={colors.primaryGlow} />
+          <Text style={styles.vaultLinkText}>Manage Resume Vault</Text>
+          <ChevronRight size={12} color={colors.primaryGlow} />
+        </TouchableOpacity>
+
         {/* Path advisor + Resume Generator quick links */}
         <View style={styles.quickRow}>
           <TouchableOpacity
@@ -544,6 +571,52 @@ export default function CareerHome() {
                   {j.reasoning}
                 </Text>
               )}
+              <View style={styles.matchActions}>
+                <TouchableOpacity
+                  style={styles.matchActionBtn}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    const url = resolveJobApplyUrl(j);
+                    Linking.openURL(url).catch(() => {});
+                  }}
+                  testID={`view-posting-${j.id}`}
+                >
+                  <ExternalLink size={12} color={colors.primaryGlow} />
+                  <Text style={styles.matchActionText}>View Posting</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.matchActionIcon}
+                  onPress={async (e) => {
+                    e.stopPropagation();
+                    try {
+                      await Clipboard.setStringAsync(resolveJobApplyUrl(j));
+                    } catch (_e) {}
+                  }}
+                  testID={`copy-link-${j.id}`}
+                  accessibilityLabel="Copy job posting link"
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Copy size={12} color={colors.textSecondary} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.matchActionBtn, styles.matchActionBtnPrimary]}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    router.push({
+                      pathname: "/career/tailor",
+                      params: {
+                        job_title: j.role_title,
+                        company: j.employer,
+                        job_url: resolveJobApplyUrl(j),
+                      },
+                    } as any);
+                  }}
+                  testID={`tailor-for-${j.id}`}
+                >
+                  <Wand2 size={12} color="#fff" />
+                  <Text style={styles.matchActionTextPrimary}>Tailor</Text>
+                </TouchableOpacity>
+              </View>
             </TouchableOpacity>
           ))}
         </View>
@@ -791,6 +864,32 @@ const styles = StyleSheet.create({
 
   // Quick row (2x2 grid for better readability on 375px screens)
   quickRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  tailorCta: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+    backgroundColor: colors.primary, paddingVertical: 14,
+    borderRadius: radius.md, marginTop: spacing.md,
+  },
+  tailorCtaText: { color: "#fff", fontSize: 14, fontWeight: "800", letterSpacing: 0.4 },
+  vaultLink: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4,
+    paddingVertical: 8,
+  },
+  vaultLinkText: { color: colors.primaryGlow, fontSize: 11, fontWeight: "700" },
+  matchActions: {
+    flexDirection: "row", alignItems: "center", gap: 6, marginTop: spacing.sm,
+  },
+  matchActionBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4,
+    paddingVertical: 8, paddingHorizontal: 12, borderRadius: radius.sm,
+    backgroundColor: colors.surfaceElevated, flex: 1,
+  },
+  matchActionBtnPrimary: { backgroundColor: colors.primary, flex: 0.8 },
+  matchActionText: { color: colors.primaryGlow, fontSize: 11, fontWeight: "700" },
+  matchActionTextPrimary: { color: "#fff", fontSize: 11, fontWeight: "800" },
+  matchActionIcon: {
+    width: 32, height: 32, borderRadius: radius.sm, alignItems: "center",
+    justifyContent: "center", backgroundColor: colors.surfaceElevated,
+  },
   quickCard: {
     width: "47.5%",
     backgroundColor: colors.surface,
