@@ -37,6 +37,7 @@ import {
 } from "lucide-react-native";
 import { travelApi } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
+import { TripSearchResults } from "@/src/components/TripSearchResults";
 
 const advisoryColor = (level?: number) => {
   if (level === 1) return colors.success;
@@ -413,63 +414,11 @@ export default function TripPlanner() {
           </View>
         )}
 
-        {/* Flights */}
-        <View style={styles.card} testID="flights-card">
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardLabel}>FLIGHTS · ATL → {(trip.country_code === "PH" ? "MNL" : (trip.city || "DEST").slice(0, 3).toUpperCase())}</Text>
-            <Text style={styles.mockBadge}>MOCKED</Text>
-          </View>
-          {flights.length === 0 ? (
-            <Text style={styles.body}>No seed fares cached for this route. Tap to search live fares on Google Flights.</Text>
-          ) : (
-            flights.map((f, i) => (
-              <TouchableOpacity key={f.flight_id} style={styles.fareRow} onPress={() => Linking.openURL(f.deeplink).catch(() => {})} testID={`flight-${i}`} activeOpacity={0.85}>
-                <View style={styles.fareLabel}>
-                  <Text style={styles.fareLabelText}>{f.label.toUpperCase()}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.fareTitle}>{f.airline} · {f.route}</Text>
-                  <Text style={styles.fareMeta}>{f.duration} · {f.stops} stop{f.stops === 1 ? "" : "s"} · departs {f.departs}</Text>
-                  {f.extras ? <Text style={styles.fareExtras}>{f.extras}</Text> : null}
-                </View>
-                <Text style={styles.farePrice}>{fmtUSD(f.price_usd)}</Text>
-              </TouchableOpacity>
-            ))
-          )}
-          <TouchableOpacity style={styles.linkBtn} onPress={() => Linking.openURL(flights[0]?.deeplink || "https://www.google.com/flights").catch(() => {})}>
-            <ExternalLink size={12} color={colors.primaryGlow} />
-            <Text style={styles.linkBtnText}>Search live fares on Google Flights</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Hotels */}
-        <View style={styles.card} testID="hotels-card">
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardLabel}>HOTELS · {trip.city || "Destination"}</Text>
-            <Text style={styles.mockBadge}>MOCKED</Text>
-          </View>
-          {hotels.length === 0 ? (
-            <Text style={styles.body}>No seed hotels cached. Tap to search live rates on Booking.com.</Text>
-          ) : (
-            hotels.map((h, i) => (
-              <TouchableOpacity key={h.hotel_id} style={styles.hotelRow} onPress={() => Linking.openURL(h.deeplink).catch(() => {})} testID={`hotel-${i}`} activeOpacity={0.85}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.hotelName}>{h.name}</Text>
-                  <Text style={styles.hotelArea}>{h.area} · {"★".repeat(h.stars)}</Text>
-                  <Text style={styles.hotelPerks}>{h.perks}</Text>
-                </View>
-                <View style={{ alignItems: "flex-end" }}>
-                  <Text style={styles.hotelPrice}>{fmtUSD(h.price_per_night_usd)}</Text>
-                  <Text style={styles.hotelPriceSub}>/night</Text>
-                </View>
-              </TouchableOpacity>
-            ))
-          )}
-          <TouchableOpacity style={styles.linkBtn} onPress={() => Linking.openURL(hotels[0]?.deeplink || "https://www.booking.com").catch(() => {})}>
-            <ExternalLink size={12} color={colors.primaryGlow} />
-            <Text style={styles.linkBtnText}>Search live rates on Booking.com</Text>
-          </TouchableOpacity>
-        </View>
+        {/* AI-searched Flights + Hotels (replaces mocked lists) */}
+        <TripSearchResults
+          tripId={String(id)}
+          destination={trip?.city || trip?.destination}
+        />
 
         {/* Pre-Travel Checklist */}
         <View style={styles.card} testID="checklist-card">

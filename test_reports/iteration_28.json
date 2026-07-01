@@ -1,0 +1,48 @@
+{
+  "summary": "PLOS Travel AI Flight+Hotel search backend fully validated (10/10 pytest passing). POST /search returns valid structure with 3 flights (Cheapest/Fastest/Best Value) + 3 hotels (Cheapest/Best Location/Best Value), all 7 flight URL fields + all 7 hotel URL fields populated. All deterministic URLs contain trip dates (2026-12-15 / 2026-12-30). extras.philippines_mode=true, bulacan_note non-empty, airbnb_url starts with https://www.airbnb.com/. Agoda URL contains checkIn= and cid=1844104. Google flights URL contains hl=en#flt=, airport codes and c:USD. searched_at persisted to trip doc. GET /search returns has_results:true, stale:false with matching payload. POST /save-to-budget returns {ok:true, expense_id:'exp_...'} and record persisted in planned_expenses (category=Travel, trip_id, amount_usd=1500, status=planned). Non-existent trip returns 404. Response time ~28s (well within 90s budget). NOTE: main-agent-supplied trip_id 5b452c2e-702b-4521-848e-dc1d818e6c01 does NOT exist in DB — the actual seeded Philippines trip id is b5d22815-b48c-449b-8d6b-3495076a3cab. Test auto-discovers Philippines trip when preferred id is stale.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "N/A (test data)",
+        "issue": "Trip id 5b452c2e-702b-4521-848e-dc1d818e6c01 referenced in review_request does not exist. Actual seeded Manila/Philippines trip id is b5d22815-b48c-449b-8d6b-3495076a3cab (user test1@plos.app, destination Manila & Bulacan, 2026-12-15 → 2026-12-30). Main agent should use the correct id going forward."
+      },
+      {
+        "endpoint": "POST /api/travel/trips/{trip_id}/search",
+        "issue": "Deterministic flight URLs (google_flights/kayak/expedia/priceline/skyscanner/momondo) are identical across all 3 flight categories because they only depend on origin/dest airport codes + dates — not on flight-specific attributes. Result: unique URL count is 9, not 21. Not a bug in the spec (booking URL fidelity is preserved) but limits marketing value of showing three distinct 'links to compare'. Consider appending category or airline_code as a query param to differentiate."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_travel_search.py",
+    "/app/test_reports/pytest/iteration_28_results.xml"
+  ],
+  "action_items": [
+    "Correct the referenced trip id in future testing prompts (use b5d22815-b48c-449b-8d6b-3495076a3cab, not 5b452c2e-702b-4521-848e-dc1d818e6c01).",
+    "(Optional) Include flight category or airline code as a differentiator in deterministic flight aggregator URLs so users see 3 distinct search links per platform."
+  ],
+  "critical_code_review_comments": [
+    "travel_search.py:198-226 hotel URL constructor hard-codes 'Philippines' path segment inside the airbnb URL — will break if this endpoint is ever called for non-PH destinations (though gated by extras.airbnb_url = None for non-PH, the URL is still generated). Consider parameterising the country segment.",
+    "travel_search.py:311-315 GET /search freshness check uses datetime.fromisoformat with .replace('Z','+00:00') — works, but consider using dateutil for robustness against non-canonical ISO strings.",
+    "travel_search.py:346 save_to_budget inserts into planned_expenses but does not enforce uniqueness per trip_id — repeated calls create duplicate expense rows. Should upsert on {user_id, trip_id, source:'travel_planner'} or check for existing."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_travel_search.py (new)",
+    "/app/test_reports/pytest/iteration_28_results.xml (new)"
+  ],
+  "success_rate": {
+    "backend": "100%",
+    "frontend": "N/A (backend-only iteration)"
+  },
+  "seed_data_creation": "None. Used pre-existing seeded Manila/Bulacan trip (b5d22815-b48c-449b-8d6b-3495076a3cab). A planned_expenses record was created during test_08 (Manila trip - Eden Heights, $1500) — not cleaned up so main agent can inspect.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Trip id: b5d22815-b48c-449b-8d6b-3495076a3cab (Manila & Bulacan, PH, 2026-12-15 → 2026-12-30). All /api/travel/trips/{trip_id}/(search|save-to-budget) endpoints working. Claude Sonnet 4.5 responded in ~28s. test_travel_search.py auto-discovers a Philippines trip so it's resilient to id changes.",
+  "rca_of_issue": "No functional bugs found in travel_search.py. Only issue was stale trip id in the review request; tests were made resilient by falling back to the first Philippines trip when the preferred id is missing."
+}

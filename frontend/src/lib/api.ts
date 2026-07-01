@@ -758,6 +758,24 @@ export const legalApi = {
   debtRights: () => request<any>("/legal/debt-rights"),
 };
 
+// ----------------- Travel AI Search (Claude flights+hotels) --------------
+export const travelSearchApi = {
+  get: (trip_id: string) =>
+    request<{ results: any; searched_at: string | null; stale: boolean; has_results: boolean }>(
+      `/travel/trips/${trip_id}/search`
+    ),
+  run: (trip_id: string, force = false) =>
+    request<any>(`/travel/trips/${trip_id}/search`, {
+      method: "POST",
+      body: { force },
+    }),
+  saveToBudget: (trip_id: string, total_usd: number, label?: string) =>
+    request<{ ok: boolean; expense_id: string }>(
+      `/travel/trips/${trip_id}/save-to-budget`,
+      { method: "POST", body: { total_usd, label } }
+    ),
+};
+
 // ----------------- Push Notifications (Firebase via Emergent relay) ----
 export const pushApi = {
   register: (platform: string, device_token: string) =>

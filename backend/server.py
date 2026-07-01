@@ -6109,6 +6109,13 @@ app.include_router(
     make_career_tailor_router(db, get_current_user_id, EMERGENT_LLM_KEY, LlmChat, UserMessage)
 )
 
+# Travel Search — AI Flight + Hotel search via Claude Sonnet 4.5
+from travel_search import make_router as make_travel_search_router  # noqa: E402
+
+app.include_router(
+    make_travel_search_router(db, get_current_user_id, EMERGENT_LLM_KEY, LlmChat, UserMessage)
+)
+
 # Mount Career Intelligence sub-router (Enhancements 4c, 4d, 4e)
 from career_intelligence import make_router as make_career_intel_router  # noqa: E402
 
