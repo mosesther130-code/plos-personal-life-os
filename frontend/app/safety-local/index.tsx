@@ -63,6 +63,7 @@ import { localApi, localExtrasApi, familyLocationsApi } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
 import { EditModal, type Field } from "@/src/components/EditModal";
 import { safeShare } from "@/src/lib/share";
+import { ShareLocationSheet } from "@/src/components/ShareLocationSheet";
 import { subscribeFamilyLocations, type FamilyLocationDoc } from "@/src/lib/firebase";
 import { useAuth } from "@/src/lib/auth-context";
 
@@ -159,6 +160,7 @@ export default function SafetyLocal() {
   const [vinInput, setVinInput] = useState("");
   const [inviteModal, setInviteModal] = useState<{ open: boolean; name: string; link?: string }>({ open: false, name: "" });
   const [familyEdit, setFamilyEdit] = useState<{ open: boolean; item?: any }>({ open: false });
+  const [shareSheet, setShareSheet] = useState(false);
   // ----- Firestore realtime family locations -----
   const { user } = useAuth();
   const [liveLocations, setLiveLocations] = useState<Record<string, FamilyLocationDoc>>({});
@@ -588,15 +590,7 @@ export default function SafetyLocal() {
         <View style={styles.sosRow}>
           <TouchableOpacity
             style={styles.shareBtn}
-            onPress={async () => {
-              const pos = coords || { lat: DEFAULT_LAT, lon: DEFAULT_LON };
-              await safeShare({
-                title: "My location",
-                message: `My current location: ${pos.lat.toFixed(5)}, ${pos.lon.toFixed(5)}`,
-                url: `https://maps.google.com/?q=${pos.lat},${pos.lon}`,
-                label: "Location copied · paste into a message",
-              });
-            }}
+            onPress={() => setShareSheet(true)}
             testID="share-location"
           >
             <MapPin size={14} color={colors.primaryGlow} />
@@ -1139,6 +1133,12 @@ export default function SafetyLocal() {
         onDelete={deleteFamilyMember}
         deleteSubject={familyEdit.item?.name}
         testID="family-edit-modal"
+      />
+      {/* Share My Location bottom sheet — 4 options that work without PLOS installed */}
+      <ShareLocationSheet
+        visible={shareSheet}
+        onClose={() => setShareSheet(false)}
+        coords={coords}
       />
     </SafeAreaView>
   );
