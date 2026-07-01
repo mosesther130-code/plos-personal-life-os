@@ -341,14 +341,20 @@ def send_via_sendgrid(
             plain_text_content=body_text,
             html_content=body_html or f"<pre>{body_text}</pre>",
         )
+        # sendgrid.Mail.attachment is a *list* setter — assigning multiple times
+        # in a loop overwrites; build the list once and assign at the end.
+        att_list: List[Any] = []
         for att in attachments or []:
-            a = Attachment(
-                FileContent(att["content_b64"]),
-                FileName(att["filename"]),
-                FileType(att.get("mime", "application/pdf")),
-                Disposition("attachment"),
+            att_list.append(
+                Attachment(
+                    FileContent(att["content_b64"]),
+                    FileName(att["filename"]),
+                    FileType(att.get("mime", "application/pdf")),
+                    Disposition("attachment"),
+                )
             )
-            message.attachment = a
+        if att_list:
+            message.attachment = att_list
         sg = SendGridAPIClient(os.environ["SENDGRID_API_KEY"])
         resp = sg.send(message)
         return {"status": "sent", "http_status": resp.status_code}
