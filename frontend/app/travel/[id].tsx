@@ -252,6 +252,12 @@ export default function TripPlanner() {
           </View>
         )}
 
+        {/* AI-searched Flights + Hotels (moved up — primary reason to open a trip) */}
+        <TripSearchResults
+          tripId={String(id)}
+          destination={trip?.city || trip?.destination}
+        />
+
         {/* Philippines extras */}
         {isPH && (
           <View style={styles.card} testID="ph-extras">
@@ -415,10 +421,6 @@ export default function TripPlanner() {
         )}
 
         {/* AI-searched Flights + Hotels (replaces mocked lists) */}
-        <TripSearchResults
-          tripId={String(id)}
-          destination={trip?.city || trip?.destination}
-        />
 
         {/* Pre-Travel Checklist */}
         <View style={styles.card} testID="checklist-card">
