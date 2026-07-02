@@ -6096,17 +6096,25 @@ app.include_router(
     make_career_files_router(db, get_current_user_id, EMERGENT_LLM_KEY, LlmChat, UserMessage)
 )
 
-# Career Resume Vault (multi-resume storage + PDF/DOCX/TXT extraction)
+# Career Resume Vault (LEGACY — kept for backwards compat with any lingering
+# /api/career/resumes calls until frontend fully migrates; will be removed in
+# next pass)
 from career_resumes import make_router as make_career_resumes_router  # noqa: E402
 
 app.include_router(make_career_resumes_router(db, get_current_user_id))
 
-# Career AI Tailor (Claude Sonnet 4.5 → tailored resume + cover letter + interview qs
-# + PDF export + SendGrid email)
+# Career AI Tailor (LEGACY endpoints kept for existing history references)
 from career_tailor import make_router as make_career_tailor_router  # noqa: E402
 
 app.include_router(
     make_career_tailor_router(db, get_current_user_id, EMERGENT_LLM_KEY, LlmChat, UserMessage)
+)
+
+# Career Library v2 — Resume + JD library + ATS-first tailoring engine
+from career_library import make_router as make_career_library_router  # noqa: E402
+
+app.include_router(
+    make_career_library_router(db, get_current_user_id, EMERGENT_LLM_KEY, LlmChat, UserMessage)
 )
 
 # Travel Search — AI Flight + Hotel search via Claude Sonnet 4.5

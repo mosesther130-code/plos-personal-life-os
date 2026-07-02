@@ -926,3 +926,169 @@ export const careerTailorApi = {
       "/career/tailor/email/status"
     ),
 };
+
+
+// ================================================================
+// Career Library v2 — Resume Library, JD Library, ATS Tailoring
+// ================================================================
+export type LibResume = {
+  resume_id: string;
+  file_name: string;
+  file_type: "pdf" | "docx" | "doc" | "txt";
+  extracted_text?: string;
+  word_count: number;
+  upload_date: string;
+  is_default: boolean;
+  label: string;
+  last_tailored?: string | null;
+  low_text_warning?: boolean;
+};
+export type LibJd = {
+  jd_id: string;
+  job_title: string;
+  employer: string;
+  posting_url?: string;
+  file_name: string;
+  file_type: string;
+  source: "upload" | "manual";
+  extracted_text?: string;
+  word_count: number;
+  upload_date: string;
+  match_scores?: Record<string, number>;
+  keyword_analysis?: Record<string, any>;
+  low_text_warning?: boolean;
+};
+export type TailorVersion = {
+  version_id: string;
+  base_resume_id: string;
+  base_resume_label: string;
+  jd_id: string;
+  job_title: string;
+  employer: string;
+  generated_date: string;
+  ats_score_before: number;
+  ats_score_after: number;
+  match_score: number;
+  keywords_found: string[];
+  keywords_added: string[];
+  keywords_missing: string[];
+  tailored_resume_text: string;
+  cover_letter_text: string;
+  interview_questions: { question: string; suggested_response: string }[];
+  why_you_fit: string;
+  ats_tips: string[];
+  insider_connections: {
+    networks_to_leverage: string[];
+    linkedin_connection_template: string;
+    warm_intro_template: string;
+    recruiter_message_template: string;
+  };
+  manually_edited: boolean;
+  downloaded: boolean;
+  emailed: boolean;
+  saved_to_application: boolean;
+  job_url?: string;
+  saved_to_application_id?: string;
+};
+export const careerLibraryApi = {
+  // Resumes
+  listResumes: () =>
+    request<{ resumes: LibResume[] }>("/career/library/resumes"),
+  uploadResume: (b: {
+    file_name: string;
+    file_type: string;
+    file_data_b64: string;
+    label?: string;
+  }) =>
+    request<LibResume>("/career/library/resumes", { method: "POST", body: b }),
+  updateResume: (
+    resume_id: string,
+    b: { label?: string; is_default?: boolean; extracted_text?: string }
+  ) =>
+    request<{ ok: boolean }>(`/career/library/resumes/${resume_id}`, {
+      method: "PUT",
+      body: b,
+    }),
+  deleteResume: (resume_id: string) =>
+    request<{ ok: boolean }>(`/career/library/resumes/${resume_id}`, {
+      method: "DELETE",
+    }),
+  downloadResume: (resume_id: string) =>
+    request<{ file_name: string; file_type: string; content_b64: string }>(
+      `/career/library/resumes/${resume_id}/download`
+    ),
+
+  // JDs
+  listJds: () => request<{ jds: LibJd[] }>("/career/library/jds"),
+  uploadJd: (b: {
+    file_name: string;
+    file_type: string;
+    file_data_b64: string;
+  }) =>
+    request<LibJd>("/career/library/jds/upload", { method: "POST", body: b }),
+  addJdManual: (b: {
+    job_title: string;
+    employer?: string;
+    posting_url?: string;
+    extracted_text: string;
+  }) =>
+    request<LibJd>("/career/library/jds/manual", { method: "POST", body: b }),
+  deleteJd: (jd_id: string) =>
+    request<{ ok: boolean }>(`/career/library/jds/${jd_id}`, {
+      method: "DELETE",
+    }),
+
+  // Tailoring
+  generate: (b: {
+    resume_id: string;
+    jd_id: string;
+    ats_optimize?: boolean;
+    generate_cover_letter?: boolean;
+    generate_interview_questions?: boolean;
+    generate_thankyou?: boolean;
+    email_to_me?: boolean;
+    send_pdf?: boolean;
+  }) =>
+    request<TailorVersion & { email_status?: any }>(
+      "/career/library/tailor/generate",
+      { method: "POST", body: b }
+    ),
+  history: () =>
+    request<{ history: TailorVersion[] }>("/career/library/tailor/history"),
+  getVersion: (version_id: string) =>
+    request<TailorVersion>(`/career/library/tailor/history/${version_id}`),
+  deleteVersion: (version_id: string) =>
+    request<{ ok: boolean }>(`/career/library/tailor/history/${version_id}`, {
+      method: "DELETE",
+    }),
+  regenerate: (version_id: string) =>
+    request<TailorVersion>(
+      `/career/library/tailor/history/${version_id}/regenerate`,
+      { method: "POST" }
+    ),
+  editVersion: (
+    version_id: string,
+    b: { tailored_resume_text?: string; cover_letter_text?: string }
+  ) =>
+    request<{ ok: boolean }>(
+      `/career/library/tailor/history/${version_id}/edit`,
+      { method: "PUT", body: b }
+    ),
+  download: (version_id: string, kind: "resume" | "cover" | "combined" = "combined", fmt: "pdf" | "docx" = "pdf") =>
+    request<{ filename: string; mime: string; content_b64: string }>(
+      `/career/library/tailor/history/${version_id}/download?kind=${kind}&fmt=${fmt}`
+    ),
+  email: (version_id: string) =>
+    request<any>(`/career/library/tailor/history/${version_id}/email`, {
+      method: "POST",
+    }),
+  saveApp: (version_id: string) =>
+    request<{ ok: boolean; application_id: string }>(
+      `/career/library/tailor/history/${version_id}/save-application`,
+      { method: "POST" }
+    ),
+  emailStatus: () =>
+    request<{ sendgrid_ready: boolean; hint: string }>(
+      "/career/library/email/status"
+    ),
+};
