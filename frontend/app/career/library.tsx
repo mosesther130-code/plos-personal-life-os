@@ -491,6 +491,24 @@ export default function CareerLibraryScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.linkCard}
+          onPress={() => router.push("/career/filter-center" as any)}
+          testID="open-filter-center"
+        >
+          <Wand2 size={16} color={colors.primaryGlow} />
+          <Text style={styles.linkText}>Filter & Criteria Center</Text>
+          <ChevronRight size={14} color={colors.primaryGlow} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.linkCard}
+          onPress={() => router.push("/career/watch-list" as any)}
+          testID="open-watch-list"
+        >
+          <Sparkles size={16} color={colors.primaryGlow} />
+          <Text style={styles.linkText}>Target Employer Watch List</Text>
+          <ChevronRight size={14} color={colors.primaryGlow} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.linkCard}
           onPress={() => router.push("/career/job-sources" as any)}
           testID="open-job-sources"
         >

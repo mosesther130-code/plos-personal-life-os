@@ -587,7 +587,8 @@ Return only valid JSON with this exact structure (no markdown, no preamble):
         elif sort == "highest_salary":
             docs.sort(key=lambda d: d.get("salary_max", 0) or 0, reverse=True)
         else:
-            docs.sort(key=lambda d: d["display_score"], reverse=True)
+            # Use rank_score if available, else fall back to display_score
+            docs.sort(key=lambda d: (d.get("rank_score", 0) or 0, d["display_score"]), reverse=True)
         counters = await _feed_counters(db, user_id)
         return {"jobs": docs, "counters": counters}
 

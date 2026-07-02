@@ -1150,3 +1150,84 @@ export const jobIntelApi = {
   criteria: () => request<any>("/jobs/intelligence/criteria"),
   insights: () => request<any>("/jobs/intelligence/insights"),
 };
+
+// ================================================================
+// Career Preferences (Filter Profiles + Watch List + Source Config)
+// ================================================================
+export type FilterProfile = {
+  profile_id: string;
+  profile_name: string;
+  is_active: boolean;
+  is_default: boolean;
+  target_roles: string[];
+  excluded_keywords: string[];
+  sectors: { name: string; id: string; priority: string; enabled: boolean }[];
+  locations: { label: string; type: string; priority: string }[];
+  work_types: string[];
+  min_salary: number;
+  max_salary?: number | null;
+  include_no_salary: boolean;
+  experience_levels: string[];
+  education_requirement: string;
+  clearance_filter: string;
+  ranking_weights: Record<string, number>;
+  alert_min_match_score: number;
+  alert_min_rank: number;
+  alert_frequency_cap: number;
+  quiet_hours_start: string;
+  quiet_hours_end: string;
+  last_applied?: string | null;
+  last_modified?: string;
+};
+export type WatchEmployer = {
+  employer_id: string;
+  name: string;
+  type: string;
+  priority: "critical" | "high" | "medium" | "low";
+  careers_url: string;
+  keywords: string[];
+  alert_on_any: boolean;
+  alert_high_match_only: boolean;
+  notes: string;
+  active_jobs_count?: number;
+};
+export type JobSourceConfig = {
+  source_id: string;
+  label: string;
+  kind: string;
+  operational: boolean;
+  update_frequency_min: number;
+  paused: boolean;
+  requires_key?: string;
+  note?: string;
+  contribution_count?: number;
+  last_run_at?: string | null;
+};
+export const careerPrefsApi = {
+  listProfiles: () => request<{ profiles: FilterProfile[] }>("/career/preferences/profiles"),
+  activeProfile: () => request<FilterProfile>("/career/preferences/profiles/active"),
+  createProfile: (b: Partial<FilterProfile>) =>
+    request<FilterProfile>("/career/preferences/profiles", { method: "POST", body: b }),
+  updateProfile: (id: string, b: Partial<FilterProfile>) =>
+    request<{ ok: boolean }>(`/career/preferences/profiles/${id}`, { method: "PUT", body: b }),
+  deleteProfile: (id: string) =>
+    request<{ ok: boolean }>(`/career/preferences/profiles/${id}`, { method: "DELETE" }),
+  applyProfile: (id: string) =>
+    request<any>(`/career/preferences/profiles/${id}/apply`, { method: "POST" }),
+
+  listWatch: () => request<{ employers: WatchEmployer[] }>("/career/preferences/watch-list"),
+  addWatch: (b: Partial<WatchEmployer>) =>
+    request<WatchEmployer>("/career/preferences/watch-list", { method: "POST", body: b }),
+  updateWatch: (id: string, b: Partial<WatchEmployer>) =>
+    request<{ ok: boolean }>(`/career/preferences/watch-list/${id}`, { method: "PUT", body: b }),
+  deleteWatch: (id: string) =>
+    request<{ ok: boolean }>(`/career/preferences/watch-list/${id}`, { method: "DELETE" }),
+
+  listSourceConfigs: () => request<{ sources: JobSourceConfig[] }>("/career/preferences/sources"),
+  updateSource: (id: string, b: { update_frequency_min?: number; paused?: boolean }) =>
+    request<{ ok: boolean }>(`/career/preferences/sources/${id}`, { method: "PUT", body: b }),
+
+  activityLog: () => request<{ log: any[] }>("/career/preferences/activity-log"),
+  rankRefresh: () => request<any>("/career/preferences/rank/refresh", { method: "POST" }),
+};
+

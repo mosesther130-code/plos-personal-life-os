@@ -6124,6 +6124,11 @@ app.include_router(
     make_job_intel_router(db, get_current_user_id, EMERGENT_LLM_KEY, LlmChat, UserMessage)
 )
 
+# Career Filter Profiles + Watch List + Source Config + Ranking Engine
+from career_filters import make_router as make_career_filters_router  # noqa: E402
+
+app.include_router(make_career_filters_router(db, get_current_user_id))
+
 # Travel Search — AI Flight + Hotel search via Claude Sonnet 4.5
 from travel_search import make_router as make_travel_search_router  # noqa: E402
 

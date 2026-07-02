@@ -95,6 +95,26 @@ function JobCard({ job, onOpen, onTailor, onSave }: {
 
   return (
     <View style={styles.card} testID={`job-${job.job_id}`}>
+      {/* Rank position pill (top-left) */}
+      {(job as any).rank_position && (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 2 }}>
+          <View style={{ backgroundColor: (job as any).watch_list_hit ? "#F59E0B" : "#374151", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+            <Text style={{ color: "#fff", fontSize: 9, fontWeight: "800", letterSpacing: 0.4 }}>
+              # {(job as any).rank_position}
+            </Text>
+          </View>
+          {(job as any).watch_list_hit && (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 2, backgroundColor: "rgba(245,158,11,0.15)", paddingHorizontal: 5, paddingVertical: 2, borderRadius: 3 }}>
+              <Text style={{ color: "#F59E0B", fontSize: 8, fontWeight: "800" }}>★ WATCH LIST</Text>
+            </View>
+          )}
+          {(job as any).rank_score !== undefined && (
+            <Text style={{ color: colors.textTertiary, fontSize: 9, marginLeft: 2 }}>
+              Rank Score {(job as any).rank_score.toFixed(1)}
+            </Text>
+          )}
+        </View>
+      )}
       {/* Header row */}
       <View style={{ flexDirection: "row", gap: 10 }}>
         <TouchableOpacity style={{ flex: 1 }} onPress={onOpen} activeOpacity={0.7}>
