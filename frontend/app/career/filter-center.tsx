@@ -1,6 +1,6 @@
 // PLOS Career — Filter Center. 7 sections — target roles, sectors, locations,
 // salary, experience, ranking weights, alerts.
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
   Alert, TextInput, Modal, Pressable, Switch,
@@ -8,9 +8,10 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import {
-  ChevronLeft, Save, Wand2, Plus, X, Star, RefreshCw,
+  ChevronLeft, Save, Wand2, Plus, X, Star, RefreshCw, Search,
+  ChevronDown, ChevronUp, Globe, MapPin, Building2, Hash,
 } from "lucide-react-native";
-import { careerPrefsApi, FilterProfile } from "@/src/lib/api";
+import { careerPrefsApi, FilterProfile, LocationEntry } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
 
 const PRIORITY_OPTS = ["critical", "high", "medium", "low"];
@@ -208,27 +209,87 @@ export default function FilterCenterScreen() {
 
         {/* ===== Section 3: Locations ===== */}
         <Text style={styles.section}>3. Where You Want to Work</Text>
+        <Text style={styles.hint}>
+          Search any country, state, city, or ZIP. Add via search or the country panel below.
+        </Text>
+        <LocationSearchBar
+          existingIds={active.locations.map((l) => l.id)}
+          onAdd={(entry) => update("locations", [...active.locations, entry])}
+        />
         {active.locations.map((loc, i) => (
-          <View key={i} style={styles.locRow}>
-            <Text style={styles.locLabel}>{loc.label}</Text>
-            <View style={styles.priorityPicker}>
-              {["high", "medium", "low"].map((p) => (
-                <TouchableOpacity
-                  key={p}
-                  style={[styles.prioChip, loc.priority === p && styles.prioChipOn]}
-                  onPress={() => {
-                    const next = [...active.locations];
-                    next[i] = { ...loc, priority: p };
-                    update("locations", next);
-                  }}
-                >
-                  <Text style={[styles.prioChipText, loc.priority === p && { color: "#fff" }]}>{p[0].toUpperCase()}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
+          <LocationRow
+            key={loc.id || i}
+            loc={loc}
+            onChange={(next) => {
+              const arr = [...active.locations];
+              arr[i] = next;
+              update("locations", arr);
+            }}
+            onDelete={() => {
+              if (loc.can_delete === false) {
+                Alert.alert("Cannot delete", "This special entry can be toggled off but not deleted.");
+                return;
+              }
+              update("locations", active.locations.filter((_, j) => j !== i));
+            }}
+          />
         ))}
-        <Text style={styles.subHead}>Work types</Text>
+        <CountryQuickAdd
+          existingCountryCodes={active.locations
+            .filter((l) => l.type === "country")
+            .map((l) => l.country_code)}
+          onAddCountry={(code, name, regionLabel) => {
+            const exists = active.locations.some((l) => l.type === "country" && l.country_code === code);
+            if (exists) return;
+            const newEntry: LocationEntry = {
+              id: `loc_c_${code}_${Date.now()}`,
+              label: name,
+              type: "country",
+              priority: "low",
+              work_type_override: "any",
+              radius_miles: 0,
+              country_code: code,
+              admin1: "",
+              city: "",
+              zip: "",
+              lat: 0,
+              lng: 0,
+              is_special: false,
+              special_kind: null,
+              enabled: true,
+              can_delete: true,
+            };
+            update("locations", [...active.locations, newEntry]);
+          }}
+          onAddRegion={(regionKey, countries) => {
+            const existing = new Set(active.locations
+              .filter((l) => l.type === "country")
+              .map((l) => l.country_code));
+            const newEntries: LocationEntry[] = countries
+              .filter((c) => !existing.has(c.code))
+              .map((c) => ({
+                id: `loc_c_${c.code}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                label: c.name,
+                type: "country",
+                priority: "low",
+                work_type_override: "any",
+                radius_miles: 0,
+                country_code: c.code,
+                admin1: "",
+                city: "",
+                zip: "",
+                lat: 0,
+                lng: 0,
+                is_special: false,
+                special_kind: null,
+                enabled: true,
+                can_delete: true,
+              }));
+            if (newEntries.length === 0) return;
+            update("locations", [...active.locations, ...newEntries]);
+          }}
+        />
+        <Text style={styles.subHead}>Work types (global default)</Text>
         <View style={styles.wtRow}>
           {["remote", "hybrid", "on_site", "international"].map((wt) => {
             const on = active.work_types.includes(wt);
@@ -479,3 +540,409 @@ const styles = StyleSheet.create({
   },
   applyBtnText: { color: "#fff", fontSize: 13, fontWeight: "800", letterSpacing: 0.3 },
 });
+
+// ================================================================
+// Location Search Bar — global fuzzy search with dropdown
+// ================================================================
+const TYPE_COLORS: Record<string, { bg: string; fg: string }> = {
+  country: { bg: "rgba(59,130,246,0.20)", fg: "#3B82F6" },
+  state: { bg: "rgba(16,185,129,0.20)", fg: "#10B981" },
+  city: { bg: "rgba(245,158,11,0.20)", fg: "#F59E0B" },
+  zip: { bg: "rgba(168,85,247,0.20)", fg: "#A855F7" },
+  region: { bg: "rgba(236,72,153,0.20)", fg: "#EC4899" },
+  special: { bg: "rgba(6,182,212,0.20)", fg: "#06B6D4" },
+};
+
+function TypeBadge({ type }: { type: string }) {
+  const c = TYPE_COLORS[type] || TYPE_COLORS.city;
+  return (
+    <View style={[locStyles.typeBadge, { backgroundColor: c.bg }]}>
+      <Text style={[locStyles.typeBadgeText, { color: c.fg }]}>{type.toUpperCase()}</Text>
+    </View>
+  );
+}
+
+function LocationSearchBar({ existingIds, onAdd }: {
+  existingIds: string[];
+  onAdd: (entry: LocationEntry) => void;
+}) {
+  const [q, setQ] = useState("");
+  const [preds, setPreds] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const timerRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    if (!q.trim() || q.trim().length < 2) { setPreds([]); return; }
+    timerRef.current = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const res = await careerPrefsApi.autocomplete(q.trim());
+        setPreds(res.predictions || []);
+      } catch (e: any) {
+        console.warn("autocomplete err", e);
+      } finally { setLoading(false); }
+    }, 350);
+    return () => timerRef.current && clearTimeout(timerRef.current);
+  }, [q]);
+
+  async function pick(pred: any) {
+    // Prefer inline structured data (local source); fallback to /place-details.
+    let details = pred;
+    if (!pred.lat && !pred.city && !pred.country_code && pred.source !== "local") {
+      try {
+        details = await careerPrefsApi.placeDetails(pred.place_id);
+      } catch (e) { /* keep pred */ }
+    }
+    const isZip = pred.entry_type === "zip";
+    const isCity = pred.entry_type === "city";
+    const cityLabel = isZip
+      ? `${pred.main_text}${details.city ? " — " + details.city : ""}, ${details.admin1 || "US"}`
+      : pred.text || pred.main_text;
+    const entry: LocationEntry = {
+      id: `loc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      label: cityLabel,
+      type: pred.entry_type as any,
+      priority: "medium",
+      work_type_override: "any",
+      radius_miles: isCity ? 25 : (isZip ? 15 : 0),
+      country_code: details.country_code || pred.country_code || "",
+      admin1: details.admin1 || pred.admin1 || "",
+      city: details.city || pred.city || "",
+      zip: details.zip || pred.zip || (isZip ? pred.main_text.replace(/^ZIP\s*/, "") : ""),
+      lat: details.lat || pred.lat || 0,
+      lng: details.lng || pred.lng || 0,
+      is_special: false, special_kind: null,
+      enabled: true, can_delete: true,
+    };
+    onAdd(entry);
+    setQ(""); setPreds([]);
+  }
+
+  return (
+    <View style={locStyles.searchWrap}>
+      <View style={locStyles.searchRow}>
+        <Search size={14} color={colors.textTertiary} />
+        <TextInput
+          style={locStyles.searchInput}
+          placeholder="Search any country, state, city, or ZIP"
+          placeholderTextColor={colors.textTertiary}
+          value={q}
+          onChangeText={setQ}
+          autoCorrect={false}
+          autoCapitalize="words"
+          testID="loc-search-input"
+        />
+        {loading && <ActivityIndicator size="small" color={colors.primaryGlow} />}
+        {!!q && !loading && (
+          <TouchableOpacity onPress={() => { setQ(""); setPreds([]); }}>
+            <X size={14} color={colors.textTertiary} />
+          </TouchableOpacity>
+        )}
+      </View>
+      {preds.length > 0 && (
+        <View style={locStyles.dropdown}>
+          {preds.map((p) => (
+            <TouchableOpacity
+              key={p.place_id}
+              style={locStyles.dropdownRow}
+              onPress={() => pick(p)}
+              testID={`loc-pred-${p.entry_type}-${p.main_text}`}
+            >
+              <TypeBadge type={p.entry_type} />
+              <View style={{ flex: 1, marginLeft: 8 }}>
+                <Text style={locStyles.dropMain} numberOfLines={1}>{p.main_text}</Text>
+                {!!p.secondary_text && (
+                  <Text style={locStyles.dropSec} numberOfLines={1}>{p.secondary_text}</Text>
+                )}
+              </View>
+              <Plus size={14} color={colors.primaryGlow} />
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+// ================================================================
+// Location Row — priority, work_type, radius, delete, toggle
+// ================================================================
+const WORK_TYPE_OPTS: { key: string; label: string }[] = [
+  { key: "any", label: "Any" },
+  { key: "on_site", label: "On-site" },
+  { key: "hybrid", label: "Hybrid" },
+  { key: "remote", label: "Remote" },
+  { key: "on_site_hybrid", label: "On-site + Hybrid" },
+  { key: "hybrid_remote", label: "Hybrid + Remote" },
+];
+
+function LocationRow({ loc, onChange, onDelete }: {
+  loc: LocationEntry;
+  onChange: (next: LocationEntry) => void;
+  onDelete: () => void;
+}) {
+  const showRadius = loc.type === "city" || loc.type === "zip";
+  const iconFor = () => {
+    if (loc.is_special) return <Star size={12} color={TYPE_COLORS.special.fg} />;
+    if (loc.type === "country") return <Globe size={12} color={TYPE_COLORS.country.fg} />;
+    if (loc.type === "state") return <MapPin size={12} color={TYPE_COLORS.state.fg} />;
+    if (loc.type === "city") return <Building2 size={12} color={TYPE_COLORS.city.fg} />;
+    if (loc.type === "zip") return <Hash size={12} color={TYPE_COLORS.zip.fg} />;
+    return <MapPin size={12} color={TYPE_COLORS.region.fg} />;
+  };
+  return (
+    <View style={[locStyles.locCard, !loc.enabled && { opacity: 0.5 }]} testID={`loc-${loc.id}`}>
+      <View style={locStyles.locHead}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flex: 1 }}>
+          {iconFor()}
+          <TypeBadge type={loc.type} />
+          <Text style={locStyles.locLabelNew} numberOfLines={2}>{loc.label}</Text>
+        </View>
+        {loc.is_special ? (
+          <Switch
+            value={loc.enabled}
+            onValueChange={(v) => onChange({ ...loc, enabled: v })}
+            trackColor={{ true: colors.primary, false: colors.surfaceElevated }}
+          />
+        ) : (
+          <TouchableOpacity onPress={onDelete} testID={`loc-del-${loc.id}`}>
+            <X size={16} color="#EF4444" />
+          </TouchableOpacity>
+        )}
+      </View>
+      {/* Priority */}
+      <View style={locStyles.pillRow}>
+        {(["high", "medium", "low"] as const).map((p) => {
+          const on = loc.priority === p;
+          const bg = p === "high" ? "#EF4444" : p === "medium" ? "#F59E0B" : "#6B7280";
+          return (
+            <TouchableOpacity
+              key={p}
+              style={[locStyles.prioPill, on && { backgroundColor: bg, borderColor: bg }]}
+              onPress={() => onChange({ ...loc, priority: p })}
+              testID={`loc-prio-${loc.id}-${p}`}
+            >
+              <Text style={[locStyles.prioPillText, on && { color: "#fff" }]}>{p.toUpperCase()}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+      {/* Work type override */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 4 }}>
+        {WORK_TYPE_OPTS.map((wt) => {
+          const on = loc.work_type_override === wt.key;
+          return (
+            <TouchableOpacity
+              key={wt.key}
+              style={[locStyles.wtChip2, on && locStyles.wtChip2On]}
+              onPress={() => onChange({ ...loc, work_type_override: wt.key as any })}
+            >
+              <Text style={[locStyles.wtChip2Text, on && { color: "#fff" }]}>{wt.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+      {/* Radius (city/zip only) */}
+      {showRadius && (
+        <View style={locStyles.radiusRow}>
+          <Text style={locStyles.radiusLbl}>Within</Text>
+          {[5, 10, 15, 25, 40, 75, 100].map((r) => {
+            const on = loc.radius_miles === r;
+            return (
+              <TouchableOpacity
+                key={r}
+                style={[locStyles.radChip, on && locStyles.radChipOn]}
+                onPress={() => onChange({ ...loc, radius_miles: r })}
+              >
+                <Text style={[locStyles.radChipText, on && { color: "#fff" }]}>{r}mi</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
+    </View>
+  );
+}
+
+// ================================================================
+// Country Quick-Add Panel — 13 regional groups, expand/collapse, bulk add
+// ================================================================
+function CountryQuickAdd({ existingCountryCodes, onAddCountry, onAddRegion }: {
+  existingCountryCodes: string[];
+  onAddCountry: (code: string, name: string, regionLabel: string) => void;
+  onAddRegion: (regionKey: string, countries: { code: string; name: string }[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [data, setData] = useState<{
+    regions: string[];
+    region_labels: Record<string, string>;
+    groups: Record<string, { code: string; name: string; region: string }[]>;
+  } | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open || data) return;
+    (async () => {
+      setLoading(true);
+      try {
+        const res = await careerPrefsApi.countries();
+        setData({
+          regions: res.regions,
+          region_labels: res.region_labels,
+          groups: res.groups,
+        });
+      } catch (e: any) {
+        Alert.alert("Failed", String(e?.message || e));
+      } finally { setLoading(false); }
+    })();
+  }, [open, data]);
+
+  const existingSet = useMemo(() => new Set(existingCountryCodes), [existingCountryCodes]);
+
+  return (
+    <View style={locStyles.qaCard}>
+      <TouchableOpacity style={locStyles.qaHead} onPress={() => setOpen((v) => !v)} testID="country-quick-add-toggle">
+        <Globe size={14} color={colors.primaryGlow} />
+        <Text style={locStyles.qaHeadText}>Add Countries Quickly</Text>
+        {open ? <ChevronUp size={14} color={colors.primaryGlow} /> : <ChevronDown size={14} color={colors.primaryGlow} />}
+      </TouchableOpacity>
+      {open && (
+        <View style={{ marginTop: 6, gap: 6 }}>
+          {loading && <ActivityIndicator size="small" color={colors.primaryGlow} />}
+          {data?.regions.map((rk) => {
+            const items = data.groups[rk] || [];
+            const isExp = !!expanded[rk];
+            return (
+              <View key={rk} style={locStyles.regionBlock}>
+                <View style={locStyles.regionHead}>
+                  <TouchableOpacity
+                    style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 6 }}
+                    onPress={() => setExpanded({ ...expanded, [rk]: !isExp })}
+                  >
+                    {isExp ? <ChevronUp size={12} color={colors.primaryGlow} /> : <ChevronDown size={12} color={colors.primaryGlow} />}
+                    <Text style={locStyles.regionText}>{data.region_labels[rk] || rk}</Text>
+                    <Text style={locStyles.regionCount}>{items.length}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={locStyles.regionBulkBtn}
+                    onPress={() => onAddRegion(rk, items)}
+                    testID={`add-region-${rk}`}
+                  >
+                    <Plus size={10} color="#fff" />
+                    <Text style={locStyles.regionBulkText}>Add All</Text>
+                  </TouchableOpacity>
+                </View>
+                {isExp && (
+                  <View style={locStyles.chipWrap}>
+                    {items.map((c) => {
+                      const on = existingSet.has(c.code);
+                      return (
+                        <TouchableOpacity
+                          key={c.code}
+                          style={[locStyles.cChip, on && locStyles.cChipOn]}
+                          onPress={() => !on && onAddCountry(c.code, c.name, data.region_labels[rk] || rk)}
+                          disabled={on}
+                          testID={`add-country-${c.code}`}
+                        >
+                          <Text style={[locStyles.cChipText, on && { color: colors.primaryGlow }]}>
+                            {on ? "✓ " : ""}{c.name}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
+              </View>
+            );
+          })}
+        </View>
+      )}
+    </View>
+  );
+}
+
+const locStyles = StyleSheet.create({
+  searchWrap: { marginTop: 6 },
+  searchRow: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: colors.surfaceElevated, borderRadius: radius.sm,
+    borderWidth: 1, borderColor: colors.borderSubtle,
+    paddingHorizontal: 10, paddingVertical: 8,
+  },
+  searchInput: { flex: 1, color: colors.textPrimary, fontSize: 13, paddingVertical: 2 },
+  dropdown: {
+    backgroundColor: colors.surface, borderRadius: radius.sm,
+    borderWidth: 1, borderColor: colors.borderSubtle,
+    marginTop: 4, overflow: "hidden",
+  },
+  dropdownRow: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    paddingHorizontal: 10, paddingVertical: 8,
+    borderBottomWidth: 1, borderBottomColor: colors.borderSubtle,
+  },
+  dropMain: { color: colors.textPrimary, fontSize: 12, fontWeight: "700" },
+  dropSec: { color: colors.textTertiary, fontSize: 10, marginTop: 1 },
+  typeBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  typeBadgeText: { fontSize: 9, fontWeight: "800", letterSpacing: 0.4 },
+  locCard: {
+    backgroundColor: colors.surface, borderColor: colors.borderSubtle,
+    borderWidth: 1, borderRadius: radius.sm, padding: 10, gap: 6, marginTop: 6,
+  },
+  locHead: { flexDirection: "row", alignItems: "center", gap: 6 },
+  locLabelNew: { color: colors.textPrimary, fontSize: 12, fontWeight: "700", flexShrink: 1 },
+  pillRow: { flexDirection: "row", gap: 4 },
+  prioPill: {
+    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12,
+    borderWidth: 1, borderColor: colors.borderSubtle,
+    backgroundColor: colors.surfaceElevated,
+  },
+  prioPillText: { color: colors.textSecondary, fontSize: 10, fontWeight: "800", letterSpacing: 0.4 },
+  wtChip2: {
+    paddingHorizontal: 8, paddingVertical: 5, borderRadius: 12,
+    borderWidth: 1, borderColor: colors.borderSubtle,
+    backgroundColor: colors.surfaceElevated,
+  },
+  wtChip2On: { backgroundColor: colors.primary, borderColor: colors.primary },
+  wtChip2Text: { color: colors.textSecondary, fontSize: 10, fontWeight: "700" },
+  radiusRow: { flexDirection: "row", alignItems: "center", gap: 4, flexWrap: "wrap" },
+  radiusLbl: { color: colors.textTertiary, fontSize: 10, fontWeight: "700" },
+  radChip: {
+    paddingHorizontal: 7, paddingVertical: 3, borderRadius: 10,
+    borderWidth: 1, borderColor: colors.borderSubtle, backgroundColor: colors.surfaceElevated,
+  },
+  radChipOn: { backgroundColor: colors.primaryGlow, borderColor: colors.primaryGlow },
+  radChipText: { color: colors.textSecondary, fontSize: 10, fontWeight: "700" },
+  qaCard: {
+    marginTop: 10, backgroundColor: colors.primaryMuted,
+    borderRadius: radius.sm, padding: 10,
+  },
+  qaHead: { flexDirection: "row", alignItems: "center", gap: 6 },
+  qaHeadText: { color: colors.primaryGlow, fontSize: 12, fontWeight: "800", flex: 1 },
+  regionBlock: {
+    backgroundColor: colors.surface, borderRadius: radius.sm,
+    padding: 8, borderWidth: 1, borderColor: colors.borderSubtle,
+  },
+  regionHead: { flexDirection: "row", alignItems: "center", gap: 6 },
+  regionText: { color: colors.textPrimary, fontSize: 11, fontWeight: "700" },
+  regionCount: {
+    color: colors.textTertiary, fontSize: 9, fontWeight: "700",
+    backgroundColor: colors.surfaceElevated, paddingHorizontal: 5, borderRadius: 8,
+  },
+  regionBulkBtn: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10,
+  },
+  regionBulkText: { color: "#fff", fontSize: 9, fontWeight: "800" },
+  chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 6 },
+  cChip: {
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10,
+    backgroundColor: colors.surfaceElevated,
+    borderWidth: 1, borderColor: colors.borderSubtle,
+  },
+  cChipOn: { backgroundColor: colors.primaryMuted, borderColor: colors.primaryGlow },
+  cChipText: { color: colors.textSecondary, fontSize: 10, fontWeight: "700" },
+});
+

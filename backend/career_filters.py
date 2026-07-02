@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -121,13 +121,74 @@ DEFAULT_SECTORS = [
 ]
 
 DEFAULT_LOCATIONS = [
-    {"label": "Atlanta, Georgia USA", "type": "city", "priority": "high"},
-    {"label": "Washington DC metro area", "type": "region", "priority": "high"},
-    {"label": "Remote (work from anywhere)", "type": "remote", "priority": "high"},
-    {"label": "Manila, Philippines", "type": "city", "priority": "medium"},
-    {"label": "Brussels, Belgium", "type": "city", "priority": "medium"},
-    {"label": "New York City, New York", "type": "city", "priority": "low"},
-    {"label": "International (any country)", "type": "region", "priority": "medium"},
+    # High priority (established life & career geography)
+    {"id": "loc_atlanta_ga", "label": "Atlanta, Georgia, USA", "type": "city",
+     "priority": "high", "work_type_override": "any", "radius_miles": 30,
+     "country_code": "US", "admin1": "GA", "city": "Atlanta", "zip": "",
+     "lat": 33.7490, "lng": -84.3880,
+     "is_special": False, "special_kind": None, "enabled": True, "can_delete": True},
+    {"id": "loc_special_remote", "label": "Remote (Work from Anywhere)", "type": "special",
+     "priority": "high", "work_type_override": "remote", "radius_miles": 0,
+     "country_code": "", "admin1": "", "city": "", "zip": "",
+     "lat": 0.0, "lng": 0.0,
+     "is_special": True, "special_kind": "remote", "enabled": True, "can_delete": False},
+    {"id": "loc_dc", "label": "Washington, DC, USA", "type": "city",
+     "priority": "high", "work_type_override": "any", "radius_miles": 20,
+     "country_code": "US", "admin1": "DC", "city": "Washington", "zip": "",
+     "lat": 38.9072, "lng": -77.0369,
+     "is_special": False, "special_kind": None, "enabled": True, "can_delete": True},
+    {"id": "loc_zip_30083", "label": "Stone Mountain, GA 30083", "type": "zip",
+     "priority": "high", "work_type_override": "on_site_hybrid", "radius_miles": 15,
+     "country_code": "US", "admin1": "GA", "city": "Stone Mountain", "zip": "30083",
+     "lat": 33.8081, "lng": -84.1702,
+     "is_special": False, "special_kind": None, "enabled": True, "can_delete": True},
+    # Medium priority
+    {"id": "loc_state_ga", "label": "Georgia, USA", "type": "state",
+     "priority": "medium", "work_type_override": "any", "radius_miles": 0,
+     "country_code": "US", "admin1": "GA", "city": "", "zip": "",
+     "lat": 32.1656, "lng": -82.9001,
+     "is_special": False, "special_kind": None, "enabled": True, "can_delete": True},
+    {"id": "loc_manila", "label": "Manila, Philippines", "type": "city",
+     "priority": "medium", "work_type_override": "any", "radius_miles": 30,
+     "country_code": "PH", "admin1": "NCR", "city": "Manila", "zip": "",
+     "lat": 14.5995, "lng": 120.9842,
+     "is_special": False, "special_kind": None, "enabled": True, "can_delete": True},
+    {"id": "loc_ph", "label": "Philippines", "type": "country",
+     "priority": "medium", "work_type_override": "any", "radius_miles": 0,
+     "country_code": "PH", "admin1": "", "city": "", "zip": "",
+     "lat": 12.8797, "lng": 121.7740,
+     "is_special": False, "special_kind": None, "enabled": True, "can_delete": True},
+    {"id": "loc_brussels", "label": "Brussels, Belgium", "type": "city",
+     "priority": "medium", "work_type_override": "any", "radius_miles": 20,
+     "country_code": "BE", "admin1": "Brussels-Capital", "city": "Brussels", "zip": "",
+     "lat": 50.8503, "lng": 4.3517,
+     "is_special": False, "special_kind": None, "enabled": True, "can_delete": True},
+    {"id": "loc_dc_metro", "label": "Washington DC Metro Area", "type": "region",
+     "priority": "medium", "work_type_override": "any", "radius_miles": 40,
+     "country_code": "US", "admin1": "DC", "city": "Washington", "zip": "",
+     "lat": 38.9072, "lng": -77.0369,
+     "is_special": False, "special_kind": None, "enabled": True, "can_delete": True},
+    # Low priority
+    {"id": "loc_nyc", "label": "New York City, New York, USA", "type": "city",
+     "priority": "low", "work_type_override": "hybrid_remote", "radius_miles": 25,
+     "country_code": "US", "admin1": "NY", "city": "New York", "zip": "",
+     "lat": 40.7128, "lng": -74.0060,
+     "is_special": False, "special_kind": None, "enabled": True, "can_delete": True},
+    {"id": "loc_southeast_us", "label": "Southeast USA", "type": "region",
+     "priority": "low", "work_type_override": "any", "radius_miles": 0,
+     "country_code": "US", "admin1": "GA,FL,AL,TN,SC,NC", "city": "", "zip": "",
+     "lat": 0.0, "lng": 0.0,
+     "is_special": False, "special_kind": None, "enabled": True, "can_delete": True},
+    {"id": "loc_special_international", "label": "International Assignment", "type": "special",
+     "priority": "high", "work_type_override": "any", "radius_miles": 0,
+     "country_code": "", "admin1": "", "city": "", "zip": "",
+     "lat": 0.0, "lng": 0.0, "min_salary_override": 90000,
+     "is_special": True, "special_kind": "international", "enabled": True, "can_delete": False},
+    {"id": "loc_special_flexible", "label": "Flexible or Negotiable", "type": "special",
+     "priority": "high", "work_type_override": "any", "radius_miles": 0,
+     "country_code": "", "admin1": "", "city": "", "zip": "",
+     "lat": 0.0, "lng": 0.0,
+     "is_special": True, "special_kind": "flexible", "enabled": True, "can_delete": False},
 ]
 
 DEFAULT_ROLES = [
@@ -310,6 +371,16 @@ class SourceUpdateBody(BaseModel):
     paused: Optional[bool] = None
 
 
+class AutocompleteBody(BaseModel):
+    query: str = Field(..., min_length=1)
+    session_token: Optional[str] = None
+
+
+class PlaceDetailsBody(BaseModel):
+    place_id: str
+    session_token: Optional[str] = None
+
+
 # ============================================================
 # Ranking Engine
 # ============================================================
@@ -331,6 +402,13 @@ async def rank_jobs(db, user_id: str, profile: Dict[str, Any]) -> Dict[str, Any]
     location_labels = [loc.get("label", "").lower() for loc in (profile.get("locations") or [])]
     location_prio = {loc.get("label", "").lower(): loc.get("priority", "low")
                      for loc in (profile.get("locations") or [])}
+    # New v2 location entries — enabled only
+    locations_v2 = [loc for loc in (profile.get("locations") or [])
+                    if isinstance(loc, dict) and loc.get("enabled", True)]
+    # Special entries
+    has_special_remote = any(loc.get("special_kind") == "remote" for loc in locations_v2)
+    has_special_intl = any(loc.get("special_kind") == "international" for loc in locations_v2)
+    has_special_flexible = any(loc.get("special_kind") == "flexible" for loc in locations_v2)
     work_types = set(profile.get("work_types") or ["remote", "hybrid", "on_site"])
 
     # Watch list employer names (fuzzy)
@@ -383,13 +461,66 @@ async def rank_jobs(db, user_id: str, profile: Dict[str, Any]) -> Dict[str, Any]
         f_posted = _normalize(30 - min(days, 30), 0, 30)
         f_location = 0.3
         job_loc = (d.get("location") or "").lower()
-        for lbl in location_labels:
-            if lbl and (lbl in job_loc or any(w in job_loc for w in lbl.split())):
-                f_location = prio_val.get(location_prio.get(lbl, "low"), 0.3)
-                break
-        if d.get("location_type") == "remote" and "remote (work from anywhere)" in location_labels:
+        job_lat = d.get("lat") or 0.0
+        job_lng = d.get("lng") or 0.0
+        # New v2 matching: radius + type + admin1
+        best_prio_val = 0.0
+        for loc in locations_v2:
+            if loc.get("is_special"):
+                continue
+            lbl = (loc.get("label") or "").lower()
+            prio = prio_val.get(loc.get("priority", "low"), 0.3)
+            ltype = loc.get("type", "")
+            matched = False
+            # Radius match for city/zip when we have coordinates
+            if ltype in ("city", "zip") and job_lat and job_lng and loc.get("lat") and loc.get("lng"):
+                try:
+                    from geo_data import haversine_miles  # local import
+                    dist = haversine_miles(job_lat, job_lng, loc["lat"], loc["lng"])
+                    if dist <= max(5, int(loc.get("radius_miles") or 25)):
+                        matched = True
+                except Exception:
+                    pass
+            # Label substring fallback (job_loc string match)
+            if not matched and lbl and any(part.strip() and part.strip() in job_loc
+                                           for part in lbl.split(",")):
+                matched = True
+            # Country / state / region: match code or name
+            if not matched and ltype in ("country", "state", "region"):
+                cc = (loc.get("country_code") or "").lower()
+                a1 = (loc.get("admin1") or "").lower()
+                if cc and cc in job_loc:
+                    matched = True
+                elif a1 and a1 in job_loc:
+                    matched = True
+                elif "southeast usa" in lbl and any(s in job_loc for s in
+                                                    ("ga", "fl", "al", "tn", "sc", "nc",
+                                                     "georgia", "florida", "alabama",
+                                                     "tennessee", "carolina")):
+                    matched = True
+            if matched and prio > best_prio_val:
+                best_prio_val = prio
+        # Special entries
+        loc_type_lower = (d.get("location_type") or "").lower()
+        if has_special_remote and loc_type_lower == "remote":
+            best_prio_val = max(best_prio_val, prio_val.get("high", 0.85))
+        if has_special_intl and ("international" in job_loc or "various" in job_loc
+                                 or loc_type_lower == "international"):
+            best_prio_val = max(best_prio_val, prio_val.get("high", 0.85))
+        if has_special_flexible and ("flexible" in job_loc or "negotiable" in job_loc):
+            best_prio_val = max(best_prio_val, prio_val.get("high", 0.85))
+        # Legacy fallback (string labels only)
+        if best_prio_val == 0.0:
+            for lbl in location_labels:
+                if lbl and (lbl in job_loc or any(w in job_loc for w in lbl.split())):
+                    best_prio_val = prio_val.get(location_prio.get(lbl, "low"), 0.3)
+                    break
+        f_location = best_prio_val if best_prio_val > 0 else 0.3
+        outside_preferences = best_prio_val == 0.0
+        if loc_type_lower == "remote" and "remote (work from anywhere)" in location_labels:
             f_location = max(f_location, prio_val.get(
                 location_prio.get("remote (work from anywhere)", "low"), 0.3))
+            outside_preferences = False
         f_work_type = 1.0 if d.get("location_type") in work_types else 0.3
         f_sector = prio_val.get(sector_priority.get(et, "low"), 0.3)
         emp_low = (d.get("employer") or "").lower()
@@ -418,6 +549,7 @@ async def rank_jobs(db, user_id: str, profile: Dict[str, Any]) -> Dict[str, Any]
         d["rank_score"] = round(rank_score, 2)
         d["watch_list_hit"] = bool(watch_hit)
         d["watch_list_priority"] = watch_hit
+        d["location_outside_preferences"] = outside_preferences
         d["rank_breakdown"] = {
             "match": round(f_match * weights.get("match_score", 10), 1),
             "salary": round(f_salary * weights.get("salary", 8), 1),
@@ -439,6 +571,7 @@ async def rank_jobs(db, user_id: str, profile: Dict[str, Any]) -> Dict[str, Any]
             {"job_id": j["job_id"]},
             {"$set": {"rank_score": j["rank_score"], "rank_position": i,
                       "watch_list_hit": j["watch_list_hit"],
+                      "location_outside_preferences": j.get("location_outside_preferences", False),
                       "rank_breakdown": j["rank_breakdown"]}},
         )
 
@@ -462,6 +595,26 @@ def make_router(db, get_current_user_id):
                     "created_at": _now_iso(), "last_modified": _now_iso(),
                     "last_applied": _now_iso() if p.get("is_active") else None,
                 })
+            return
+        # Migration: upgrade legacy string-labeled locations to full location objects
+        docs = await db.job_filter_profiles.find(
+            {"user_id": user_id}, {"_id": 0, "profile_id": 1, "locations": 1}
+        ).to_list(50)
+        for d in docs:
+            locs = d.get("locations") or []
+            # Detect legacy: no "id" field OR missing new schema fields
+            needs_migration = any(
+                not isinstance(loc, dict) or "id" not in loc or "work_type_override" not in loc
+                for loc in locs
+            )
+            if not needs_migration:
+                continue
+            # Replace with fresh seed of new DEFAULT_LOCATIONS
+            await db.job_filter_profiles.update_one(
+                {"user_id": user_id, "profile_id": d["profile_id"]},
+                {"$set": {"locations": [dict(x) for x in DEFAULT_LOCATIONS],
+                          "last_modified": _now_iso()}},
+            )
 
     @r.get("/profiles")
     async def list_profiles(user_id: str = Depends(get_current_user_id)):
@@ -654,6 +807,216 @@ def make_router(db, get_current_user_id):
             {"user_id": user_id}, {"_id": 0}
         ).sort("ran_at", -1).limit(50).to_list(50)
         return {"log": docs}
+
+    # ================================================================
+    # GEO — Location autocomplete + Country reference
+    # ================================================================
+    from geo_data import (  # noqa: E402  (local import to keep module cohesive)
+        COUNTRIES, REGION_LABELS, REGION_ORDER, group_countries, local_fuzzy_search,
+    )
+    import os  # noqa: E402
+    import httpx  # noqa: E402
+
+    GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
+
+    @r.get("/geo/countries")
+    async def geo_countries(user_id: str = Depends(get_current_user_id)):
+        """Return all countries grouped by region."""
+        _ = user_id  # auth-only
+        return {
+            "regions": REGION_ORDER,
+            "region_labels": REGION_LABELS,
+            "groups": group_countries(),
+            "total": len(COUNTRIES),
+        }
+
+    @r.post("/geo/autocomplete")
+    async def geo_autocomplete(body: AutocompleteBody = Body(...),
+                               user_id: str = Depends(get_current_user_id)):
+        """Google Places Autocomplete proxy — returns country/state/city/zip
+        suggestions with structured metadata."""
+        _ = user_id
+        q = body.query.strip()
+        if not q:
+            return {"predictions": []}
+        preds: List[Dict[str, Any]] = []
+        google_error: Optional[str] = None
+        # ---- Attempt 1: Google Places legacy autocomplete ----
+        if GOOGLE_MAPS_API_KEY:
+            url = "https://maps.googleapis.com/maps/api/place/autocomplete/json"
+            params = {"input": q, "types": "geocode", "key": GOOGLE_MAPS_API_KEY}
+            if body.session_token:
+                params["sessiontoken"] = body.session_token
+            try:
+                async with httpx.AsyncClient(timeout=8.0) as client:
+                    resp = await client.get(url, params=params)
+                    data = resp.json()
+                status = data.get("status", "")
+                if status == "OK":
+                    for p in data.get("predictions", []) or []:
+                        types_list = p.get("types") or []
+                        entry_type = "city"
+                        if "country" in types_list:
+                            entry_type = "country"
+                        elif ("administrative_area_level_1" in types_list
+                              or "administrative_area_level_2" in types_list) and "locality" not in types_list:
+                            entry_type = "state"
+                        elif "postal_code" in types_list:
+                            entry_type = "zip"
+                        elif "locality" in types_list:
+                            entry_type = "city"
+                        struct = p.get("structured_formatting") or {}
+                        preds.append({
+                            "place_id": p.get("place_id", ""),
+                            "text": p.get("description", ""),
+                            "main_text": struct.get("main_text", ""),
+                            "secondary_text": struct.get("secondary_text", ""),
+                            "types": types_list,
+                            "entry_type": entry_type,
+                            "source": "google",
+                        })
+                elif status not in ("ZERO_RESULTS",):
+                    google_error = data.get("error_message") or status
+                    logger.info("Google Places status=%s falling back to OSM", status)
+            except Exception as e:
+                google_error = str(e)
+                logger.warning("Places autocomplete failed: %s", e)
+        # ---- Fallback: Nominatim (OpenStreetMap) — free, no key required ----
+        if not preds:
+            try:
+                async with httpx.AsyncClient(timeout=8.0) as client:
+                    resp = await client.get(
+                        "https://nominatim.openstreetmap.org/search",
+                        params={
+                            "q": q, "format": "json", "addressdetails": 1,
+                            "limit": 10,
+                        },
+                        headers={"User-Agent": "PLOS-Career/1.0 (personal-life-os)"},
+                    )
+                    resp.raise_for_status()
+                    items = resp.json() or []
+                for it in items:
+                    addr = it.get("address") or {}
+                    otype = it.get("type") or it.get("class") or ""
+                    entry_type = "city"
+                    if otype in ("country",):
+                        entry_type = "country"
+                    elif otype in ("state", "region", "administrative"):
+                        entry_type = "state"
+                    elif otype in ("postcode",):
+                        entry_type = "zip"
+                    elif otype in ("city", "town", "village", "hamlet", "municipality"):
+                        entry_type = "city"
+                    # main_text / secondary_text approximations
+                    main_text = (
+                        addr.get("city") or addr.get("town") or addr.get("village")
+                        or addr.get("state") or addr.get("country") or it.get("name") or ""
+                    ) or it.get("display_name", "").split(",")[0]
+                    display = it.get("display_name") or ""
+                    secondary_text = ", ".join(display.split(",")[1:4]).strip()
+                    preds.append({
+                        "place_id": f"osm:{it.get('osm_type','')}:{it.get('osm_id','')}",
+                        "text": display,
+                        "main_text": main_text,
+                        "secondary_text": secondary_text,
+                        "types": [otype] if otype else [],
+                        "entry_type": entry_type,
+                        "source": "osm",
+                        # Extra data so /place-details can be skipped
+                        "lat": float(it.get("lat", 0.0) or 0.0),
+                        "lng": float(it.get("lon", 0.0) or 0.0),
+                        "country_code": (addr.get("country_code") or "").upper(),
+                        "country_name": addr.get("country") or "",
+                        "admin1": addr.get("state") or "",
+                        "city": (addr.get("city") or addr.get("town")
+                                 or addr.get("village") or ""),
+                        "zip": addr.get("postcode") or "",
+                    })
+            except Exception as e:
+                logger.warning("OSM autocomplete failed: %s", e)
+        # ---- Final fallback: local fuzzy search over countries + states + major cities ----
+        if not preds:
+            for entry in local_fuzzy_search(q, limit=12):
+                preds.append(entry)
+        return {
+            "predictions": preds,
+            "google_error": google_error,
+            "used_source": (preds[0]["source"] if preds else None),
+        }
+
+    class PlaceDetailsBody_local(BaseModel):  # noqa: N801 - not used at runtime
+        place_id: str
+        session_token: Optional[str] = None
+    del PlaceDetailsBody_local
+
+    @r.post("/geo/place-details")
+    async def geo_place_details(body: PlaceDetailsBody = Body(...),
+                                user_id: str = Depends(get_current_user_id)):
+        """Resolve a place_id → structured location fields (name, country,
+        admin1, city, zip, lat, lng)."""
+        _ = user_id
+        if not GOOGLE_MAPS_API_KEY:
+            raise HTTPException(503, "GOOGLE_MAPS_API_KEY not configured")
+        url = f"https://places.googleapis.com/v1/places/{body.place_id}"
+        headers = {
+            "X-Goog-Api-Key": GOOGLE_MAPS_API_KEY,
+            "X-Goog-FieldMask": (
+                "id,displayName,formattedAddress,addressComponents,"
+                "location,types,shortFormattedAddress"
+            ),
+        }
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                resp = await client.get(url, headers=headers)
+                resp.raise_for_status()
+                data = resp.json()
+        except Exception as e:
+            logger.warning("Places details failed: %s", e)
+            raise HTTPException(502, f"Places details failed: {e}") from e
+        # Parse address components
+        country_code = ""
+        country_name = ""
+        admin1 = ""
+        city = ""
+        zip_code = ""
+        for comp in data.get("addressComponents", []) or []:
+            comp_types = comp.get("types") or []
+            long_text = comp.get("longText", "")
+            short_text = comp.get("shortText", "")
+            if "country" in comp_types:
+                country_name = long_text
+                country_code = short_text
+            elif "administrative_area_level_1" in comp_types:
+                admin1 = short_text or long_text
+            elif "locality" in comp_types and not city:
+                city = long_text
+            elif "administrative_area_level_2" in comp_types and not city:
+                city = long_text
+            elif "postal_code" in comp_types:
+                zip_code = long_text
+        loc = data.get("location") or {}
+        types_list = data.get("types") or []
+        entry_type = "city"
+        if "country" in types_list:
+            entry_type = "country"
+        elif "administrative_area_level_1" in types_list:
+            entry_type = "state"
+        elif "postal_code" in types_list:
+            entry_type = "zip"
+        display = (data.get("displayName") or {}).get("text") or data.get("formattedAddress") or ""
+        return {
+            "place_id": data.get("id", body.place_id),
+            "label": data.get("formattedAddress") or display,
+            "display_name": display,
+            "entry_type": entry_type,
+            "country_code": country_code,
+            "country_name": country_name,
+            "admin1": admin1,
+            "city": city,
+            "zip": zip_code,
+            "lat": loc.get("latitude", 0.0),
+            "lng": loc.get("longitude", 0.0),
+        }
 
     # ---------------- Explicit re-rank endpoint ----------------
     @r.post("/rank/refresh")

@@ -1158,6 +1158,25 @@ export const jobIntelApi = {
 // ================================================================
 // Career Preferences (Filter Profiles + Watch List + Source Config)
 // ================================================================
+export type LocationEntry = {
+  id: string;
+  label: string;
+  type: "country" | "state" | "city" | "zip" | "region" | "special";
+  priority: "high" | "medium" | "low";
+  work_type_override: "any" | "on_site" | "hybrid" | "remote" | "on_site_hybrid" | "hybrid_remote";
+  radius_miles: number;
+  country_code: string;
+  admin1: string;
+  city: string;
+  zip: string;
+  lat: number;
+  lng: number;
+  is_special: boolean;
+  special_kind?: "remote" | "international" | "flexible" | null;
+  enabled: boolean;
+  can_delete: boolean;
+  min_salary_override?: number;
+};
 export type FilterProfile = {
   profile_id: string;
   profile_name: string;
@@ -1166,7 +1185,7 @@ export type FilterProfile = {
   target_roles: string[];
   excluded_keywords: string[];
   sectors: { name: string; id: string; priority: string; enabled: boolean }[];
-  locations: { label: string; type: string; priority: string }[];
+  locations: LocationEntry[];
   work_types: string[];
   min_salary: number;
   max_salary?: number | null;
@@ -1233,5 +1252,55 @@ export const careerPrefsApi = {
 
   activityLog: () => request<{ log: any[] }>("/career/preferences/activity-log"),
   rankRefresh: () => request<any>("/career/preferences/rank/refresh", { method: "POST" }),
+
+  // ---- Geo (location search) ----
+  countries: () => request<{
+    regions: string[];
+    region_labels: Record<string, string>;
+    groups: Record<string, { code: string; name: string; region: string }[]>;
+    total: number;
+  }>("/career/preferences/geo/countries"),
+  autocomplete: (query: string, sessionToken?: string) =>
+    request<{
+      predictions: {
+        place_id: string;
+        text: string;
+        main_text: string;
+        secondary_text: string;
+        types: string[];
+        entry_type: "country" | "state" | "city" | "zip" | "region";
+        source?: string;
+        // Local-source predictions carry structured fields inline:
+        country_code?: string;
+        country_name?: string;
+        admin1?: string;
+        city?: string;
+        zip?: string;
+        lat?: number;
+        lng?: number;
+      }[];
+      used_source?: string;
+      google_error?: string;
+    }>("/career/preferences/geo/autocomplete", {
+      method: "POST",
+      body: { query, session_token: sessionToken },
+    }),
+  placeDetails: (place_id: string, sessionToken?: string) =>
+    request<{
+      place_id: string;
+      label: string;
+      display_name: string;
+      entry_type: string;
+      country_code: string;
+      country_name: string;
+      admin1: string;
+      city: string;
+      zip: string;
+      lat: number;
+      lng: number;
+    }>("/career/preferences/geo/place-details", {
+      method: "POST",
+      body: { place_id, session_token: sessionToken },
+    }),
 };
 

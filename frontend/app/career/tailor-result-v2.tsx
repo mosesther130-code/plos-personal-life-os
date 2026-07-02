@@ -13,6 +13,7 @@ import {
 } from "lucide-react-native";
 import { careerLibraryApi, TailorVersion } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
+import { downloadBase64Pdf } from "@/src/lib/pdf-download";
 import Svg, { Circle } from "react-native-svg";
 
 function GaugeRing({ score, size = 96, color, label }: { score: number; size?: number; color: string; label: string }) {
@@ -90,7 +91,10 @@ export default function TailorResultsV2() {
     if (!v) return;
     try {
       const d = await careerLibraryApi.download(v.version_id, "combined", fmt);
-      Alert.alert("Ready", `${d.filename} generated. Use system share to save.`);
+      const res = await downloadBase64Pdf(d.content_b64, d.filename, d.mime);
+      if (!res.ok) {
+        Alert.alert("Download failed", res.error || "Unknown error");
+      }
     } catch (e: any) { Alert.alert("Download failed", String(e?.message || e)); }
   }
 
