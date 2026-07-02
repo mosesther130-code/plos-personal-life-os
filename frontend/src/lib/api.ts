@@ -1037,6 +1037,10 @@ export const careerLibraryApi = {
     request<{ ok: boolean }>(`/career/library/jds/${jd_id}`, {
       method: "DELETE",
     }),
+  downloadJd: (jd_id: string) =>
+    request<{ file_name: string; file_type: string; content_b64: string }>(
+      `/career/library/jds/${jd_id}/download`
+    ),
 
   // Tailoring
   generate: (b: {

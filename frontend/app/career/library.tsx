@@ -4,11 +4,13 @@ import React, { useCallback, useEffect, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, Alert, TextInput, Modal, Pressable, RefreshControl,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
 import {
   Upload, FileText, Star, Trash2, Download, Sparkles, ChevronRight,
   Briefcase, Edit3, ClipboardPaste, Wand2, TriangleAlert, Plus,
@@ -16,7 +18,78 @@ import {
 import { careerLibraryApi, LibResume, LibJd, TailorVersion } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
 
+// Cross-platform confirm dialog.  react-native-web's Alert.alert does not
+// render buttons in a functional way — pressing Delete simply no-ops.  Use
+// window.confirm on web, native Alert on iOS/Android.
+function confirmAsync(title: string, message: string, destructive = false): Promise<boolean> {
+  if (Platform.OS === "web") {
+    const ok = typeof window !== "undefined" && typeof window.confirm === "function"
+      ? window.confirm(`${title}\n\n${message}`)
+      : false;
+    return Promise.resolve(ok);
+  }
+  return new Promise((resolve) => {
+    Alert.alert(
+      title,
+      message,
+      [
+        { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+        { text: destructive ? "Delete" : "OK", style: destructive ? "destructive" : "default", onPress: () => resolve(true) },
+      ],
+      { cancelable: true, onDismiss: () => resolve(false) }
+    );
+  });
+}
+
 const MAX_MB = 5;
+
+function mimeFor(ft: string): string {
+  const k = (ft || "").toLowerCase();
+  if (k === "pdf") return "application/pdf";
+  if (k === "docx") return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  if (k === "doc") return "application/msword";
+  if (k === "txt") return "text/plain";
+  return "application/octet-stream";
+}
+
+// Cross-platform download of a base64 payload.
+// - Web: builds a Blob and triggers <a download>.
+// - Native: writes to cache dir and opens Share sheet via expo-sharing.
+async function saveBase64ToDevice(fileName: string, fileType: string, b64: string): Promise<void> {
+  const mime = mimeFor(fileType);
+  if (Platform.OS === "web") {
+    // Decode base64 → bytes → Blob
+    const bin = atob(b64);
+    const len = bin.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+    const blob = new Blob([bytes], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName || `download.${fileType || "bin"}`;
+    document.body.appendChild(a);
+    a.click();
+    // Cleanup
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 500);
+    return;
+  }
+  // Native: write to cache dir, then share
+  const safeName = (fileName || `download.${fileType || "bin"}`).replace(/[^\w.\-]/g, "_");
+  const path = `${FileSystem.cacheDirectory}${safeName}`;
+  await FileSystem.writeAsStringAsync(path, b64, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+  const canShare = await Sharing.isAvailableAsync();
+  if (canShare) {
+    await Sharing.shareAsync(path, { mimeType: mime, dialogTitle: `Save ${safeName}` });
+  } else {
+    Alert.alert("Saved", `Saved to ${path}`);
+  }
+}
 
 function fmtDate(iso?: string | null): string {
   if (!iso) return "—";
@@ -76,6 +149,43 @@ export default function CareerLibraryScreen() {
     })();
   }, [loadAll]);
 
+  async function readAsBase64(uri: string, webFile?: File | null): Promise<string> {
+    // Web: DocumentPicker gives us the File in asset.file — use FileReader
+    if (webFile) {
+      return await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          // strip "data:...;base64," prefix
+          const idx = result.indexOf(",");
+          resolve(idx >= 0 ? result.slice(idx + 1) : result);
+        };
+        reader.onerror = () => reject(new Error("FileReader failed"));
+        reader.readAsDataURL(webFile);
+      });
+    }
+    // Native: read directly by URI
+    try {
+      return await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+    } catch {
+      // Fallback: fetch → blob → base64 (works on both web and native)
+      const resp = await fetch(uri);
+      const blob = await resp.blob();
+      return await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          const idx = result.indexOf(",");
+          resolve(idx >= 0 ? result.slice(idx + 1) : result);
+        };
+        reader.onerror = () => reject(new Error("blob FileReader failed"));
+        reader.readAsDataURL(blob);
+      });
+    }
+  }
+
   async function pickAndUpload(kind: "resume" | "jd") {
     try {
       const res = await DocumentPicker.getDocumentAsync({
@@ -101,9 +211,9 @@ export default function CareerLibraryScreen() {
         Alert.alert("Too large", `Max ${MAX_MB} MB.`);
         return;
       }
-      const b64 = await FileSystem.readAsStringAsync(asset.uri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
+      // Cross-platform base64 read (works on iOS/Android/Web)
+      const webFile: File | null = (asset as any).file || null;
+      const b64 = await readAsBase64(asset.uri, webFile);
       if (kind === "resume") {
         setUploading(true);
         await careerLibraryApi.uploadResume({
@@ -118,6 +228,7 @@ export default function CareerLibraryScreen() {
       await loadAll();
     } catch (e: any) {
       Alert.alert("Upload failed", String(e?.message || e));
+      console.warn("Upload error:", e);
     } finally {
       setUploading(false); setUploadingJd(false);
     }
@@ -133,43 +244,29 @@ export default function CareerLibraryScreen() {
   }
 
   async function deleteResume(id: string, name: string) {
-    Alert.alert(
-      "Delete resume?", `Remove "${name}" from your library?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete", style: "destructive",
-          onPress: async () => {
-            try {
-              await careerLibraryApi.deleteResume(id);
-              await loadAll();
-            } catch (e: any) {
-              Alert.alert("Failed", String(e?.message || e));
-            }
-          },
-        },
-      ]
-    );
+    const ok = await confirmAsync("Delete resume?", `Remove "${name}" from your library?`, true);
+    if (!ok) return;
+    try {
+      await careerLibraryApi.deleteResume(id);
+      await loadAll();
+    } catch (e: any) {
+      Alert.alert("Failed", String(e?.message || e));
+    }
   }
 
   async function deleteJd(id: string, title: string) {
-    Alert.alert(
-      "Delete job description?", `Remove "${title}" from your library?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete", style: "destructive",
-          onPress: async () => {
-            try {
-              await careerLibraryApi.deleteJd(id);
-              await loadAll();
-            } catch (e: any) {
-              Alert.alert("Failed", String(e?.message || e));
-            }
-          },
-        },
-      ]
+    const ok = await confirmAsync(
+      "Delete job description?",
+      `Remove "${title}" from your library?\n\nTailoring history for this JD will be preserved.`,
+      true,
     );
+    if (!ok) return;
+    try {
+      await careerLibraryApi.deleteJd(id);
+      await loadAll();
+    } catch (e: any) {
+      Alert.alert("Failed", String(e?.message || e));
+    }
   }
 
   async function saveLabel() {
@@ -188,10 +285,23 @@ export default function CareerLibraryScreen() {
   async function downloadOrigResume(r: LibResume) {
     try {
       const d = await careerLibraryApi.downloadResume(r.resume_id);
-      Alert.alert("Download ready", `${d.file_name} (${d.file_type.toUpperCase()}) — Use the Share sheet to save.`);
-      // TODO: expo-sharing native share
+      await saveBase64ToDevice(d.file_name || r.file_name, d.file_type || r.file_type, d.content_b64);
+      if (Platform.OS === "web") {
+        // Web triggers a native browser download automatically — no alert needed.
+      } else {
+        // On native the share sheet already opens; nothing more to do.
+      }
     } catch (e: any) {
-      Alert.alert("Failed", String(e?.message || e));
+      Alert.alert("Download failed", String(e?.message || e));
+    }
+  }
+
+  async function downloadOrigJd(j: LibJd) {
+    try {
+      const d = await careerLibraryApi.downloadJd(j.jd_id);
+      await saveBase64ToDevice(d.file_name, d.file_type, d.content_b64);
+    } catch (e: any) {
+      Alert.alert("Download failed", String(e?.message || e));
     }
   }
 
@@ -416,6 +526,14 @@ export default function CareerLibraryScreen() {
                   >
                     <Wand2 size={12} color="#fff" />
                     <Text style={styles.actTextPrimary}>Tailor Resume</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.actBtn}
+                    onPress={() => downloadOrigJd(j)}
+                    testID={`download-jd-${j.jd_id}`}
+                  >
+                    <Download size={12} color={colors.primaryGlow} />
+                    <Text style={styles.actText}>Download</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.actBtnDanger}

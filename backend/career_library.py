@@ -520,6 +520,7 @@ def make_router(db, get_current_user_id, emergent_llm_key, llm_chat_cls, user_ms
             "posting_url": "",
             "file_name": body.file_name.strip(),
             "file_type": ft,
+            "file_data": body.file_data_b64,
             "extracted_text": text,
             "word_count": wc,
             "source": "upload",
@@ -560,6 +561,36 @@ def make_router(db, get_current_user_id, emergent_llm_key, llm_chat_cls, user_ms
         if res.deleted_count == 0:
             raise HTTPException(404, "Job description not found")
         return {"ok": True}
+
+    @r.get("/library/jds/{jd_id}/download")
+    async def download_jd(jd_id: str, user_id: str = Depends(get_current_user_id)):
+        doc = await db.job_descriptions.find_one(
+            {"user_id": user_id, "jd_id": jd_id}, {"_id": 0}
+        )
+        if not doc:
+            raise HTTPException(404, "Job description not found")
+        ft = (doc.get("file_type") or "txt").lower()
+        file_data = doc.get("file_data") or ""
+        # If original file bytes are present, return them.  Otherwise fall
+        # back to serving the extracted text as a UTF-8 .txt so the user
+        # still has *something* to download.
+        if file_data and ft in ("pdf", "docx", "doc"):
+            file_name = doc.get("file_name") or f"{jd_id}.{ft}"
+            return {
+                "file_name": file_name,
+                "file_type": ft,
+                "content_b64": file_data,
+            }
+        # Manual JDs / txt fallback
+        raw_text = (doc.get("extracted_text") or "").encode("utf-8")
+        title = (doc.get("job_title") or "job_description").strip()
+        safe_title = "".join(c if c.isalnum() or c in ("-", "_") else "_"
+                             for c in title)[:60] or "job_description"
+        return {
+            "file_name": f"{safe_title}.txt",
+            "file_type": "txt",
+            "content_b64": base64.b64encode(raw_text).decode("ascii"),
+        }
 
     # ------------------------------------------------------------------
     # TAILORING ENGINE — new schema
