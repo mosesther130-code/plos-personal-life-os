@@ -1048,7 +1048,8 @@ export const careerLibraryApi = {
   // Tailoring
   generate: (b: {
     resume_id: string;
-    jd_id: string;
+    jd_id?: string;
+    job_id?: string;
     ats_optimize?: boolean;
     generate_cover_letter?: boolean;
     generate_interview_questions?: boolean;

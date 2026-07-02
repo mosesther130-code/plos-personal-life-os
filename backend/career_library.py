@@ -125,7 +125,8 @@ class JdManualBody(BaseModel):
 
 class TailorGenerateBody(BaseModel):
     resume_id: str
-    jd_id: str
+    jd_id: Optional[str] = None
+    job_id: Optional[str] = None  # verified job from the Jobs Feed
     ats_optimize: bool = True
     generate_cover_letter: bool = True
     generate_interview_questions: bool = True
@@ -676,11 +677,47 @@ Return ONLY valid JSON with no preamble, no explanation, no markdown code fences
         )
         if not resume:
             raise HTTPException(404, "Resume not found")
-        jd = await db.job_descriptions.find_one(
-            {"user_id": user_id, "jd_id": body.jd_id}, {"_id": 0}
-        )
-        if not jd:
-            raise HTTPException(404, "Job description not found")
+
+        # Build the JD dict. Two paths:
+        #   (a) jd_id  → look up the JD in the user's library (manual add / upload)
+        #   (b) job_id → pull directly from the verified Jobs Feed (no manual JD required)
+        jd: Optional[Dict[str, Any]] = None
+        jd_source_job_id: Optional[str] = None
+        if body.jd_id:
+            jd = await db.job_descriptions.find_one(
+                {"user_id": user_id, "jd_id": body.jd_id}, {"_id": 0}
+            )
+            if not jd:
+                raise HTTPException(404, "Job description not found")
+        elif body.job_id:
+            job = await db.jobs_feed.find_one({"job_id": body.job_id}, {"_id": 0})
+            if not job:
+                raise HTTPException(404, "Verified job not found in the feed")
+            desc_text = (
+                job.get("job_description_text")
+                or job.get("description")
+                or ""
+            ).strip()
+            if len(desc_text) < 40:
+                raise HTTPException(
+                    400,
+                    "This verified job doesn't include a full description. "
+                    "Add it manually via Job Description library instead.",
+                )
+            jd = {
+                # Ephemeral JD — not stored in job_descriptions library
+                "jd_id": f"job_feed:{job.get('job_id')}",
+                "job_title": job.get("job_title", ""),
+                "employer": job.get("employer", ""),
+                "extracted_text": desc_text,
+                "posting_url": job.get("apply_url", "") or job.get("source_url", ""),
+                "source": "job_feed",
+                "match_scores": {},
+                "keyword_analysis": {},
+            }
+            jd_source_job_id = job.get("job_id")
+        else:
+            raise HTTPException(400, "Provide either jd_id (from library) or job_id (from feed).")
 
         result = await _do_tailor(user_id, resume, jd)
 
@@ -692,6 +729,8 @@ Return ONLY valid JSON with no preamble, no explanation, no markdown code fences
             "base_resume_id": resume["resume_id"],
             "base_resume_label": resume.get("label") or resume.get("file_name"),
             "jd_id": jd["jd_id"],
+            "jd_source": jd.get("source", "library"),
+            "source_job_id": jd_source_job_id,
             "job_title": jd.get("job_title", ""),
             "employer": jd.get("employer", ""),
             "generated_date": now,
@@ -710,19 +749,35 @@ Return ONLY valid JSON with no preamble, no explanation, no markdown code fences
             {"user_id": user_id, "resume_id": resume["resume_id"]},
             {"$set": {"last_tailored": now}},
         )
-        # Cache match_score & keyword analysis on JD keyed by resume
-        await db.job_descriptions.update_one(
-            {"user_id": user_id, "jd_id": jd["jd_id"]},
-            {"$set": {
-                f"match_scores.{resume['resume_id']}": result["match_score"],
-                f"keyword_analysis.{resume['resume_id']}": {
-                    "found": result["keywords_found"],
-                    "added": result["keywords_added"],
-                    "missing": result["keywords_missing"],
-                    "ats_score_after": result["ats_score_after"],
-                },
-            }},
-        )
+        # Cache match_score & keyword analysis on the JD collection when
+        # library-sourced. Feed-sourced JDs go onto the jobs_feed doc instead.
+        if body.jd_id:
+            await db.job_descriptions.update_one(
+                {"user_id": user_id, "jd_id": jd["jd_id"]},
+                {"$set": {
+                    f"match_scores.{resume['resume_id']}": result["match_score"],
+                    f"keyword_analysis.{resume['resume_id']}": {
+                        "found": result["keywords_found"],
+                        "added": result["keywords_added"],
+                        "missing": result["keywords_missing"],
+                        "ats_score_after": result["ats_score_after"],
+                    },
+                }},
+            )
+        elif jd_source_job_id:
+            await db.jobs_feed.update_one(
+                {"job_id": jd_source_job_id},
+                {"$set": {
+                    f"match_scores.{resume['resume_id']}": result["match_score"],
+                    f"keyword_analysis.{resume['resume_id']}": {
+                        "found": result["keywords_found"],
+                        "added": result["keywords_added"],
+                        "missing": result["keywords_missing"],
+                        "ats_score_after": result["ats_score_after"],
+                    },
+                    "last_tailored_at": now,
+                }},
+            )
 
         # Optional email
         email_status = None

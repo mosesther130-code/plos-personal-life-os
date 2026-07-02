@@ -11,7 +11,7 @@ import {
   ChevronLeft, Sparkles, FileText, Briefcase, Circle, CheckCircle2, Star,
   Wand2, Loader,
 } from "lucide-react-native";
-import { careerLibraryApi, LibResume, LibJd } from "@/src/lib/api";
+import { careerLibraryApi, jobIntelApi, LibResume, LibJd } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
 
 const LOADING_MESSAGES = [
@@ -28,12 +28,15 @@ const LOADING_MESSAGES = [
 
 export default function TailorModal() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ resume_id?: string; jd_id?: string }>();
+  const params = useLocalSearchParams<{ resume_id?: string; jd_id?: string; job_id?: string }>();
   const [loading, setLoading] = useState(true);
   const [resumes, setResumes] = useState<LibResume[]>([]);
   const [jds, setJds] = useState<LibJd[]>([]);
   const [selectedResumeId, setSelectedResumeId] = useState<string | null>(null);
   const [selectedJdId, setSelectedJdId] = useState<string | null>(null);
+  // Verified job direct from the feed (skips JD library requirement)
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [verifiedJob, setVerifiedJob] = useState<any | null>(null);
 
   // Toggles
   const [genCover, setGenCover] = useState(true);
@@ -50,10 +53,12 @@ export default function TailorModal() {
   useEffect(() => {
     (async () => {
       try {
-        const [r, j, s] = await Promise.all([
+        const preJobId = (params.job_id as string) || null;
+        const [r, j, s, jobDetail] = await Promise.all([
           careerLibraryApi.listResumes(),
           careerLibraryApi.listJds(),
           careerLibraryApi.emailStatus(),
+          preJobId ? jobIntelApi.detail(preJobId).catch(() => null) : Promise.resolve(null),
         ]);
         setResumes(r.resumes || []);
         setJds(j.jds || []);
@@ -63,14 +68,20 @@ export default function TailorModal() {
           r.resumes.find((x) => x.is_default)?.resume_id ||
           r.resumes[0]?.resume_id;
         setSelectedResumeId(preRes || null);
-        const preJd = (params.jd_id as string) || j.jds[0]?.jd_id;
-        setSelectedJdId(preJd || null);
+        if (jobDetail) {
+          setSelectedJobId(preJobId);
+          setVerifiedJob(jobDetail);
+          setSelectedJdId(null);
+        } else {
+          const preJd = (params.jd_id as string) || j.jds[0]?.jd_id;
+          setSelectedJdId(preJd || null);
+        }
         if (!s.sendgrid_ready) setEmailMe(false);
       } catch (e: any) {
         console.warn("Load tailor prerequisites failed", e);
       } finally { setLoading(false); }
     })();
-  }, [params.resume_id, params.jd_id]);
+  }, [params.resume_id, params.jd_id, params.job_id]);
 
   // Rotating status messages during generation
   useEffect(() => {
@@ -79,7 +90,8 @@ export default function TailorModal() {
     return () => clearInterval(id);
   }, [generating]);
 
-  const canGenerate = !!selectedResumeId && !!selectedJdId && !generating;
+  const hasJobSource = !!(selectedJobId || selectedJdId);
+  const canGenerate = !!selectedResumeId && hasJobSource && !generating;
 
   const generate = useCallback(async () => {
     if (!canGenerate) return;
@@ -87,7 +99,7 @@ export default function TailorModal() {
     try {
       const result = await careerLibraryApi.generate({
         resume_id: selectedResumeId!,
-        jd_id: selectedJdId!,
+        ...(selectedJobId ? { job_id: selectedJobId } : { jd_id: selectedJdId! }),
         ats_optimize: true,
         generate_cover_letter: genCover,
         generate_interview_questions: genInterview,
@@ -105,7 +117,7 @@ export default function TailorModal() {
         [{ text: "OK" }, { text: "Retry", onPress: () => generate() }]
       );
     } finally { setGenerating(false); }
-  }, [selectedResumeId, selectedJdId, genCover, genInterview, genThankYou, emailMe, downloadPdf, canGenerate, router]);
+  }, [selectedResumeId, selectedJdId, selectedJobId, genCover, genInterview, genThankYou, emailMe, downloadPdf, canGenerate, router]);
 
   if (loading) {
     return (
@@ -162,9 +174,46 @@ export default function TailorModal() {
           </ScrollView>
         )}
 
-        {/* ==== 2. JD PICKER ==== */}
-        <Text style={[styles.sectionLabel, { marginTop: spacing.lg }]}>Select job description</Text>
-        {jds.length === 0 ? (
+        {/* ==== 2. JOB SOURCE — Verified job OR JD library ==== */}
+        {verifiedJob ? (
+          <>
+            <Text style={[styles.sectionLabel, { marginTop: spacing.lg }]}>
+              Verified job from feed
+            </Text>
+            <Text style={styles.subhint}>
+              Tailoring uses the requirements from this job announcement directly — no separate JD needed.
+            </Text>
+            <View style={styles.verifiedJobCard} testID="verified-job-card">
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <CheckCircle2 size={14} color={colors.success} />
+                <Text style={styles.verifiedBadge}>VERIFIED · {verifiedJob.source || "Feed"}</Text>
+              </View>
+              <Text style={styles.verifiedTitle} numberOfLines={2}>{verifiedJob.job_title}</Text>
+              <Text style={styles.verifiedSub} numberOfLines={1}>{verifiedJob.employer}</Text>
+              {!!verifiedJob.location && (
+                <Text style={styles.verifiedMeta} numberOfLines={1}>📍 {verifiedJob.location}</Text>
+              )}
+              <TouchableOpacity
+                onPress={() => {
+                  setSelectedJobId(null);
+                  setVerifiedJob(null);
+                }}
+                style={styles.swapBtn}
+                testID="use-jd-library-instead"
+              >
+                <Text style={styles.swapBtnText}>Use a Job Description from library instead →</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        ) : (
+          <>
+            <Text style={[styles.sectionLabel, { marginTop: spacing.lg }]}>
+              Select job description
+            </Text>
+            <Text style={styles.subhint}>
+              {`For verified jobs from the feed, tap "Tailor" from the job detail — you won't need a JD from the library.`}
+            </Text>
+            {jds.length === 0 ? (
           <View style={styles.emptyPrompt}>
             <Briefcase size={22} color={colors.textTertiary} />
             <Text style={styles.emptyPromptText}>Upload or add a job description first</Text>
@@ -202,6 +251,8 @@ export default function TailorModal() {
               );
             })}
           </ScrollView>
+        )}
+          </>
         )}
 
         {/* ==== 3. TAILORING OPTIONS ==== */}
@@ -367,5 +418,25 @@ const styles = StyleSheet.create({
   overlayDot: {
     width: 6, height: 6, borderRadius: 3,
     backgroundColor: colors.borderStrong, opacity: 0.4,
+  },
+  subhint: { color: colors.textTertiary, fontSize: 11, marginTop: 2, marginBottom: 4 },
+  verifiedJobCard: {
+    backgroundColor: colors.primaryMuted,
+    borderColor: colors.primaryGlow, borderWidth: 1,
+    borderRadius: radius.md, padding: spacing.md, gap: 3, marginTop: 4,
+  },
+  verifiedBadge: {
+    color: colors.success, fontSize: 10, fontWeight: "800", letterSpacing: 0.5,
+  },
+  verifiedTitle: { color: colors.textPrimary, fontSize: 15, fontWeight: "800" },
+  verifiedSub: { color: colors.textSecondary, fontSize: 12, fontWeight: "600" },
+  verifiedMeta: { color: colors.textTertiary, fontSize: 11 },
+  swapBtn: {
+    marginTop: 6, alignSelf: "flex-start",
+    paddingVertical: 4, paddingHorizontal: 6,
+  },
+  swapBtnText: {
+    color: colors.primaryGlow, fontSize: 10, fontWeight: "700",
+    textDecorationLine: "underline",
   },
 });

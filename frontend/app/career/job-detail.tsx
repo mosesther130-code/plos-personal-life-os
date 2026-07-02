@@ -243,7 +243,7 @@ export default function JobDetailScreen() {
       <View style={styles.stickyBar}>
         <TouchableOpacity
           style={styles.stickySecondary}
-          onPress={() => router.push("/career/tailor-modal" as any)}
+          onPress={() => router.push(`/career/tailor-modal?job_id=${job.job_id}` as any)}
           testID="tailor-here"
         >
           <Wand2 size={12} color={colors.primaryGlow} />
