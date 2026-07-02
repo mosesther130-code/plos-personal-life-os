@@ -467,6 +467,38 @@ export default function CareerLibraryScreen() {
           })
         )}
 
+        {/* Job Intelligence quick links */}
+        <View style={[styles.sectionHead, { marginTop: spacing.xl }]}>
+          <Text style={styles.sectionTitle}>Job Intelligence</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.linkCard}
+          onPress={() => router.push("/career/jobs" as any)}
+          testID="open-jobs"
+        >
+          <Sparkles size={16} color={colors.primaryGlow} />
+          <Text style={styles.linkText}>Verified Jobs Feed</Text>
+          <ChevronRight size={14} color={colors.primaryGlow} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.linkCard}
+          onPress={() => router.push("/career/insights" as any)}
+          testID="open-insights"
+        >
+          <Wand2 size={16} color={colors.primaryGlow} />
+          <Text style={styles.linkText}>Career Insights Dashboard</Text>
+          <ChevronRight size={14} color={colors.primaryGlow} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.linkCard}
+          onPress={() => router.push("/career/job-sources" as any)}
+          testID="open-job-sources"
+        >
+          <FileText size={16} color={colors.primaryGlow} />
+          <Text style={styles.linkText}>Connect Job Sources</Text>
+          <ChevronRight size={14} color={colors.primaryGlow} />
+        </TouchableOpacity>
+
         {/* Applications quick link */}
         <TouchableOpacity
           style={styles.linkCard}

@@ -1092,3 +1092,61 @@ export const careerLibraryApi = {
       "/career/library/email/status"
     ),
 };
+
+// ================================================================
+// Job Intelligence Engine v1
+// ================================================================
+export type FeedJob = {
+  job_id: string;
+  source: string;
+  job_title: string;
+  employer: string;
+  employer_type: string;
+  location: string;
+  location_type: string;
+  salary_text?: string;
+  salary_min?: number;
+  salary_max?: number;
+  posted_date: string;
+  application_deadline?: string | null;
+  job_description_text: string;
+  apply_url: string;
+  apply_url_verified: boolean;
+  apply_url_status_code: number;
+  apply_url_redirect_final: string;
+  link_quality: "direct_apply" | "posting_page" | "requires_login" | "general_careers" | "unverified";
+  is_active: boolean;
+  early_posting_flag: boolean;
+  days_since_posted: number;
+  tags?: string[];
+  match_scores?: Record<string, any>;
+  keyword_analysis?: Record<string, any>;
+  display_score?: number;
+};
+export type JobSourceStatus = {
+  id: string;
+  label: string;
+  connected: boolean;
+  status: string;
+  hint: string;
+};
+export const jobIntelApi = {
+  sources: () => request<{ sources: JobSourceStatus[] }>("/jobs/intelligence/sources"),
+  refresh: () => request<any>("/jobs/intelligence/refresh", { method: "POST" }),
+  feed: (min_score: number = 0, sort: string = "best_match", limit: number = 60) =>
+    request<{ jobs: FeedJob[]; counters: any }>(
+      `/jobs/intelligence/feed?min_score=${min_score}&sort=${sort}&limit=${limit}`
+    ),
+  detail: (job_id: string) =>
+    request<FeedJob>(`/jobs/intelligence/feed/${encodeURIComponent(job_id)}`),
+  verifyLink: (job_id: string) =>
+    request<any>(`/jobs/intelligence/feed/${encodeURIComponent(job_id)}/verify-link`, { method: "POST" }),
+  saveJob: (job_id: string) =>
+    request<{ ok: boolean }>(`/jobs/intelligence/feed/${encodeURIComponent(job_id)}/save`, { method: "POST" }),
+  targetEmployers: () =>
+    request<{ target_employers: { name: string; careers_url: string }[]; seeded: boolean }>(
+      "/jobs/intelligence/target-employers"
+    ),
+  criteria: () => request<any>("/jobs/intelligence/criteria"),
+  insights: () => request<any>("/jobs/intelligence/insights"),
+};
