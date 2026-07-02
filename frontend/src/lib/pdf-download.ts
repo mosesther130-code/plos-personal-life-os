@@ -1,13 +1,15 @@
-// PLOS — base64 PDF download helper (cross-platform).
+// PLOS — base64 file download helper (cross-platform).
 // On web: creates a Blob and triggers a download link.
 // On native (iOS/Android): writes to app cache and opens the system share sheet.
 import { Platform } from "react-native";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
 
 export async function downloadBase64Pdf(
   content_b64: string,
   filename: string,
   mime: string = "application/pdf"
-): Promise<{ ok: boolean; where: "web-download" | "native-share" | "error"; error?: string }> {
+): Promise<{ ok: boolean; where: "web-download" | "native-share" | "native-saved" | "error"; path?: string; error?: string }> {
   try {
     if (Platform.OS === "web") {
       // Convert base64 → Blob and trigger a download link.
@@ -21,7 +23,7 @@ export async function downloadBase64Pdf(
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = filename;
+      a.download = filename || "download.bin";
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -30,21 +32,19 @@ export async function downloadBase64Pdf(
     }
 
     // Native: write to cache and open share sheet
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const FS = require("expo-file-system");
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const Sharing = require("expo-sharing");
-    const dir = FS.cacheDirectory || FS.documentDirectory;
+    const dir = FileSystem.cacheDirectory || FileSystem.documentDirectory;
     if (!dir) throw new Error("No writable cache directory available");
-    const path = `${dir}${filename.replace(/[^\w.\- ]/g, "_")}`;
-    await FS.writeAsStringAsync(path, content_b64, {
-      encoding: "base64",
+    const safeName = (filename || "download.bin").replace(/[^\w.\- ]/g, "_");
+    const path = `${dir}${safeName}`;
+    await FileSystem.writeAsStringAsync(path, content_b64, {
+      encoding: FileSystem.EncodingType.Base64,
     });
-    if (await Sharing.isAvailableAsync()) {
-      await Sharing.shareAsync(path, { mimeType: mime, dialogTitle: filename });
-      return { ok: true, where: "native-share" };
+    const canShare = await Sharing.isAvailableAsync();
+    if (canShare) {
+      await Sharing.shareAsync(path, { mimeType: mime, dialogTitle: safeName });
+      return { ok: true, where: "native-share", path };
     }
-    return { ok: true, where: "native-share" }; // saved to cache
+    return { ok: true, where: "native-saved", path };
   } catch (err: any) {
     return { ok: false, where: "error", error: String(err?.message || err) };
   }

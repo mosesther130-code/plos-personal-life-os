@@ -269,6 +269,21 @@ export default function CareerLibraryScreen() {
     }
   }
 
+  async function deleteVersionEntry(version_id: string, title: string) {
+    const ok = await confirmAsync(
+      "Delete tailored version?",
+      `Remove the tailored package for "${title}" from your history?`,
+      true,
+    );
+    if (!ok) return;
+    try {
+      await careerLibraryApi.deleteVersion(version_id);
+      await loadAll();
+    } catch (e: any) {
+      Alert.alert("Failed", String(e?.message || e));
+    }
+  }
+
   async function saveLabel() {
     if (!labelEditing) return;
     try {
@@ -562,25 +577,34 @@ export default function CareerLibraryScreen() {
           history.map((v) => {
             const delta = (v.ats_score_after || 0) - (v.ats_score_before || 0);
             return (
-              <TouchableOpacity
-                key={v.version_id}
-                style={styles.histCard}
-                onPress={() => router.push(`/career/tailor-result-v2?version_id=${v.version_id}` as any)}
-                testID={`hist-${v.version_id}`}
-                activeOpacity={0.8}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.histTitle} numberOfLines={1}>{v.job_title} · {v.employer}</Text>
-                  <Text style={styles.histSub} numberOfLines={1}>Base: {v.base_resume_label || "—"}</Text>
-                  <Text style={styles.cardMeta}>{fmtDate(v.generated_date)}</Text>
-                </View>
-                <View style={styles.histRight}>
-                  <Text style={[styles.histDelta, { color: delta > 0 ? colors.success : colors.textTertiary }]}>
-                    {delta > 0 ? "+" : ""}{delta} pts
-                  </Text>
-                  <ChevronRight size={14} color={colors.textTertiary} />
-                </View>
-              </TouchableOpacity>
+              <View key={v.version_id} style={styles.histCard}>
+                <TouchableOpacity
+                  style={{ flex: 1, flexDirection: "row", alignItems: "center" }}
+                  onPress={() => router.push(`/career/tailor-result-v2?version_id=${v.version_id}` as any)}
+                  testID={`hist-${v.version_id}`}
+                  activeOpacity={0.8}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.histTitle} numberOfLines={1}>{v.job_title} · {v.employer}</Text>
+                    <Text style={styles.histSub} numberOfLines={1}>Base: {v.base_resume_label || "—"}</Text>
+                    <Text style={styles.cardMeta}>{fmtDate(v.generated_date)}</Text>
+                  </View>
+                  <View style={styles.histRight}>
+                    <Text style={[styles.histDelta, { color: delta > 0 ? colors.success : colors.textTertiary }]}>
+                      {delta > 0 ? "+" : ""}{delta} pts
+                    </Text>
+                    <ChevronRight size={14} color={colors.textTertiary} />
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.histDelBtn}
+                  onPress={() => deleteVersionEntry(v.version_id, `${v.job_title} at ${v.employer}`)}
+                  testID={`hist-del-${v.version_id}`}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Trash2 size={14} color="#EF4444" />
+                </TouchableOpacity>
+              </View>
             );
           })
         )}
@@ -854,6 +878,11 @@ const styles = StyleSheet.create({
   histSub: { color: colors.textSecondary, fontSize: 11, marginTop: 2 },
   histRight: { flexDirection: "row", alignItems: "center", gap: 6 },
   histDelta: { fontSize: 14, fontWeight: "800" },
+  histDelBtn: {
+    padding: 6, marginLeft: 4, borderRadius: radius.sm,
+    backgroundColor: "rgba(239,68,68,0.12)",
+    alignItems: "center", justifyContent: "center",
+  },
   linkCard: {
     flexDirection: "row", alignItems: "center", gap: 8,
     backgroundColor: colors.primaryMuted, borderRadius: radius.md,

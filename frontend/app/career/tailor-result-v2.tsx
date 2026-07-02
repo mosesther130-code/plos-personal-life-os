@@ -2,7 +2,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Alert, TextInput,
+  ActivityIndicator, Alert, TextInput, Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -10,11 +10,32 @@ import * as Clipboard from "expo-clipboard";
 import {
   ChevronLeft, CheckCircle2, Star, TriangleAlert, Edit3, Download,
   Mail, Save, Copy, ChevronDown, ChevronRight, Sparkles, RefreshCw,
+  Trash2, Wand2, FileText,
 } from "lucide-react-native";
 import { careerLibraryApi, TailorVersion } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
 import { downloadBase64Pdf } from "@/src/lib/pdf-download";
 import Svg, { Circle } from "react-native-svg";
+
+// Cross-platform confirm (RN-Web's Alert.alert buttons don't fire on web).
+function confirmAsync(title: string, message: string, destructive = false): Promise<boolean> {
+  if (Platform.OS === "web") {
+    const ok = typeof window !== "undefined" && typeof window.confirm === "function"
+      ? window.confirm(`${title}\n\n${message}`)
+      : false;
+    return Promise.resolve(ok);
+  }
+  return new Promise((resolve) => {
+    Alert.alert(
+      title, message,
+      [
+        { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+        { text: destructive ? "Delete" : "OK", style: destructive ? "destructive" : "default", onPress: () => resolve(true) },
+      ],
+      { cancelable: true, onDismiss: () => resolve(false) }
+    );
+  });
+}
 
 function GaugeRing({ score, size = 96, color, label }: { score: number; size?: number; color: string; label: string }) {
   const stroke = 10;
@@ -87,15 +108,61 @@ export default function TailorResultsV2() {
     } catch (e: any) { Alert.alert("Failed", String(e?.message || e)); }
   }
 
-  async function download(fmt: "pdf" | "docx") {
+  async function downloadArtifact(kind: "resume" | "cover" | "combined" | "thank_you" | "follow_up" | "withdrawal", fmt: "pdf" | "docx") {
     if (!v) return;
     try {
-      const d = await careerLibraryApi.download(v.version_id, "combined", fmt);
+      const d = await careerLibraryApi.download(v.version_id, kind, fmt);
       const res = await downloadBase64Pdf(d.content_b64, d.filename, d.mime);
       if (!res.ok) {
         Alert.alert("Download failed", res.error || "Unknown error");
       }
-    } catch (e: any) { Alert.alert("Download failed", String(e?.message || e)); }
+    } catch (e: any) {
+      const msg = String(e?.message || e);
+      if (msg.includes("404") || /No .* content/i.test(msg)) {
+        Alert.alert("Not available", "Generate this letter first, then download.");
+      } else {
+        Alert.alert("Download failed", msg);
+      }
+    }
+  }
+  const download = (fmt: "pdf" | "docx") => downloadArtifact("combined", fmt);
+
+  async function deletePackage() {
+    if (!v) return;
+    const confirmed = await confirmAsync(
+      "Delete this tailored package?",
+      "The resume, cover letter, and all generated letters for this version will be permanently removed.",
+      true
+    );
+    if (!confirmed) return;
+    try {
+      await careerLibraryApi.deleteVersion(v.version_id);
+      router.back();
+    } catch (e: any) {
+      Alert.alert("Failed", String(e?.message || e));
+    }
+  }
+
+  async function deleteLetter(field: "thank_you_letter_text" | "follow_up_letter_text" | "withdrawal_letter_text", label: string) {
+    if (!v) return;
+    const ok = await confirmAsync(`Delete ${label}?`, `Remove the generated ${label.toLowerCase()} from this package.`, true);
+    if (!ok) return;
+    try {
+      await careerLibraryApi.editVersion(v.version_id, { [field]: "" } as any);
+      setV({ ...v, [field]: "" });
+    } catch (e: any) { Alert.alert("Failed", String(e?.message || e)); }
+  }
+
+  async function genLetter(kind: "thank_you" | "follow_up" | "withdrawal") {
+    if (!v) return;
+    try {
+      const r = await careerLibraryApi.generateLetter(v.version_id, kind);
+      const field = kind === "thank_you" ? "thank_you_letter_text"
+        : kind === "follow_up" ? "follow_up_letter_text" : "withdrawal_letter_text";
+      setV({ ...v, [field]: r.text } as any);
+    } catch (e: any) {
+      Alert.alert("Generate failed", String(e?.message || e));
+    }
   }
 
   async function emailPackage() {
@@ -155,6 +222,9 @@ export default function TailorResultsV2() {
           <ChevronLeft size={22} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>Results</Text>
+        <TouchableOpacity onPress={deletePackage} style={styles.backBtn} testID="delete-package">
+          <Trash2 size={18} color="#EF4444" />
+        </TouchableOpacity>
         <TouchableOpacity onPress={regenerate} style={styles.backBtn} disabled={regenerating} testID="regenerate">
           {regenerating ? <ActivityIndicator size="small" color={colors.primaryGlow} /> : <RefreshCw size={18} color={colors.primaryGlow} />}
         </TouchableOpacity>
@@ -222,14 +292,32 @@ export default function TailorResultsV2() {
         {/* --- 4. Tailored Resume --- */}
         <View style={styles.sectionHead}>
           <Text style={styles.sectionTitle}>Tailored Resume</Text>
-          <TouchableOpacity
-            onPress={() => editingResume ? saveResumeEdit() : setEditingResume(true)}
-            style={styles.editBtn}
-            testID="edit-resume"
-          >
-            <Edit3 size={12} color={colors.primaryGlow} />
-            <Text style={styles.editBtnText}>{editingResume ? "Save" : "Edit"}</Text>
-          </TouchableOpacity>
+          <View style={styles.sectionActionRow}>
+            <TouchableOpacity
+              onPress={() => downloadArtifact("resume", "pdf")}
+              style={styles.sectDlBtn}
+              testID="dl-resume-pdf"
+            >
+              <Download size={11} color={colors.primaryGlow} />
+              <Text style={styles.sectDlText}>PDF</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => downloadArtifact("resume", "docx")}
+              style={styles.sectDlBtn}
+              testID="dl-resume-docx"
+            >
+              <Download size={11} color={colors.primaryGlow} />
+              <Text style={styles.sectDlText}>DOCX</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => editingResume ? saveResumeEdit() : setEditingResume(true)}
+              style={styles.editBtn}
+              testID="edit-resume"
+            >
+              <Edit3 size={12} color={colors.primaryGlow} />
+              <Text style={styles.editBtnText}>{editingResume ? "Save" : "Edit"}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
         {editingResume ? (
           <TextInput
@@ -250,14 +338,32 @@ export default function TailorResultsV2() {
           <>
             <View style={styles.sectionHead}>
               <Text style={styles.sectionTitle}>Cover Letter</Text>
-              <TouchableOpacity
-                onPress={() => editingCover ? saveCoverEdit() : setEditingCover(true)}
-                style={styles.editBtn}
-                testID="edit-cover"
-              >
-                <Edit3 size={12} color={colors.primaryGlow} />
-                <Text style={styles.editBtnText}>{editingCover ? "Save" : "Edit"}</Text>
-              </TouchableOpacity>
+              <View style={styles.sectionActionRow}>
+                <TouchableOpacity
+                  onPress={() => downloadArtifact("cover", "pdf")}
+                  style={styles.sectDlBtn}
+                  testID="dl-cover-pdf"
+                >
+                  <Download size={11} color={colors.primaryGlow} />
+                  <Text style={styles.sectDlText}>PDF</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => downloadArtifact("cover", "docx")}
+                  style={styles.sectDlBtn}
+                  testID="dl-cover-docx"
+                >
+                  <Download size={11} color={colors.primaryGlow} />
+                  <Text style={styles.sectDlText}>DOCX</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => editingCover ? saveCoverEdit() : setEditingCover(true)}
+                  style={styles.editBtn}
+                  testID="edit-cover"
+                >
+                  <Edit3 size={12} color={colors.primaryGlow} />
+                  <Text style={styles.editBtnText}>{editingCover ? "Save" : "Edit"}</Text>
+                </TouchableOpacity>
+              </View>
             </View>
             {editingCover ? (
               <TextInput
@@ -274,6 +380,42 @@ export default function TailorResultsV2() {
             )}
           </>
         )}
+
+        {/* --- 5a. Thank You Letter --- */}
+        <LetterCard
+          title="Thank-You Letter"
+          hintEmpty="Send within 24 hours after each interview."
+          text={v.thank_you_letter_text || ""}
+          onGenerate={() => genLetter("thank_you")}
+          onDelete={() => deleteLetter("thank_you_letter_text", "thank-you letter")}
+          onDownloadPdf={() => downloadArtifact("thank_you", "pdf")}
+          onDownloadDocx={() => downloadArtifact("thank_you", "docx")}
+          testIdBase="ty"
+        />
+
+        {/* --- 5b. Follow-Up Letter --- */}
+        <LetterCard
+          title="Follow-Up Letter"
+          hintEmpty="Send 1-2 weeks after applying if you haven't heard back."
+          text={v.follow_up_letter_text || ""}
+          onGenerate={() => genLetter("follow_up")}
+          onDelete={() => deleteLetter("follow_up_letter_text", "follow-up letter")}
+          onDownloadPdf={() => downloadArtifact("follow_up", "pdf")}
+          onDownloadDocx={() => downloadArtifact("follow_up", "docx")}
+          testIdBase="fu"
+        />
+
+        {/* --- 5c. Withdrawal Letter --- */}
+        <LetterCard
+          title="Withdrawal Letter"
+          hintEmpty="Courteously decline to continue in the process."
+          text={v.withdrawal_letter_text || ""}
+          onGenerate={() => genLetter("withdrawal")}
+          onDelete={() => deleteLetter("withdrawal_letter_text", "withdrawal letter")}
+          onDownloadPdf={() => downloadArtifact("withdrawal", "pdf")}
+          onDownloadDocx={() => downloadArtifact("withdrawal", "docx")}
+          testIdBase="wd"
+        />
 
         {/* --- 6. ATS Tips --- */}
         {v.ats_tips?.length > 0 && (
@@ -426,6 +568,67 @@ function TemplateCard({ title, text, onCopy, testID }: {
   );
 }
 
+// LetterCard — reusable component for Thank-You / Follow-Up / Withdrawal letters
+function LetterCard({
+  title, hintEmpty, text, onGenerate, onDelete, onDownloadPdf, onDownloadDocx, testIdBase,
+}: {
+  title: string;
+  hintEmpty: string;
+  text: string;
+  onGenerate: () => void;
+  onDelete: () => void;
+  onDownloadPdf: () => void;
+  onDownloadDocx: () => void;
+  testIdBase: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const has = !!(text || "").trim();
+  async function handleGen() {
+    setBusy(true);
+    try { await onGenerate(); } finally { setBusy(false); }
+  }
+  return (
+    <View>
+      <View style={styles.sectionHead}>
+        <Text style={styles.sectionTitle}>{title}</Text>
+        <View style={styles.sectionActionRow}>
+          {has && (
+            <>
+              <TouchableOpacity onPress={onDownloadPdf} style={styles.sectDlBtn} testID={`dl-${testIdBase}-pdf`}>
+                <Download size={11} color={colors.primaryGlow} />
+                <Text style={styles.sectDlText}>PDF</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={onDownloadDocx} style={styles.sectDlBtn} testID={`dl-${testIdBase}-docx`}>
+                <Download size={11} color={colors.primaryGlow} />
+                <Text style={styles.sectDlText}>DOCX</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={onDelete} style={styles.sectDelBtn} testID={`del-${testIdBase}`}>
+                <Trash2 size={11} color="#EF4444" />
+                <Text style={styles.sectDelText}>Delete</Text>
+              </TouchableOpacity>
+            </>
+          )}
+          <TouchableOpacity onPress={handleGen} style={styles.editBtn} disabled={busy} testID={`gen-${testIdBase}`}>
+            {busy ? <ActivityIndicator size="small" color={colors.primaryGlow} /> : <Wand2 size={12} color={colors.primaryGlow} />}
+            <Text style={styles.editBtnText}>{has ? "Regenerate" : "Generate"}</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+      {has ? (
+        <ScrollView style={styles.textBlock} nestedScrollEnabled>
+          <Text style={styles.textBlockText}>{text}</Text>
+        </ScrollView>
+      ) : (
+        <View style={styles.letterEmpty}>
+          <FileText size={14} color={colors.textTertiary} />
+          <Text style={styles.letterEmptyHint}>{hintEmpty}</Text>
+          <Text style={styles.letterEmptyCta}>Tap Generate to draft this letter.</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   loader: { flex: 1, alignItems: "center", justifyContent: "center" },
@@ -549,4 +752,25 @@ const styles = StyleSheet.create({
   abBtnPrimary: { backgroundColor: colors.primary, flex: 1.4 },
   abText: { color: colors.primaryGlow, fontSize: 10, fontWeight: "800" },
   abTextPrimary: { color: "#fff", fontSize: 10, fontWeight: "800" },
+  // Per-section artifact actions
+  sectionActionRow: { flexDirection: "row", gap: 4, alignItems: "center", flexWrap: "wrap" },
+  sectDlBtn: {
+    flexDirection: "row", alignItems: "center", gap: 3,
+    backgroundColor: colors.primaryMuted,
+    paddingHorizontal: 7, paddingVertical: 4, borderRadius: radius.sm,
+  },
+  sectDlText: { color: colors.primaryGlow, fontSize: 9, fontWeight: "800", letterSpacing: 0.3 },
+  sectDelBtn: {
+    flexDirection: "row", alignItems: "center", gap: 3,
+    backgroundColor: "rgba(239,68,68,0.14)",
+    paddingHorizontal: 7, paddingVertical: 4, borderRadius: radius.sm,
+  },
+  sectDelText: { color: "#EF4444", fontSize: 9, fontWeight: "800", letterSpacing: 0.3 },
+  letterEmpty: {
+    backgroundColor: colors.surface, borderColor: colors.borderSubtle, borderWidth: 1,
+    borderRadius: radius.sm, padding: spacing.md, alignItems: "center", gap: 4,
+    borderStyle: "dashed" as any,
+  },
+  letterEmptyHint: { color: colors.textSecondary, fontSize: 11, textAlign: "center" },
+  letterEmptyCta: { color: colors.primaryGlow, fontSize: 10, fontWeight: "700", marginTop: 2 },
 });

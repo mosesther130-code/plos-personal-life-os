@@ -974,6 +974,9 @@ export type TailorVersion = {
   keywords_missing: string[];
   tailored_resume_text: string;
   cover_letter_text: string;
+  thank_you_letter_text?: string;
+  follow_up_letter_text?: string;
+  withdrawal_letter_text?: string;
   interview_questions: { question: string; suggested_response: string }[];
   why_you_fit: string;
   ats_tips: string[];
@@ -1072,15 +1075,34 @@ export const careerLibraryApi = {
     ),
   editVersion: (
     version_id: string,
-    b: { tailored_resume_text?: string; cover_letter_text?: string }
+    b: {
+      tailored_resume_text?: string;
+      cover_letter_text?: string;
+      thank_you_letter_text?: string;
+      follow_up_letter_text?: string;
+      withdrawal_letter_text?: string;
+    }
   ) =>
     request<{ ok: boolean }>(
       `/career/library/tailor/history/${version_id}/edit`,
       { method: "PUT", body: b }
     ),
-  download: (version_id: string, kind: "resume" | "cover" | "combined" = "combined", fmt: "pdf" | "docx" = "pdf") =>
+  download: (
+    version_id: string,
+    kind: "resume" | "cover" | "combined" | "thank_you" | "follow_up" | "withdrawal" = "combined",
+    fmt: "pdf" | "docx" = "pdf"
+  ) =>
     request<{ filename: string; mime: string; content_b64: string }>(
       `/career/library/tailor/history/${version_id}/download?kind=${kind}&fmt=${fmt}`
+    ),
+  generateLetter: (
+    version_id: string,
+    kind: "thank_you" | "follow_up" | "withdrawal",
+    context_notes: string = ""
+  ) =>
+    request<{ ok: boolean; kind: string; text: string }>(
+      `/career/library/tailor/history/${version_id}/generate-letter`,
+      { method: "POST", body: { kind, context_notes } }
     ),
   email: (version_id: string) =>
     request<any>(`/career/library/tailor/history/${version_id}/email`, {

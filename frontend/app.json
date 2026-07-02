@@ -15,7 +15,8 @@
         "NSLocationWhenInUseUsageDescription": "Show your location on the safety map and share with family.",
         "NSCameraUsageDescription": "Scan documents and add photos to records.",
         "NSPhotoLibraryUsageDescription": "Attach photos to receipts and medical docs."
-      }
+      },
+      "bundleIdentifier": "com.emergent.lifeoshub.pjtg1k"
     },
     "android": {
       "adaptiveIcon": {
@@ -30,7 +31,8 @@
         "ACCESS_COARSE_LOCATION",
         "CAMERA",
         "READ_EXTERNAL_STORAGE"
-      ]
+      ],
+      "package": "com.emergent.lifeoshub.pjtg1k"
     },
     "web": {
       "bundler": "metro",

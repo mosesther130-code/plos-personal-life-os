@@ -137,6 +137,9 @@ class TailorGenerateBody(BaseModel):
 class ManualEditBody(BaseModel):
     tailored_resume_text: Optional[str] = None
     cover_letter_text: Optional[str] = None
+    thank_you_letter_text: Optional[str] = None
+    follow_up_letter_text: Optional[str] = None
+    withdrawal_letter_text: Optional[str] = None
 
 
 # ============================================================
@@ -624,6 +627,8 @@ Produce a complete JSON response with this exact structure:
   "keywords_missing": [<JD requirements with no evidence in resume>],
   "tailored_resume_text": "<complete tailored resume as formatted plain text ready for PDF>",
   "cover_letter_text": "<complete professional cover letter 350-450 words>",
+  "thank_you_letter_text": "<complete post-interview thank you letter 150-220 words, professional, references specific interview conversation points as placeholders in [brackets] the user will edit>",
+  "follow_up_letter_text": "<complete follow-up letter to send 1-2 weeks after applying with no response, 150-200 words, professional, reiterates interest and value>",
   "interview_questions": [<10 objects: {{"question": "...", "suggested_response": "..."}}>],
   "why_you_fit": "<2-3 sentence summary of top 3 reasons this candidate is a strong match>",
   "ats_tips": [<3-5 specific ATS formatting tips for this submission>],
@@ -651,6 +656,8 @@ Return ONLY valid JSON with no preamble, no explanation, no markdown code fences
         data.setdefault("keywords_missing", [])
         data.setdefault("tailored_resume_text", "")
         data.setdefault("cover_letter_text", "")
+        data.setdefault("thank_you_letter_text", "")
+        data.setdefault("follow_up_letter_text", "")
         data.setdefault("interview_questions", [])
         data.setdefault("why_you_fit", "")
         data.setdefault("ats_tips", [])
@@ -795,12 +802,73 @@ Return ONLY valid JSON with no preamble, no explanation, no markdown code fences
             update["tailored_resume_text"] = body.tailored_resume_text
         if body.cover_letter_text is not None:
             update["cover_letter_text"] = body.cover_letter_text
+        if body.thank_you_letter_text is not None:
+            update["thank_you_letter_text"] = body.thank_you_letter_text
+        if body.follow_up_letter_text is not None:
+            update["follow_up_letter_text"] = body.follow_up_letter_text
+        if body.withdrawal_letter_text is not None:
+            update["withdrawal_letter_text"] = body.withdrawal_letter_text
         res = await db.resume_versions.update_one(
             {"user_id": user_id, "version_id": version_id}, {"$set": update}
         )
         if res.matched_count == 0:
             raise HTTPException(404, "Version not found")
         return {"ok": True}
+
+    class LetterGenBody(BaseModel):
+        kind: str  # "thank_you" | "follow_up" | "withdrawal"
+        context_notes: Optional[str] = ""
+
+    @r.post("/library/tailor/history/{version_id}/generate-letter")
+    async def generate_letter(version_id: str, body: LetterGenBody,
+                              user_id: str = Depends(get_current_user_id)):
+        """(Re)generate a specific letter for a tailored version using Claude."""
+        ver = await db.resume_versions.find_one(
+            {"user_id": user_id, "version_id": version_id}, {"_id": 0}
+        )
+        if not ver:
+            raise HTTPException(404, "Version not found")
+        kind = body.kind
+        if kind == "thank_you":
+            spec = ("Generate a professional post-interview THANK YOU LETTER. "
+                    "150-220 words. Reference specific interview conversation points "
+                    "as placeholders in [square brackets] the user will edit.")
+            field = "thank_you_letter_text"
+        elif kind == "follow_up":
+            spec = ("Generate a professional FOLLOW-UP LETTER to send 1-2 weeks after "
+                    "applying with no response. 150-200 words. Reiterate interest, "
+                    "value proposition, and one specific reason this role fits.")
+            field = "follow_up_letter_text"
+        elif kind == "withdrawal":
+            spec = ("Generate a courteous WITHDRAWAL LETTER declining to continue "
+                    "in the process. 100-150 words. Professional, appreciative, "
+                    "leaves the door open for future opportunities.")
+            field = "withdrawal_letter_text"
+        else:
+            raise HTTPException(400, "kind must be thank_you, follow_up or withdrawal")
+
+        prompt = f"""JOB TITLE: {ver.get('job_title')}
+EMPLOYER: {ver.get('employer')}
+ORIGINAL RESUME CONTEXT:
+{(ver.get('tailored_resume_text') or '')[:2500]}
+
+COVER LETTER CONTEXT:
+{(ver.get('cover_letter_text') or '')[:1500]}
+
+ADDITIONAL CONTEXT / NOTES FROM USER:
+{body.context_notes or '(none)'}
+
+{spec}
+
+Return ONLY the letter text (no JSON, no preamble)."""
+        session_id = f"letter-{user_id}-{uuid.uuid4().hex[:8]}"
+        raw = await call_claude(session_id, SYSTEM_PROMPT, prompt)
+        letter_text = (raw or "").strip()
+        await db.resume_versions.update_one(
+            {"user_id": user_id, "version_id": version_id},
+            {"$set": {field: letter_text, "manually_edited": True}},
+        )
+        return {"ok": True, "kind": kind, "text": letter_text}
 
     # ------------------------------------------------------------------
     # DOWNLOADS + EMAIL
@@ -821,6 +889,15 @@ Return ONLY valid JSON with no preamble, no explanation, no markdown code fences
         elif kind == "cover":
             body_text = ver.get("cover_letter_text", "")
             label = "Cover Letter"
+        elif kind == "thank_you":
+            body_text = ver.get("thank_you_letter_text", "")
+            label = "Thank You Letter"
+        elif kind == "follow_up":
+            body_text = ver.get("follow_up_letter_text", "")
+            label = "Follow-Up Letter"
+        elif kind == "withdrawal":
+            body_text = ver.get("withdrawal_letter_text", "")
+            label = "Withdrawal Letter"
         else:  # combined
             body_text = (
                 (ver.get("tailored_resume_text", "") or "") +
@@ -828,6 +905,8 @@ Return ONLY valid JSON with no preamble, no explanation, no markdown code fences
                 (ver.get("cover_letter_text", "") or "")
             )
             label = "Application Package"
+        if not (body_text or "").strip():
+            raise HTTPException(404, f"No {label} content available for this version.")
         today = datetime.now().strftime("%Y-%m-%d")
         if fmt.lower() == "docx":
             content = build_docx(body_text)
