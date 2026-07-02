@@ -173,6 +173,62 @@ def make_router(db, get_current_user_id):
             })
         return {"results": out}
 
+    @router.get("/maps/reverse-geocode")
+    async def maps_reverse_geocode(
+        lat: float,
+        lng: float,
+        user_id: str = Depends(get_current_user_id),
+    ):
+        """Reverse geocode a coordinate → structured address components.
+        Used by the Safety module to resolve user location snapshots.
+        """
+        _ = user_id
+        if not GOOGLE_MAPS_API_KEY:
+            raise HTTPException(503, "Google Maps not configured")
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.get(
+                    "https://maps.googleapis.com/maps/api/geocode/json",
+                    params={"latlng": f"{lat},{lng}", "key": GOOGLE_MAPS_API_KEY},
+                )
+                r.raise_for_status()
+                data = r.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(502, f"Reverse geocode failed: {e}")
+        if data.get("status") not in ("OK", "ZERO_RESULTS"):
+            return {"status": data.get("status"),
+                    "error_message": data.get("error_message", ""),
+                    "results": []}
+        results = []
+        for res in data.get("results", [])[:5]:
+            components = res.get("address_components", []) or []
+            comp_map: Dict[str, str] = {}
+            for c in components:
+                for t in c.get("types", []):
+                    comp_map[t] = c.get("long_name", "")
+                    comp_map[f"{t}_short"] = c.get("short_name", "")
+            geom_loc = (res.get("geometry") or {}).get("location") or {}
+            results.append({
+                "formatted_address": res.get("formatted_address", ""),
+                "place_id": res.get("place_id", ""),
+                "types": res.get("types", []),
+                "location_type": (res.get("geometry") or {}).get("location_type", ""),
+                "street_number": comp_map.get("street_number", ""),
+                "route": comp_map.get("route", ""),
+                "neighborhood": comp_map.get("neighborhood", ""),
+                "locality": comp_map.get("locality", ""),
+                "sublocality": comp_map.get("sublocality", ""),
+                "admin_area_2": comp_map.get("administrative_area_level_2", ""),
+                "admin_area_1": comp_map.get("administrative_area_level_1", ""),
+                "admin_area_1_short": comp_map.get("administrative_area_level_1_short", ""),
+                "country": comp_map.get("country", ""),
+                "country_code": comp_map.get("country_short", ""),
+                "postal_code": comp_map.get("postal_code", ""),
+                "lat": geom_loc.get("lat", lat),
+                "lng": geom_loc.get("lng", lng),
+            })
+        return {"status": "OK", "results": results}
+
     # ===================== ExchangeRate-API =====================
     @router.get("/exchange/rates")
     async def exchange_rates(user_id: str = Depends(get_current_user_id)):
