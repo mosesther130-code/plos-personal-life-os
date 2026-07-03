@@ -153,13 +153,13 @@ no code fences):
   }},
   "philippines_note": "…" (ONLY set when destination country is Philippines;
     otherwise ""),
-  "deals_intelligence": {
-    "mistake_fare_alert":     {"show": true|false, "message": "…"},
-    "best_booking_window":    {"show": true|false, "message": "…"},
-    "flexible_dates_savings": {"show": true|false, "message": "…"},
-    "bundle_opportunity":     {"show": true|false, "message": "…"},
-    "asia_rate_alert":        {"show": true|false, "message": "…"}
-  },
+  "deals_intelligence": {{
+    "mistake_fare_alert":     {{"show": true, "message": "…"}},
+    "best_booking_window":    {{"show": true, "message": "…"}},
+    "flexible_dates_savings": {{"show": true, "message": "…"}},
+    "bundle_opportunity":     {{"show": true, "message": "…"}},
+    "asia_rate_alert":        {{"show": true, "message": "…"}}
+  }},
   "bundle_savings_estimate_usd": 50-200 integer,
   "pro_tips": ["short route-specific tip 1", "…", … 4-6 items]
 }}

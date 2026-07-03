@@ -33,8 +33,10 @@ import {
   PinOff,
   Trash2,
   RadioTower,
+  X,
 } from "lucide-react-native";
 import { travelApi } from "@/src/lib/api";
+import { storage } from "@/src/utils/storage";
 import { colors, spacing, radius } from "@/src/lib/theme";
 import { EditModal, type Field } from "@/src/components/EditModal";
 
@@ -138,6 +140,21 @@ export default function TravelHome() {
   const [phEditorInitial, setPhEditorInitial] = useState<any | null>(null);
   const [phEditingId, setPhEditingId] = useState<string | null>(null);
   const [busyTrip, setBusyTrip] = useState<{ id: string; kind: string } | null>(null);
+  const [phHidden, setPhHidden] = useState(false);
+
+  // Featured pinned trip = first PINNED trip that isn't completed.
+  // If it exists, it replaces the Philippines Quick Access template card.
+  const featuredTrip = trips.find(
+    (t) => Boolean(t.pinned) && (t.status || "planning") !== "completed"
+  );
+
+  const phTemplateVisible =
+    !featuredTrip && !phHidden && !!phTemplate;
+
+  // Trip list (excluding the featured pinned trip to avoid duplication).
+  const listTrips = featuredTrip
+    ? trips.filter((t) => t.trip_id !== featuredTrip.trip_id)
+    : trips;
 
   const phTrip = trips.find((t) => (t.country_code || "").toUpperCase() === "PH");
   const phTitle = phTrip?.destination_name || "Philippines Quick Access";
@@ -148,14 +165,16 @@ export default function TravelHome() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [t, d, p] = await Promise.all([
+      const [t, d, p, hidden] = await Promise.all([
         travelApi.listTrips(),
         travelApi.deals(),
         travelApi.philippinesTemplate(),
+        storage.getItem<boolean>("travel_ph_quick_access_hidden", false),
       ]);
       setTrips(t?.trips || []);
       setDeals(d?.deals || []);
       setPhTemplate(p);
+      setPhHidden(!!hidden);
     } catch (_e) {}
     setLoading(false);
   }, []);
@@ -164,6 +183,15 @@ export default function TravelHome() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
+
+  const hidePhCard = async () => {
+    await storage.setItem("travel_ph_quick_access_hidden", true);
+    setPhHidden(true);
+  };
+  const restorePhCard = async () => {
+    await storage.setItem("travel_ph_quick_access_hidden", false);
+    setPhHidden(false);
+  };
 
   const openCreate = (preset?: any) => {
     setEditingId(null);
@@ -365,8 +393,92 @@ export default function TravelHome() {
           </TouchableOpacity>
         </View>
 
-        {/* Philippines pinned card */}
-        {phTemplate && (
+        {/* Featured pinned trip card — replaces PH card when any pinned trip exists */}
+        {featuredTrip && (
+          <TouchableOpacity
+            style={styles.phCard}
+            onPress={() => router.push(`/travel/${featuredTrip.trip_id}`)}
+            testID="featured-pinned"
+            activeOpacity={0.9}
+          >
+            <View style={styles.phHeader}>
+              <Text style={styles.phEmoji}>{featuredTrip.flag || "🌍"} ✈️</Text>
+              <View style={styles.phHeaderRight}>
+                <View style={styles.phPin}><Text style={styles.phPinText}>PINNED</Text></View>
+                <TouchableOpacity
+                  style={styles.phEditBtn}
+                  onPress={(e) => { (e as any)?.stopPropagation?.(); openEdit(featuredTrip); }}
+                  hitSlop={8}
+                  testID="featured-edit"
+                >
+                  <Pencil size={14} color="#fff" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.phEditBtn}
+                  onPress={(e) => { (e as any)?.stopPropagation?.(); togglePin(featuredTrip); }}
+                  hitSlop={8}
+                  testID="featured-unpin"
+                >
+                  {busyTrip?.id === featuredTrip.trip_id && busyTrip.kind === "pin"
+                    ? <ActivityIndicator size="small" color="#fff" />
+                    : <PinOff size={14} color="#fff" />}
+                </TouchableOpacity>
+              </View>
+            </View>
+            <Text style={styles.phTitle}>{featuredTrip.destination_name}</Text>
+            <Text style={styles.phSub}>
+              {[featuredTrip.city, featuredTrip.country].filter(Boolean).join(" · ")}
+              {featuredTrip.purpose ? ` · ${PURPOSE_LABELS[featuredTrip.purpose] || featuredTrip.purpose}` : ""}
+            </Text>
+            <View style={styles.phStats}>
+              <View style={styles.phStat}>
+                <Text style={styles.phStatLabel}>ONE-WAY</Text>
+                <Text style={[styles.phStatValue, { fontSize: 15 }]}>
+                  {fmtUSD(featuredTrip.scan_result?.best_one_way_usd)}
+                </Text>
+              </View>
+              <View style={styles.phStatDivider} />
+              <View style={styles.phStat}>
+                <Text style={styles.phStatLabel}>ROUND-TRIP</Text>
+                <Text style={[styles.phStatValue, { fontSize: 15 }]}>
+                  {fmtUSD(featuredTrip.scan_result?.best_round_trip_usd)}
+                </Text>
+              </View>
+              <View style={styles.phStatDivider} />
+              <View style={styles.phStat}>
+                <Text style={styles.phStatLabel}>
+                  {typeof featuredTrip.days_until_departure === "number" && featuredTrip.days_until_departure >= 0
+                    ? "IN"
+                    : "STATUS"}
+                </Text>
+                <Text style={[styles.phStatValue, { fontSize: 14 }]}>
+                  {typeof featuredTrip.days_until_departure === "number" && featuredTrip.days_until_departure >= 0
+                    ? (featuredTrip.days_until_departure === 0 ? "Today!" : `${featuredTrip.days_until_departure}d`)
+                    : statusLabel(featuredTrip.status)}
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={styles.phCta}
+              onPress={(e) => { (e as any)?.stopPropagation?.(); scanTrip(featuredTrip); }}
+              disabled={busyTrip?.id === featuredTrip.trip_id}
+              activeOpacity={0.85}
+              testID="featured-scan"
+            >
+              {busyTrip?.id === featuredTrip.trip_id && busyTrip.kind === "scan" ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <RadioTower size={14} color="#fff" />
+                  <Text style={styles.phCtaText}>{featuredTrip.scan_result ? "Rescan Prices" : "Scan Prices"}</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </TouchableOpacity>
+        )}
+
+        {/* Philippines pinned card — hidden if a pinned trip exists or user dismissed it */}
+        {phTemplateVisible && (
           <TouchableOpacity
             style={styles.phCard}
             onPress={openPhilippines}
@@ -386,6 +498,14 @@ export default function TravelHome() {
                 >
                   <Pencil size={14} color="#fff" />
                 </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.phEditBtn}
+                  onPress={(e) => { (e as any)?.stopPropagation?.(); hidePhCard(); }}
+                  testID="ph-unpin"
+                  hitSlop={8}
+                >
+                  <X size={14} color="#fff" />
+                </TouchableOpacity>
               </View>
             </View>
             <Text style={styles.phTitle}>{phTitle}</Text>
@@ -394,14 +514,14 @@ export default function TravelHome() {
               <View style={styles.phStat}>
                 <Text style={styles.phStatLabel}>1 USD =</Text>
                 <Text style={styles.phStatValue}>
-                  {phTemplate.live_rate ? `₱${Number(phTemplate.live_rate).toFixed(2)}` : "—"}
+                  {phTemplate?.live_rate ? `₱${Number(phTemplate.live_rate).toFixed(2)}` : "—"}
                 </Text>
               </View>
               <View style={styles.phStatDivider} />
               <View style={styles.phStat}>
                 <Text style={styles.phStatLabel}>ADVISORY</Text>
-                <Text style={[styles.phStatValue, { color: advisoryColor(phTemplate.advisory?.level), fontSize: 14 }]}>
-                  Level {phTemplate.advisory?.level}
+                <Text style={[styles.phStatValue, { color: advisoryColor(phTemplate?.advisory?.level), fontSize: 14 }]}>
+                  Level {phTemplate?.advisory?.level}
                 </Text>
               </View>
               <View style={styles.phStatDivider} />
@@ -428,14 +548,14 @@ export default function TravelHome() {
         <Text style={styles.sectionLabel}>UPCOMING TRIPS</Text>
         {loading ? (
           <ActivityIndicator color={colors.primaryGlow} style={{ marginTop: 20 }} />
-        ) : trips.length === 0 ? (
+        ) : listTrips.length === 0 ? (
           <View style={styles.empty}>
             <Plane size={28} color={colors.textTertiary} />
-            <Text style={styles.emptyText}>No upcoming trips yet</Text>
-            <Text style={styles.emptySub}>Tap + above to plan one</Text>
+            <Text style={styles.emptyText}>{featuredTrip ? "All trips shown above" : "No upcoming trips yet"}</Text>
+            <Text style={styles.emptySub}>{featuredTrip ? "Add another with the + button" : "Tap + above to plan one"}</Text>
           </View>
         ) : (
-          trips.map((t) => {
+          listTrips.map((t) => {
             const busy = busyTrip?.id === t.trip_id ? busyTrip.kind : null;
             const scan = t.scan_result;
             const scannedAt = t.last_scanned_at ? new Date(t.last_scanned_at).toLocaleDateString() : null;
@@ -556,6 +676,14 @@ export default function TravelHome() {
           })
         )}
 
+        {/* Restore PH quick access if user hid it and no pinned trip is featured */}
+        {phHidden && !featuredTrip && phTemplate && (
+          <TouchableOpacity style={styles.restoreBtn} onPress={restorePhCard} testID="restore-ph">
+            <Pin size={12} color={colors.primaryGlow} />
+            <Text style={styles.restoreBtnText}>Restore Philippines Quick Access</Text>
+          </TouchableOpacity>
+        )}
+
         {/* Travel Deal Alerts */}
         <Text style={styles.sectionLabel}>TRAVEL DEAL ALERTS</Text>
         <View style={styles.mockBadgeRow}>
@@ -668,6 +796,8 @@ const styles = StyleSheet.create({
   actionBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 10, borderRightWidth: 1, borderRightColor: colors.borderSubtle },
   actionBtnText: { color: colors.textSecondary, fontSize: 11, fontWeight: "600" },
   scannedAt: { color: colors.textTertiary, fontSize: 9, textAlign: "center", paddingVertical: 4, backgroundColor: colors.bg },
+  restoreBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, marginTop: spacing.sm, paddingVertical: 10, borderWidth: 1, borderColor: colors.borderSubtle, borderRadius: radius.md, backgroundColor: colors.surface },
+  restoreBtnText: { color: colors.primaryGlow, fontSize: 12, fontWeight: "600" },
   mockBadgeRow: { flexDirection: "row", alignItems: "center", marginTop: -spacing.sm },
   mockBadge: { color: colors.textTertiary, fontSize: 9, fontWeight: "700", letterSpacing: 1, backgroundColor: colors.surfaceElevated, paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.sm, alignSelf: "flex-start" },
   dealCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, borderWidth: 1, borderColor: colors.borderSubtle },
