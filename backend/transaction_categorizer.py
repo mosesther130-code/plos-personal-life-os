@@ -159,7 +159,6 @@ async def _claude_batch_categorize(txs: List[Dict[str, Any]]) -> Dict[str, str]:
             LlmChat(api_key=api_key, session_id="plos-categorize",
                     system_message="You are a strict financial-transaction categorizer. Output valid JSON only.")
             .with_model("anthropic", "claude-sonnet-4-5-20250929")
-            .with_max_tokens(3000)
         )
         resp = await chat.send_message(UserMessage(text=prompt))
         text = resp if isinstance(resp, str) else str(resp)

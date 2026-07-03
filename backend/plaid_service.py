@@ -160,19 +160,41 @@ async def create_link_token(user_id: str, db) -> Dict[str, Any]:
     from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
     from plaid.model.country_code import CountryCode
     from plaid.model.products import Products
+    from plaid.exceptions import ApiException as PlaidApiException
     products = [Products("transactions"), Products("auth"), Products("identity"),
                 Products("investments"), Products("liabilities")]
-    req_args: Dict[str, Any] = dict(
-        client_name="PLOS — Personal Life OS",
-        language="en",
-        country_codes=[CountryCode("US")],
-        user=LinkTokenCreateRequestUser(client_user_id=user_id),
-        products=products,
-        android_package_name=PLAID_ANDROID_PACKAGE,
-    )
-    if PLAID_WEBHOOK_URL:
-        req_args["webhook"] = PLAID_WEBHOOK_URL
-    resp = _client().link_token_create(LinkTokenCreateRequest(**req_args))
+
+    def _build_args(include_android: bool) -> Dict[str, Any]:
+        args: Dict[str, Any] = dict(
+            client_name="PLOS — Personal Life OS",
+            language="en",
+            country_codes=[CountryCode("US")],
+            user=LinkTokenCreateRequestUser(client_user_id=user_id),
+            products=products,
+        )
+        if include_android:
+            args["android_package_name"] = PLAID_ANDROID_PACKAGE
+        if PLAID_WEBHOOK_URL:
+            args["webhook"] = PLAID_WEBHOOK_URL
+        return args
+
+    # First try with the Android package name (needed for Android builds).
+    # If Plaid rejects because the package isn't registered yet in the
+    # Dashboard, retry without it so web / iOS testing keeps working.
+    try:
+        resp = _client().link_token_create(LinkTokenCreateRequest(**_build_args(True)))
+    except PlaidApiException as e:
+        body = getattr(e, "body", "") or ""
+        if "Android package name must be configured" in str(body) or "android_package_name" in str(body).lower():
+            logger.warning(
+                "Plaid Android package name '%s' not registered in Dashboard yet — "
+                "retrying link_token creation without it. Register at Plaid Dashboard "
+                "→ Developers → API → Allowed Android Package Names to enable Android builds.",
+                PLAID_ANDROID_PACKAGE,
+            )
+            resp = _client().link_token_create(LinkTokenCreateRequest(**_build_args(False)))
+        else:
+            raise
     return {"link_token": resp["link_token"], "expiration": str(resp.get("expiration", ""))}
 
 
@@ -186,6 +208,22 @@ async def exchange_public_token(user_id: str, public_token: str, db) -> Dict[str
     inst_id, inst_name, inst_logo = await _fetch_institution(access_token)
     enc = encrypt_token(access_token, aad=user_id.encode("utf-8"))
     now = datetime.now(timezone.utc).isoformat()
+    # Fetch initial account balances so /items returns useful data immediately
+    try:
+        from plaid.model.accounts_balance_get_request import AccountsBalanceGetRequest
+        bal_resp = _client().accounts_balance_get(AccountsBalanceGetRequest(access_token=access_token))
+        accts = [
+            {"account_id": a["account_id"], "name": a["name"], "mask": a.get("mask"),
+             "type": str(a.get("type", "")), "subtype": str(a.get("subtype", "")),
+             "balances": {"available": a["balances"].get("available"),
+                          "current": a["balances"].get("current"),
+                          "limit": a["balances"].get("limit"),
+                          "iso_currency_code": a["balances"].get("iso_currency_code", "USD")}}
+            for a in bal_resp["accounts"]
+        ]
+    except Exception as e:
+        logger.warning("Initial balance fetch failed: %s", e)
+        accts = []
     doc = {
         "user_id": user_id, "item_id": item_id, "institution_id": inst_id,
         "institution_name": inst_name, "institution_logo_url": inst_logo,
@@ -193,9 +231,10 @@ async def exchange_public_token(user_id: str, public_token: str, db) -> Dict[str
         "error_code": None, "consent_expiration_time": None,
         "products": ["transactions", "auth", "identity", "investments", "liabilities"],
         "created_at": now, "last_synced": None, "sandbox_seed": False,
+        "accounts": accts,
     }
     await db.plaid_items.insert_one(doc)
-    return {"item_id": item_id, "institution_name": inst_name}
+    return {"item_id": item_id, "institution_name": inst_name, "accounts_synced": len(accts)}
 
 
 async def _fetch_institution(access_token: str) -> tuple:
