@@ -308,6 +308,64 @@ export default function TripPlanner() {
                   <Text style={styles.priceValue}>{fmtUSD(trip.scan_result.avg_hotel_per_night_usd)}</Text>
                 </View>
               </View>
+              {/* Verifiable booking links — dates baked into the URLs */}
+              {trip.scan_result.booking_links?.flights_one_way?.length ? (
+                <View style={{ marginTop: spacing.sm }}>
+                  <Text style={styles.bookingLabel}>VERIFY ONE-WAY PRICE ON</Text>
+                  <View style={styles.bookingChipsRow}>
+                    {trip.scan_result.booking_links.flights_one_way.map((b: any) => (
+                      <TouchableOpacity
+                        key={`ow-${b.platform}`}
+                        style={styles.bookingChip}
+                        onPress={() => Linking.openURL(b.url).catch(() => {})}
+                        testID={`book-ow-${b.platform}`}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.bookingChipText}>{b.platform}</Text>
+                        <ExternalLink size={11} color={colors.primaryGlow} />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              ) : null}
+              {trip.scan_result.booking_links?.flights_round_trip?.length ? (
+                <View style={{ marginTop: spacing.sm }}>
+                  <Text style={styles.bookingLabel}>VERIFY ROUND-TRIP PRICE ON</Text>
+                  <View style={styles.bookingChipsRow}>
+                    {trip.scan_result.booking_links.flights_round_trip.map((b: any) => (
+                      <TouchableOpacity
+                        key={`rt-${b.platform}`}
+                        style={styles.bookingChip}
+                        onPress={() => Linking.openURL(b.url).catch(() => {})}
+                        testID={`book-rt-${b.platform}`}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.bookingChipText}>{b.platform}</Text>
+                        <ExternalLink size={11} color={colors.primaryGlow} />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              ) : null}
+              {trip.scan_result.booking_links?.hotels?.length ? (
+                <View style={{ marginTop: spacing.sm }}>
+                  <Text style={styles.bookingLabel}>BOOK HOTEL ON</Text>
+                  <View style={styles.bookingChipsRow}>
+                    {trip.scan_result.booking_links.hotels.map((b: any) => (
+                      <TouchableOpacity
+                        key={`ho-${b.platform}`}
+                        style={styles.bookingChip}
+                        onPress={() => Linking.openURL(b.url).catch(() => {})}
+                        testID={`book-ho-${b.platform}`}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.bookingChipText}>{b.platform}</Text>
+                        <ExternalLink size={11} color={colors.primaryGlow} />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              ) : null}
               {trip.scan_result.weather_snapshot ? (
                 <Text style={styles.body}>☀️ {trip.scan_result.weather_snapshot}</Text>
               ) : null}
@@ -317,6 +375,13 @@ export default function TripPlanner() {
                   <Text style={styles.dealBannerText}>{trip.scan_result.top_deal}</Text>
                 </View>
               ) : null}
+              {trip.scan_result.notes ? (
+                <Text style={styles.scannedMeta}>ℹ️ {trip.scan_result.notes}</Text>
+              ) : null}
+              <Text style={styles.scannedMeta}>
+                Prices are AI-estimated ({trip.scan_result.price_confidence || "medium"} confidence).
+                Tap any platform above to verify current live prices for these dates.
+              </Text>
               <Text style={styles.scannedMeta}>
                 Scanned {trip.last_scanned_at ? new Date(trip.last_scanned_at).toLocaleString() : "just now"}
                 {trip.scan_result.platform_used ? ` · via ${trip.scan_result.platform_used}` : ""}
@@ -325,6 +390,7 @@ export default function TripPlanner() {
           ) : (
             <Text style={styles.body}>
               Tap Scan to fetch current one-way & round-trip prices, hotel rates, weather, and top deals for this trip.
+              You&apos;ll get one-tap booking links to verify prices on Google Flights, Skyscanner, Kayak, Booking.com, and more.
             </Text>
           )}
         </View>
@@ -684,4 +750,8 @@ const styles = StyleSheet.create({
   dealBanner: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: spacing.sm, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: "rgba(16,185,129,0.12)", borderRadius: radius.sm, borderWidth: 1, borderColor: colors.success },
   dealBannerText: { color: colors.success, fontSize: 11, fontWeight: "600", flex: 1 },
   scannedMeta: { color: colors.textTertiary, fontSize: 10, marginTop: 4 },
+  bookingLabel: { color: colors.textTertiary, fontSize: 9, fontWeight: "700", letterSpacing: 0.8, marginBottom: 6 },
+  bookingChipsRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  bookingChip: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: colors.primaryMuted, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.primary },
+  bookingChipText: { color: colors.primaryGlow, fontSize: 11, fontWeight: "600" },
 });

@@ -70,7 +70,6 @@ const NEW_TRIP_FIELDS: Field[] = [
     options: [
       { value: "business", label: "Business" },
       { value: "leisure", label: "Leisure" },
-      { value: "eden_heights", label: "Eden Heights Development" },
       { value: "family", label: "Family Visit" },
       { value: "conference", label: "Conference / Training" },
       { value: "medical", label: "Medical" },
@@ -95,7 +94,6 @@ const PH_EDIT_FIELDS: Field[] = [
     options: [
       { value: "business", label: "Business" },
       { value: "leisure", label: "Leisure" },
-      { value: "eden_heights", label: "Eden Heights Development" },
       { value: "family", label: "Family Visit" },
       { value: "conference", label: "Conference / Training" },
       { value: "medical", label: "Medical" },
@@ -159,8 +157,8 @@ export default function TravelHome() {
   const phTrip = trips.find((t) => (t.country_code || "").toUpperCase() === "PH");
   const phTitle = phTrip?.destination_name || "Philippines Quick Access";
   const phSubtitleCity = phTrip?.city || "Manila & Bulacan";
-  const phPurposeKey = (phTrip?.purpose || phTemplate?.destination?.purpose || "eden_heights") as string;
-  const phSubtitle = `${phSubtitleCity} · ${PURPOSE_LABELS[phPurposeKey] || PURPOSE_LABELS.eden_heights}`;
+  const phPurposeKey = (phTrip?.purpose || phTemplate?.destination?.purpose || "business") as string;
+  const phSubtitle = `${phSubtitleCity} · ${PURPOSE_LABELS[phPurposeKey] || PURPOSE_LABELS.business}`;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -285,7 +283,7 @@ export default function TravelHome() {
     setPhEditorInitial({
       destination_name: phTrip?.destination_name || phTemplate?.destination?.destination_name || "Manila & Bulacan",
       city: phTrip?.city || phTemplate?.destination?.city || "Manila",
-      purpose: phTrip?.purpose || phTemplate?.destination?.purpose || "eden_heights",
+      purpose: phTrip?.purpose || phTemplate?.destination?.purpose || "business",
       departure_date: phTrip?.departure_date || "",
       return_date: phTrip?.return_date || "",
       status: phTrip?.status || "planning",
@@ -301,7 +299,7 @@ export default function TravelHome() {
       country_code: "PH",
       departure_date: values.departure_date || null,
       return_date: values.return_date || null,
-      purpose: values.purpose || "eden_heights",
+      purpose: values.purpose || "business",
       status: values.status || "planning",
     };
     if (phEditingId) {

@@ -5343,30 +5343,52 @@ async def scan_trip(trip_id: str, user_id: str = Depends(get_current_user_id)):
     """Full-refresh: fetch fresh flight/hotel prices, weather, advisory,
     and AI recommendations for a trip.  Routes AI calls via the AI Router
     with task_type=real_time_research (Perplexity when configured,
-    otherwise Claude fallback)."""
+    otherwise Claude fallback).
+
+    Returns AI-estimated one-way + round-trip flight prices and a mid-range
+    hotel/night estimate PLUS `booking_links` — deterministic deep links to
+    Google Flights / Skyscanner / Kayak / Booking.com / Hotels.com built
+    from the trip's exact departure and return dates so the user can verify
+    the numbers on the live booking sites in one tap.
+    """
     trip = await db.trips.find_one({"trip_id": trip_id, "user_id": user_id}, {"_id": 0})
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
-    dest = trip.get("destination") or trip.get("destination_name") or ""
+    dest = trip.get("destination") or trip.get("destination_name") or trip.get("city") or ""
     country = trip.get("country") or ""
     dep = trip.get("departure_date") or trip.get("start_date") or ""
     ret = trip.get("return_date") or trip.get("end_date") or ""
 
     prompt = (
-        f"For a trip to {dest}, {country} departing {dep} and returning {ret}, "
-        "return a JSON object with keys: "
-        "best_one_way_usd (number, cheapest one-way economy flight from ATL/USA), "
-        "best_round_trip_usd (number, cheapest round-trip economy), "
-        "avg_hotel_per_night_usd (number, mid-range hotel), "
-        "weather_snapshot (short string), "
-        "advisory (short travel advisory summary), "
-        "top_deal (one-line current deal you can find today). "
-        "Return ONLY the JSON — no markdown."
+        f"You are a travel-price research assistant. Return CURRENT (as of today's date) "
+        f"market-rate US dollar estimates for a trip from Atlanta USA (ATL) to "
+        f"{dest}, {country}, departing {dep or 'TBD'} and returning {ret or 'TBD or one-way'}.\n\n"
+        "Return ONLY a compact JSON object (no markdown, no commentary) with these fields:\n"
+        "  best_one_way_usd: number — realistic cheapest one-way economy fare for the "
+        "specific departure date. Base it on typical Google Flights / Skyscanner / Kayak "
+        "median prices for this route and season. Include estimated USD amount, not zero.\n"
+        "  best_round_trip_usd: number — realistic cheapest round-trip economy fare covering "
+        "both dates. Null if return date not provided.\n"
+        "  avg_hotel_per_night_usd: number — realistic mid-range 3-star hotel nightly rate "
+        "in USD in the primary city.\n"
+        "  weather_snapshot: short string — typical weather + temperature range for "
+        "the travel dates.\n"
+        "  advisory: short string — one-line US State Dept travel-advisory summary.\n"
+        "  top_deal: string — one-line current deal / booking tip for this route (e.g. "
+        "'Delta shows sub-$700 round-trips on Tue/Wed departures via ICN').\n"
+        "  price_confidence: 'low' | 'medium' | 'high' — how confident you are that the "
+        "prices match what a real search would show today.\n"
+        "  notes: string — one-line explanation of the routing / carriers / fare class used.\n"
+        "\n"
+        "IMPORTANT: The user WILL tap through to Google Flights / Skyscanner / Kayak / "
+        "Booking.com to verify — so your numbers must be within ~15% of live prices, not "
+        "aspirational lowball fares."
     )
     routed = await ai_router.route_ai_task(
         task_type="real_time_research",
         payload={"prompt": prompt},
         user_id=user_id,
+        force_no_cache=True,  # scans should always fetch fresh prices
     )
     import re
     import json as _j
@@ -5379,6 +5401,9 @@ async def scan_trip(trip_id: str, user_id: str = Depends(get_current_user_id)):
         except Exception:
             parsed = {}
     now = datetime.now(timezone.utc).isoformat()
+    # Build verifiable booking URLs from the trip's exact dates
+    from travel_search import build_scan_booking_links
+    booking_links = build_scan_booking_links(trip)
     scan_result = {
         "best_one_way_usd": parsed.get("best_one_way_usd"),
         "best_round_trip_usd": parsed.get("best_round_trip_usd"),
@@ -5386,9 +5411,12 @@ async def scan_trip(trip_id: str, user_id: str = Depends(get_current_user_id)):
         "weather_snapshot": parsed.get("weather_snapshot", ""),
         "advisory": parsed.get("advisory", ""),
         "top_deal": parsed.get("top_deal", ""),
+        "price_confidence": parsed.get("price_confidence", "medium"),
+        "notes": parsed.get("notes", ""),
         "scanned_at": now,
         "platform_used": routed.get("platform"),
         "model_used": routed.get("model_used"),
+        "booking_links": booking_links,
     }
     await db.trips.update_one(
         {"trip_id": trip_id, "user_id": user_id},

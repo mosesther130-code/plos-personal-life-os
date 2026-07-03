@@ -323,6 +323,185 @@ def _hotel_urls(trip: Dict[str, Any]) -> Dict[str, str]:
     }
 
 
+def build_scan_booking_links(trip: Dict[str, Any]) -> Dict[str, Any]:
+    """Return verifiable booking URLs for a trip.
+
+    URLs are constructed with the trip's exact departure/return dates so a tap
+    lands the user on the platform's live results page for those dates.  Prices
+    shown in the app are AI-estimated *upper bounds*; tapping any link opens
+    the actual booking site where the user can verify + book at current prices.
+    """
+    dep = (trip.get("departure_date") or trip.get("start_date") or "")[:10]
+    ret = (trip.get("return_date") or trip.get("end_date") or "")[:10]
+    dest_city = trip.get("city") or trip.get("destination") or trip.get("destination_name") or ""
+    country = trip.get("country") or ""
+    origin_iata = (trip.get("origin_iata") or "ATL").upper()
+    origin_city = trip.get("origin_city") or "Atlanta"
+
+    # Best-effort IATA for destination — fall back to city name for platforms
+    # that accept it (Google Flights' natural-language search does).
+    dest_iata_map = {
+        "philippines": "MNL", "manila": "MNL",
+        "japan": "HND", "tokyo": "HND",
+        "south korea": "ICN", "korea": "ICN", "seoul": "ICN",
+        "singapore": "SIN",
+        "hong kong": "HKG",
+        "thailand": "BKK", "bangkok": "BKK",
+        "vietnam": "SGN", "ho chi minh": "SGN", "hanoi": "HAN",
+        "indonesia": "CGK", "jakarta": "CGK", "bali": "DPS",
+        "malaysia": "KUL", "kuala lumpur": "KUL",
+        "united kingdom": "LHR", "uk": "LHR", "london": "LHR",
+        "france": "CDG", "paris": "CDG",
+        "germany": "FRA", "frankfurt": "FRA", "berlin": "BER",
+        "spain": "MAD", "madrid": "MAD", "barcelona": "BCN",
+        "italy": "FCO", "rome": "FCO", "milan": "MXP",
+        "netherlands": "AMS", "amsterdam": "AMS",
+        "united arab emirates": "DXB", "dubai": "DXB",
+        "india": "DEL", "delhi": "DEL", "mumbai": "BOM",
+        "canada": "YYZ", "toronto": "YYZ",
+        "mexico": "MEX", "mexico city": "MEX",
+        "brazil": "GRU", "sao paulo": "GRU",
+        "australia": "SYD", "sydney": "SYD",
+        "ghana": "ACC", "accra": "ACC",
+    }
+    dest_iata = None
+    key_lookup = [dest_city.lower(), country.lower()]
+    for k in key_lookup:
+        if k and k in dest_iata_map:
+            dest_iata = dest_iata_map[k]
+            break
+
+    from urllib.parse import quote_plus
+    dest_q = quote_plus(f"{dest_city}, {country}".strip(", "))
+
+    links: Dict[str, Any] = {
+        # ONE-WAY flight search links
+        "flights_one_way": [],
+        # ROUND-TRIP flight search links
+        "flights_round_trip": [],
+        # HOTEL search links (uses full stay range)
+        "hotels": [],
+    }
+
+    if dep:
+        # Google Flights — natural language search is most reliable across
+        # arbitrary destinations
+        gf_ow_q = quote_plus(f"one way flights to {dest_city} from {origin_city} on {dep}")
+        links["flights_one_way"].append({
+            "platform": "Google Flights",
+            "url": f"https://www.google.com/travel/flights?q={gf_ow_q}",
+        })
+        if dest_iata:
+            links["flights_one_way"].append({
+                "platform": "Skyscanner",
+                "url": (
+                    f"https://www.skyscanner.com/transport/flights/"
+                    f"{origin_iata.lower()}/{dest_iata.lower()}/{dep}/"
+                    f"?adults=1&currency=USD&locale=en-US"
+                ),
+            })
+            links["flights_one_way"].append({
+                "platform": "Kayak",
+                "url": (
+                    f"https://www.kayak.com/flights/{origin_iata}-{dest_iata}"
+                    f"/{dep}/1adults?sort=price_a"
+                ),
+            })
+        else:
+            # Fallback: Kayak accepts city query too
+            links["flights_one_way"].append({
+                "platform": "Kayak",
+                "url": (
+                    f"https://www.kayak.com/flights/{origin_iata}-{quote_plus(dest_city)}"
+                    f"/{dep}/1adults?sort=price_a"
+                ),
+            })
+
+    if dep and ret:
+        gf_rt_q = quote_plus(
+            f"round trip flights to {dest_city} from {origin_city} "
+            f"departing {dep} returning {ret}"
+        )
+        links["flights_round_trip"].append({
+            "platform": "Google Flights",
+            "url": f"https://www.google.com/travel/flights?q={gf_rt_q}",
+        })
+        if dest_iata:
+            links["flights_round_trip"].append({
+                "platform": "Skyscanner",
+                "url": (
+                    f"https://www.skyscanner.com/transport/flights/"
+                    f"{origin_iata.lower()}/{dest_iata.lower()}/{dep}/{ret}/"
+                    f"?adults=1&currency=USD&locale=en-US"
+                ),
+            })
+            links["flights_round_trip"].append({
+                "platform": "Kayak",
+                "url": (
+                    f"https://www.kayak.com/flights/{origin_iata}-{dest_iata}"
+                    f"/{dep}/{ret}/1adults?sort=price_a"
+                ),
+            })
+        else:
+            links["flights_round_trip"].append({
+                "platform": "Kayak",
+                "url": (
+                    f"https://www.kayak.com/flights/{origin_iata}-{quote_plus(dest_city)}"
+                    f"/{dep}/{ret}/1adults?sort=price_a"
+                ),
+            })
+        # Momondo (round-trip only)
+        links["flights_round_trip"].append({
+            "platform": "Momondo",
+            "url": (
+                f"https://www.momondo.com/flight-search/"
+                f"{origin_iata}-{dest_iata or quote_plus(dest_city)}/{dep}/{ret}"
+                f"?adults=1&currency=USD"
+            ),
+        })
+
+    if dep and ret and dest_city:
+        links["hotels"].append({
+            "platform": "Booking.com",
+            "url": (
+                f"https://www.booking.com/searchresults.html?ss={dest_q}"
+                f"&checkin={dep}&checkout={ret}&group_adults=1&no_rooms=1&order=price"
+            ),
+        })
+        links["hotels"].append({
+            "platform": "Hotels.com",
+            "url": (
+                f"https://www.hotels.com/search.do?destination={quote_plus(dest_city)}"
+                f"&startDate={dep}&endDate={ret}&adults=1&sort=PRICE_LOW_TO_HIGH"
+            ),
+        })
+        links["hotels"].append({
+            "platform": "Kayak Hotels",
+            "url": (
+                f"https://www.kayak.com/hotels/{quote_plus(dest_city)}"
+                f"/{dep}/{ret}/1adults?sort=price_a"
+            ),
+        })
+        # Agoda is best for Asia
+        if any(k in (country.lower() + " " + dest_city.lower()) for k in
+               ("philippines", "thailand", "vietnam", "indonesia", "korea",
+                "japan", "singapore", "malaysia", "cambodia", "asia")):
+            try:
+                nights = max(1, (datetime.fromisoformat(ret) - datetime.fromisoformat(dep)).days)
+            except Exception:
+                nights = 5
+            links["hotels"].append({
+                "platform": "Agoda",
+                "url": (
+                    f"https://www.agoda.com/search?city={quote_plus(dest_city)}"
+                    f"&checkIn={dep}&checkOut={ret}&rooms=1&adults=1&los={nights}"
+                    f"&currency=USD&sort=priceLowToHigh"
+                ),
+            })
+
+    return links
+
+
 def _bundle_urls(trip: Dict[str, Any]) -> Dict[str, str]:
     dep = (trip.get("departure_date") or trip.get("start_date") or "")[:10]
     ret = (trip.get("return_date") or trip.get("end_date") or dep)[:10]

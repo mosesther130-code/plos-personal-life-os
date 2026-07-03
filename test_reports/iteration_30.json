@@ -1,0 +1,30 @@
+{
+  "summary": "Iteration 30 backend verification for /api/travel/trips/{id}/scan booking_links complete: 7/7 tests green in 29s. Verified for Manila (Asian → Agoda present, MNL lowercase in Skyscanner, ATL-MNL uppercase in Kayak, checkin/checkout in Booking.com URL, dep+ret dates encoded in Google Flights natural-language query), Paris (non-Asian → no Agoda, /atl/cdg/ lowercase, ATL-CDG uppercase), and Seoul one-way (flights_round_trip=[] and hotels=[] as required; ICN one-way Skyscanner link built). Confirmed new price_confidence + notes fields present. force_no_cache=True verified via two consecutive scans yielding distinct scanned_at. Pin/edit/delete regressions all pass.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_30_booking_links.py",
+    "/app/test_reports/pytest/iteration_30_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "travel_search.build_scan_booking_links: nights computation for Agoda hotel URL is computed but never inserted (link uses default los=... query only when built; actual template does interpolate nights). Confirmed via URL — nights value is embedded via los={nights}. OK, no bug.",
+    "server.py scan_trip still lacks rate limiting; force_no_cache=True hits AI on every call which can incur cost if UI hammers scan (still recommend 60s cooldown per trip as noted in iteration_29).",
+    "build_scan_booking_links dest_iata_map covers ~15 common countries but silently falls back to Google Flights + Kayak-with-city when the destination isn't listed; consider logging the miss so we can grow the map when users hit edge destinations (e.g., Ghana already added, but many African/S.American destinations still miss)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "not tested (backend-only request)"},
+  "seed_data_creation": "None — tests create and clean up TEST_-prefixed trips (module-scoped autouse fixture).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Test file /app/backend/tests/test_iteration_30_booking_links.py covers all iteration-30 booking_links requirements. Uses EXPO_PUBLIC_BACKEND_URL. AI Router routes real_time_research to Claude (Perplexity 401 → fallback), so scan takes ~4s per call and returns non-null best_one_way_usd/best_round_trip_usd/avg_hotel_per_night_usd along with the deterministic booking_links dict. Manila trip creates 3 flight_one_way + 4 flights_round_trip + 4 hotels (incl. Agoda). Paris omits Agoda. Seoul one-way yields empty round-trip and hotels arrays as required.",
+  "rca_of_issue": "N/A — no bugs found. build_scan_booking_links (travel_search.py:326) correctly (a) lowercases IATA codes in Skyscanner path segments, (b) keeps Kayak IATA uppercase (origin_iata.upper() + dest_iata from the map which is stored uppercase), (c) URL-encodes dep/ret dates inside the Google Flights natural-language `q=` param, (d) embeds checkin=/checkout= in Booking.com URL, (e) guards Agoda block with the Asian country check, (f) skips flights_round_trip and hotels when ret is missing (via `if dep and ret:` guards). server.py:5391 passes force_no_cache=True so consecutive scans regenerate fresh timestamps and re-run AI."
+}
