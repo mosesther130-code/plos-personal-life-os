@@ -6287,6 +6287,24 @@ async def _init_cache_indexes():
     except Exception as _e:
         pass
 
+
+@app.on_event("startup")
+async def _start_pregen_scheduler():
+    try:
+        from pregen_scheduler import start_scheduler
+        start_scheduler(db)
+    except Exception as _e:
+        logging.getLogger(__name__).warning("Pregen scheduler failed to start: %s", _e)
+
+
+@app.on_event("shutdown")
+async def _stop_pregen_scheduler():
+    try:
+        from pregen_scheduler import stop_scheduler
+        stop_scheduler()
+    except Exception:
+        pass
+
 # Mount Career Intelligence sub-router (Enhancements 4c, 4d, 4e)
 from career_intelligence import make_router as make_career_intel_router  # noqa: E402
 

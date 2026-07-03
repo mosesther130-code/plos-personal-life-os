@@ -19,6 +19,7 @@ import {
   ChevronRight,
   Edit3,
   Download,
+  Bell,
 } from "lucide-react-native";
 
 import { financeApi } from "@/src/lib/api";
@@ -27,6 +28,7 @@ import { EditModal, Field } from "@/src/components/EditModal";
 import { ReportsModal } from "@/src/components/ReportsModal";
 import { PlaidSection } from "@/src/components/PlaidSection";
 import { CashFlowForecast } from "@/src/components/CashFlowForecast";
+import { MonthlySummaryCard } from "@/src/components/MonthlySummaryCard";
 import { categoryMeta } from "@/src/lib/categories";
 
 const fmtUSD = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
@@ -224,6 +226,26 @@ export default function Finance() {
 
         {/* 90-day Cash Flow Forecast */}
         <CashFlowForecast />
+
+        {/* Monthly Spending Summary (previous month, Claude-generated) */}
+        <MonthlySummaryCard />
+
+        {/* Alert Settings entry */}
+        <TouchableOpacity
+          style={styles.debtMgrBtn}
+          onPress={() => router.push("/finance/alert-settings")}
+          testID="open-alert-settings"
+          activeOpacity={0.85}
+        >
+          <View style={[styles.debtMgrIcon, { backgroundColor: "rgba(139,92,246,0.15)" }]}>
+            <Bell size={18} color="#A78BFA" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.debtMgrTitle}>Alert Settings</Text>
+            <Text style={styles.debtMgrSub}>Thresholds · quiet hours · 90-day history</Text>
+          </View>
+          <ChevronRight color={colors.textSecondary} size={18} />
+        </TouchableOpacity>
 
         {/* Fraud review entry */}
         <TouchableOpacity

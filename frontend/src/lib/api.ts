@@ -800,6 +800,15 @@ export const plaidApi = {
   resolveFraud: (alert_id: string, decision: "trusted" | "disputed" | "reported") =>
     request<any>(`/plaid/fraud-alerts/${alert_id}`, { method: "PUT", body: { decision } }),
   cacheStats: () => request<any>("/plaid/cache-stats"),
+  monthlySummary: (month?: string, refresh = false) =>
+    request<any>(`/plaid/monthly-summary${month ? `?month=${month}&refresh=${refresh}` : `?refresh=${refresh}`}`),
+  monthlySummaries: () => request<any>("/plaid/monthly-summaries"),
+  snapshotFusion: () => request<any>("/plaid/snapshot-fusion"),
+  alertSettings: () => request<any>("/plaid/alert-settings"),
+  updateAlertSettings: (patch: any) => request<any>("/plaid/alert-settings", { method: "PUT", body: patch }),
+  alertHistory: (days = 90) => request<any>(`/plaid/alert-history?days=${days}`),
+  triggerPregen: () => request<any>("/plaid/pregen/trigger-now", { method: "POST" }),
+  pregenLog: () => request<any>("/plaid/pregen/log"),
 };
 
 // ----------------- Push Notifications (Firebase via Emergent relay) ----

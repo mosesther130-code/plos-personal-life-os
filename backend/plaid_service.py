@@ -563,6 +563,148 @@ def make_router(db, get_current_user_id, notify_user=None):
         from cache_manager import stats
         return await stats(db)
 
+    @r.get("/monthly-summary")
+    async def monthly_summary(user_id: str = Depends(get_current_user_id),
+                              month: Optional[str] = None,
+                              refresh: bool = False):
+        """Return (or generate) a Claude-powered monthly narrative summary.
+        `month=YYYY-MM` (defaults to previous calendar month). `refresh=true`
+        forces a re-generation."""
+        from monthly_summary import generate_monthly_summary
+        return await generate_monthly_summary(user_id, db, month_iso=month, use_cache=not refresh)
+
+    @r.get("/monthly-summaries")
+    async def monthly_summaries(user_id: str = Depends(get_current_user_id), limit: int = 24):
+        docs = await db.monthly_summaries.find(
+            {"user_id": user_id}, {"_id": 0},
+        ).sort("month", -1).limit(limit).to_list(limit)
+        return {"summaries": docs, "count": len(docs)}
+
+    @r.get("/snapshot-fusion")
+    async def snapshot_fusion(user_id: str = Depends(get_current_user_id)):
+        """Merge manual finance-snapshot totals with Plaid-verified totals.
+        Returns both sides + the diff so the UI can prefer Plaid when it's
+        connected and fall back to manual data otherwise."""
+        # Manual snapshot from finance_snapshots collection (existing PLOS model)
+        manual = await db.finance_snapshots.find_one({"user_id": user_id}, {"_id": 0}) or {}
+
+        # Live Plaid aggregates (last 30 days)
+        items = await db.plaid_items.find({"user_id": user_id}).to_list(50)
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat()
+        txs = await db.transactions.find(
+            {"user_id": user_id, "removed": {"$ne": True}, "date": {"$gte": cutoff},
+             "pending": {"$ne": True}},
+            {"_id": 0, "amount": 1, "category_plos": 1, "category_plaid": 1},
+        ).to_list(1000)
+        plaid_income = sum(-float(t["amount"]) for t in txs if float(t.get("amount") or 0) < 0)
+        plaid_expenses = sum(float(t["amount"]) for t in txs if float(t.get("amount") or 0) > 0)
+        by_cat: Dict[str, float] = {}
+        for t in txs:
+            a = float(t.get("amount") or 0)
+            if a > 0:
+                c = t.get("category_plos") or (t.get("category_plaid") or ["Uncategorized"])[0]
+                by_cat[c] = by_cat.get(c, 0) + a
+
+        # Total Plaid-known assets/liabilities
+        assets = 0.0
+        liabilities = 0.0
+        for it in items:
+            for a in it.get("accounts", []):
+                bal = (a.get("balances") or {}).get("current") or 0
+                if a.get("type") in ("depository", "investment"):
+                    assets += float(bal)
+                elif a.get("type") == "credit":
+                    liabilities += float(bal)
+
+        manual_income = float(manual.get("monthly_income_usd") or 0)
+        manual_expenses = float(manual.get("monthly_expenses_usd") or 0)
+        manual_net_worth = float(manual.get("net_worth_usd") or 0)
+
+        has_plaid = len(items) > 0
+        return {
+            "has_plaid_data": has_plaid,
+            "items_connected": len(items),
+            "plaid": {
+                "income_30d": round(plaid_income, 2),
+                "expenses_30d": round(plaid_expenses, 2),
+                "monthly_surplus": round(plaid_income - plaid_expenses, 2),
+                "assets": round(assets, 2),
+                "liabilities": round(liabilities, 2),
+                "estimated_net_worth": round(assets - liabilities, 2),
+                "by_category": [{"category": k, "amount": round(v, 2)}
+                                for k, v in sorted(by_cat.items(), key=lambda x: -x[1])][:10],
+                "transaction_count": len(txs),
+            },
+            "manual": {
+                "income": manual_income,
+                "expenses": manual_expenses,
+                "net_worth": manual_net_worth,
+                "monthly_surplus": manual_income - manual_expenses,
+            },
+            "variance": {
+                "income_delta": round(plaid_income - manual_income, 2),
+                "expenses_delta": round(plaid_expenses - manual_expenses, 2),
+            },
+            "recommended_source": "plaid" if has_plaid else "manual",
+        }
+
+    @r.get("/alert-settings")
+    async def get_alert_settings(user_id: str = Depends(get_current_user_id)):
+        doc = await db.alert_settings.find_one({"user_id": user_id}, {"_id": 0})
+        if not doc:
+            doc = {
+                "user_id": user_id,
+                "large_tx_enabled": True,
+                "large_tx_threshold_usd": 50.0,
+                "budget_alerts_enabled": True,
+                "budget_threshold_pct": 80,
+                "income_alerts_enabled": True,
+                "new_subscription_alerts_enabled": True,
+                "fraud_alerts_enabled": True,
+                "quiet_hours_start": "22:00",
+                "quiet_hours_end": "07:00",
+            }
+            await db.alert_settings.insert_one(dict(doc))
+        return doc
+
+    @r.put("/alert-settings")
+    async def update_alert_settings(body: Dict[str, Any] = Body(...),
+                                     user_id: str = Depends(get_current_user_id)):
+        allowed = {
+            "large_tx_enabled", "large_tx_threshold_usd",
+            "budget_alerts_enabled", "budget_threshold_pct",
+            "income_alerts_enabled", "new_subscription_alerts_enabled",
+            "fraud_alerts_enabled", "quiet_hours_start", "quiet_hours_end",
+        }
+        patch = {k: v for k, v in body.items() if k in allowed}
+        if not patch:
+            raise HTTPException(400, "No valid fields")
+        await db.alert_settings.update_one(
+            {"user_id": user_id}, {"$set": {**patch, "user_id": user_id}},
+            upsert=True,
+        )
+        return await db.alert_settings.find_one({"user_id": user_id}, {"_id": 0})
+
+    @r.get("/alert-history")
+    async def alert_history(user_id: str = Depends(get_current_user_id), days: int = 90):
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        docs = await db.notifications_outbox.find(
+            {"user_id": user_id, "created_at": {"$gte": cutoff}},
+            {"_id": 0},
+        ).sort("created_at", -1).limit(200).to_list(200)
+        return {"alerts": docs, "count": len(docs)}
+
+    @r.post("/pregen/trigger-now")
+    async def trigger_pregen():
+        """Manually fire the morning pregen batch (for testing / on-demand)."""
+        from pregen_scheduler import trigger_now
+        return await trigger_now(db)
+
+    @r.get("/pregen/log")
+    async def pregen_log(limit: int = 30):
+        docs = await db.pregeneration_log.find({}, {"_id": 0}).sort("start_time", -1).limit(limit).to_list(limit)
+        return {"log": docs, "count": len(docs)}
+
     @r.get("/summary")
     async def summary(user_id: str = Depends(get_current_user_id)):
         """Aggregate Plaid data for the Financial Snapshot: total balance,
