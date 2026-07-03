@@ -6272,6 +6272,9 @@ async def _plaid_notify(user_id: str, event: str, data: Dict[str, Any]):
 
 
 api_router.include_router(make_plaid_router(db, get_current_user_id, notify_user=_plaid_notify))
+# Also mount directly on app because api_router was already attached to app
+# earlier (line 6189) — routes added to api_router after that point are not
+# picked up. Only this second mount actually serves the /api/plaid/* routes.
 app.include_router(make_plaid_router(db, get_current_user_id, notify_user=_plaid_notify),
                    prefix="/api")
 
