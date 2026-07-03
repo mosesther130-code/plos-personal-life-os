@@ -11,6 +11,7 @@ import {
   TextInput,
   Linking,
   Platform,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
@@ -28,10 +29,17 @@ import {
   Compass,
   BookOpen,
   Pencil,
+  Pin,
+  PinOff,
+  Trash2,
+  RadioTower,
 } from "lucide-react-native";
 import { travelApi } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
 import { EditModal, type Field } from "@/src/components/EditModal";
+
+const fmtUSD = (n?: number | null) =>
+  typeof n === "number" && !isNaN(n) ? `$${Math.round(n).toLocaleString("en-US")}` : "—";
 
 const advisoryColor = (level?: number) => {
   if (level === 1) return colors.success;
@@ -129,6 +137,7 @@ export default function TravelHome() {
   const [phEditorOpen, setPhEditorOpen] = useState(false);
   const [phEditorInitial, setPhEditorInitial] = useState<any | null>(null);
   const [phEditingId, setPhEditingId] = useState<string | null>(null);
+  const [busyTrip, setBusyTrip] = useState<{ id: string; kind: string } | null>(null);
 
   const phTrip = trips.find((t) => (t.country_code || "").toUpperCase() === "PH");
   const phTitle = phTrip?.destination_name || "Philippines Quick Access";
@@ -190,6 +199,57 @@ export default function TravelHome() {
     setEditorOpen(false);
     await load();
     if (!editingId && created?.trip_id) router.push(`/travel/${created.trip_id}`);
+  };
+
+  const openEdit = (t: any) => {
+    setEditingId(t.trip_id);
+    setEditorInitial({
+      destination_name: t.destination_name || "",
+      city: t.city || "",
+      country: t.country || "",
+      country_code: t.country_code || "",
+      departure_date: t.departure_date || "",
+      return_date: t.return_date || "",
+      purpose: t.purpose || "leisure",
+      status: t.status || "planning",
+    });
+    setEditorOpen(true);
+  };
+
+  const togglePin = async (t: any) => {
+    setBusyTrip({ id: t.trip_id, kind: "pin" });
+    try {
+      await travelApi.pinTrip(t.trip_id, !t.pinned);
+      await load();
+    } catch (_e) {}
+    setBusyTrip(null);
+  };
+
+  const scanTrip = async (t: any) => {
+    setBusyTrip({ id: t.trip_id, kind: "scan" });
+    try {
+      await travelApi.scanTrip(t.trip_id);
+      await load();
+    } catch (_e) {
+      Alert.alert("Scan failed", "Could not refresh prices right now. Try again shortly.");
+    }
+    setBusyTrip(null);
+  };
+
+  const confirmDelete = (t: any) => {
+    const proceed = async () => {
+      setBusyTrip({ id: t.trip_id, kind: "delete" });
+      try { await travelApi.deleteTrip(t.trip_id); await load(); } catch (_e) {}
+      setBusyTrip(null);
+    };
+    if (Platform.OS === "web") {
+      if (typeof window !== "undefined" && window.confirm(`Delete trip to ${t.destination_name}?`)) proceed();
+      return;
+    }
+    Alert.alert("Delete trip?", `${t.destination_name} — checklist & cost will be removed.`, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: proceed },
+    ]);
   };
 
   const openPhEdit = () => {
@@ -375,41 +435,125 @@ export default function TravelHome() {
             <Text style={styles.emptySub}>Tap + above to plan one</Text>
           </View>
         ) : (
-          trips.map((t) => (
-            <TouchableOpacity
-              key={t.trip_id}
-              style={styles.tripCard}
-              onPress={() => router.push(`/travel/${t.trip_id}`)}
-              testID={`trip-${t.trip_id}`}
-              activeOpacity={0.85}
-            >
-              <View style={styles.tripIcon}><Text style={styles.tripFlag}>{t.flag || "🏳️"}</Text></View>
-              <View style={{ flex: 1 }}>
-                <View style={styles.tripTitleRow}>
-                  <Text style={styles.tripTitle}>{t.destination_name}</Text>
-                  <View style={[styles.statusPill, { backgroundColor: statusColor(t.status) + "22", borderColor: statusColor(t.status) }]}>
-                    <Text style={[styles.statusPillText, { color: statusColor(t.status) }]}>{statusLabel(t.status)}</Text>
-                  </View>
-                </View>
-                <View style={styles.tripMetaRow}>
-                  <Calendar size={11} color={colors.textTertiary} />
-                  <Text style={styles.tripMetaText}>
-                    {t.departure_date || "No date"}{t.return_date ? ` → ${t.return_date}` : ""}
-                  </Text>
-                </View>
-                <View style={styles.tripMetaRow}>
-                  <MapPin size={11} color={colors.textTertiary} />
-                  <Text style={styles.tripMetaText}>{t.country}</Text>
-                  {typeof t.days_until_departure === "number" && t.days_until_departure >= 0 ? (
-                    <View style={styles.daysPill}>
-                      <Text style={styles.daysPillText}>{t.days_until_departure === 0 ? "Today!" : `${t.days_until_departure}d to go`}</Text>
+          trips.map((t) => {
+            const busy = busyTrip?.id === t.trip_id ? busyTrip.kind : null;
+            const scan = t.scan_result;
+            const scannedAt = t.last_scanned_at ? new Date(t.last_scanned_at).toLocaleDateString() : null;
+            return (
+              <View key={t.trip_id} style={[styles.tripCard, t.pinned && styles.tripCardPinned]}>
+                <TouchableOpacity
+                  style={styles.tripMain}
+                  onPress={() => router.push(`/travel/${t.trip_id}`)}
+                  testID={`trip-${t.trip_id}`}
+                  activeOpacity={0.85}
+                >
+                  <View style={styles.tripIcon}><Text style={styles.tripFlag}>{t.flag || "🏳️"}</Text></View>
+                  <View style={{ flex: 1 }}>
+                    <View style={styles.tripTitleRow}>
+                      <Text style={styles.tripTitle} numberOfLines={1}>{t.destination_name}</Text>
+                      {t.pinned ? (
+                        <View style={styles.pinnedPill}>
+                          <Pin size={9} color="#5EEAD4" />
+                          <Text style={styles.pinnedPillText}>PINNED</Text>
+                        </View>
+                      ) : null}
+                      <View style={[styles.statusPill, { backgroundColor: statusColor(t.status) + "22", borderColor: statusColor(t.status) }]}>
+                        <Text style={[styles.statusPillText, { color: statusColor(t.status) }]}>{statusLabel(t.status)}</Text>
+                      </View>
                     </View>
-                  ) : null}
+                    <View style={styles.tripMetaRow}>
+                      <Calendar size={11} color={colors.textTertiary} />
+                      <Text style={styles.tripMetaText}>
+                        {t.departure_date || "No date"}{t.return_date ? ` → ${t.return_date}` : ""}
+                      </Text>
+                    </View>
+                    <View style={styles.tripMetaRow}>
+                      <MapPin size={11} color={colors.textTertiary} />
+                      <Text style={styles.tripMetaText}>{t.country}</Text>
+                      {typeof t.days_until_departure === "number" && t.days_until_departure >= 0 ? (
+                        <View style={styles.daysPill}>
+                          <Text style={styles.daysPillText}>{t.days_until_departure === 0 ? "Today!" : `${t.days_until_departure}d to go`}</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  </View>
+                  <ChevronRight size={16} color={colors.textTertiary} />
+                </TouchableOpacity>
+
+                {/* Scan result strip (one-way / round-trip / hotel) */}
+                {scan && (scan.best_one_way_usd || scan.best_round_trip_usd || scan.avg_hotel_per_night_usd) ? (
+                  <View style={styles.priceStrip}>
+                    <View style={styles.priceCell}>
+                      <Text style={styles.priceLabel}>ONE-WAY</Text>
+                      <Text style={styles.priceValue}>{fmtUSD(scan.best_one_way_usd)}</Text>
+                    </View>
+                    <View style={styles.priceDivider} />
+                    <View style={styles.priceCell}>
+                      <Text style={styles.priceLabel}>ROUND-TRIP</Text>
+                      <Text style={styles.priceValue}>{fmtUSD(scan.best_round_trip_usd)}</Text>
+                    </View>
+                    <View style={styles.priceDivider} />
+                    <View style={styles.priceCell}>
+                      <Text style={styles.priceLabel}>HOTEL / NIGHT</Text>
+                      <Text style={styles.priceValue}>{fmtUSD(scan.avg_hotel_per_night_usd)}</Text>
+                    </View>
+                  </View>
+                ) : null}
+
+                {/* Action row */}
+                <View style={styles.actionRow}>
+                  <TouchableOpacity
+                    style={styles.actionBtn}
+                    onPress={() => togglePin(t)}
+                    disabled={!!busy}
+                    testID={`pin-${t.trip_id}`}
+                    hitSlop={8}
+                  >
+                    {busy === "pin" ? <ActivityIndicator size="small" color={colors.primaryGlow} /> :
+                      t.pinned ? <PinOff size={13} color={colors.primaryGlow} /> : <Pin size={13} color={colors.textSecondary} />}
+                    <Text style={[styles.actionBtnText, t.pinned && { color: colors.primaryGlow }]}>{t.pinned ? "Unpin" : "Pin"}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.actionBtn}
+                    onPress={() => openEdit(t)}
+                    disabled={!!busy}
+                    testID={`edit-${t.trip_id}`}
+                    hitSlop={8}
+                  >
+                    <Pencil size={13} color={colors.textSecondary} />
+                    <Text style={styles.actionBtnText}>Edit</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.actionBtn}
+                    onPress={() => scanTrip(t)}
+                    disabled={!!busy}
+                    testID={`scan-${t.trip_id}`}
+                    hitSlop={8}
+                  >
+                    {busy === "scan" ? <ActivityIndicator size="small" color={colors.success} /> :
+                      <RadioTower size={13} color={colors.success} />}
+                    <Text style={[styles.actionBtnText, { color: colors.success }]}>
+                      {busy === "scan" ? "Scanning…" : scannedAt ? "Rescan" : "Scan"}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.actionBtn}
+                    onPress={() => confirmDelete(t)}
+                    disabled={!!busy}
+                    testID={`delete-${t.trip_id}`}
+                    hitSlop={8}
+                  >
+                    {busy === "delete" ? <ActivityIndicator size="small" color={colors.danger} /> :
+                      <Trash2 size={13} color={colors.danger} />}
+                    <Text style={[styles.actionBtnText, { color: colors.danger }]}>Delete</Text>
+                  </TouchableOpacity>
                 </View>
+                {scannedAt ? (
+                  <Text style={styles.scannedAt}>Last scanned {scannedAt} · {scan?.platform_used || "AI"}</Text>
+                ) : null}
               </View>
-              <ChevronRight size={16} color={colors.textTertiary} />
-            </TouchableOpacity>
-          ))
+            );
+          })
         )}
 
         {/* Travel Deal Alerts */}
@@ -500,17 +644,30 @@ const styles = StyleSheet.create({
   empty: { alignItems: "center", padding: spacing.xxxl, gap: spacing.sm, backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.borderSubtle },
   emptyText: { color: colors.textSecondary, fontSize: 14 },
   emptySub: { color: colors.textTertiary, fontSize: 12 },
-  tripCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, borderWidth: 1, borderColor: colors.borderSubtle },
+  tripCard: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.borderSubtle, overflow: "hidden" },
+  tripCardPinned: { borderColor: "#14B8A6", backgroundColor: "rgba(20,184,166,0.05)" },
+  tripMain: { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.lg },
   tripIcon: { width: 40, height: 40, borderRadius: radius.md, backgroundColor: colors.bg, alignItems: "center", justifyContent: "center" },
   tripFlag: { fontSize: 22 },
-  tripTitleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm },
+  tripTitleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm, flexWrap: "wrap" },
   tripTitle: { color: colors.textPrimary, fontSize: 14, fontWeight: "700", flex: 1 },
+  pinnedPill: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "rgba(20,184,166,0.15)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: radius.sm, borderWidth: 1, borderColor: "#14B8A6" },
+  pinnedPillText: { color: "#5EEAD4", fontSize: 8, fontWeight: "700", letterSpacing: 0.8 },
   statusPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.sm, borderWidth: 1 },
   statusPillText: { fontSize: 9, fontWeight: "700", letterSpacing: 0.5 },
   tripMetaRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 },
   tripMetaText: { color: colors.textTertiary, fontSize: 11 },
   daysPill: { marginLeft: "auto", backgroundColor: colors.primaryMuted, paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.sm },
   daysPillText: { color: colors.primaryGlow, fontSize: 10, fontWeight: "700" },
+  priceStrip: { flexDirection: "row", backgroundColor: "rgba(16,185,129,0.08)", borderTopWidth: 1, borderTopColor: colors.borderSubtle, paddingVertical: spacing.sm },
+  priceCell: { flex: 1, alignItems: "center" },
+  priceDivider: { width: 1, backgroundColor: colors.borderSubtle },
+  priceLabel: { color: colors.textTertiary, fontSize: 9, fontWeight: "700", letterSpacing: 0.8 },
+  priceValue: { color: colors.success, fontSize: 14, fontWeight: "700", marginTop: 2 },
+  actionRow: { flexDirection: "row", borderTopWidth: 1, borderTopColor: colors.borderSubtle },
+  actionBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 10, borderRightWidth: 1, borderRightColor: colors.borderSubtle },
+  actionBtnText: { color: colors.textSecondary, fontSize: 11, fontWeight: "600" },
+  scannedAt: { color: colors.textTertiary, fontSize: 9, textAlign: "center", paddingVertical: 4, backgroundColor: colors.bg },
   mockBadgeRow: { flexDirection: "row", alignItems: "center", marginTop: -spacing.sm },
   mockBadge: { color: colors.textTertiary, fontSize: 9, fontWeight: "700", letterSpacing: 1, backgroundColor: colors.surfaceElevated, paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.sm, alignSelf: "flex-start" },
   dealCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, borderWidth: 1, borderColor: colors.borderSubtle },

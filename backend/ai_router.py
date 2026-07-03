@@ -497,8 +497,17 @@ async def route_ai_task(
         else:
             text, tokens, model_used = await _call_claude_fallback(system, prompt, session_id)
             platform = "claude"
-    except KeyError:
-        # Rare: chosen platform lost its key mid-flight → Claude
+    except Exception as _e:
+        # Any provider-side failure (invalid key, quota, timeout) → Claude fallback
+        await _log_usage({
+            "log_id": f"log_{uuid.uuid4().hex[:12]}",
+            "user_id": user_id, "task_type": task_type,
+            "platform": platform, "model": "n/a",
+            "tokens_used": 0, "est_cost_usd": 0.0,
+            "latency_ms": int((time.time() - started) * 1000), "cached": False,
+            "fallback_reason": f"{platform} failed ({type(_e).__name__}) — used Claude fallback",
+            "created_at": _now_iso(),
+        })
         text, tokens, model_used = await _call_claude_fallback(system, prompt, session_id)
         platform = "claude"
         fallback_used = True

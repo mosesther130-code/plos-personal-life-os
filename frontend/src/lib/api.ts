@@ -703,6 +703,9 @@ export const travelApi = {
   createTrip: (d: any) => request<any>("/travel/trips", { method: "POST", body: d }),
   updateTrip: (id: string, d: any) => request<any>(`/travel/trips/${id}`, { method: "PUT", body: d }),
   deleteTrip: (id: string) => request<any>(`/travel/trips/${id}`, { method: "DELETE" }),
+  pinTrip: (id: string, pinned: boolean) =>
+    request<any>(`/travel/trips/${id}/pin`, { method: "PUT", body: { pinned } }),
+  scanTrip: (id: string) => request<any>(`/travel/trips/${id}/scan`, { method: "POST", body: {} }),
   // Insights (Claude consolidated)
   insights: (d: any) => request<any>("/travel/insights", { method: "POST", body: d }),
   // Reference data

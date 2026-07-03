@@ -34,6 +34,10 @@ import {
   RefreshCw,
   Sparkles,
   Trash2,
+  Pin,
+  PinOff,
+  RadioTower,
+  DollarSign,
 } from "lucide-react-native";
 import { travelApi } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
@@ -61,6 +65,8 @@ export default function TripPlanner() {
   const [cost, setCost] = useState<any>({ flights: 0, hotel_per_night: 0, nights: 0, daily_budget: 0, days: 0, visa_fees: 0, insurance: 0, misc: 0 });
   const [loading, setLoading] = useState(true);
   const [insightsLoading, setInsightsLoading] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [pinning, setPinning] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -129,6 +135,34 @@ export default function TripPlanner() {
       Alert.alert("Failed", "Could not refresh insights.");
     }
     setInsightsLoading(false);
+  };
+
+  const togglePin = async () => {
+    if (!id || !trip) return;
+    setPinning(true);
+    try {
+      await travelApi.pinTrip(String(id), !trip.pinned);
+      const t = await travelApi.getTrip(String(id));
+      setTrip(t);
+    } catch (_e) {}
+    setPinning(false);
+  };
+
+  const scanAndUpdate = async () => {
+    if (!id) return;
+    setScanning(true);
+    try {
+      const r = await travelApi.scanTrip(String(id));
+      // Refresh trip to pick up the new scan_result / last_scanned_at
+      const t = await travelApi.getTrip(String(id));
+      setTrip(t);
+      const oneWay = r?.best_one_way_usd ? `$${Math.round(r.best_one_way_usd)}` : "—";
+      const round = r?.best_round_trip_usd ? `$${Math.round(r.best_round_trip_usd)}` : "—";
+      Alert.alert("Prices refreshed", `One-way ${oneWay} · Round-trip ${round}`);
+    } catch (_e) {
+      Alert.alert("Scan failed", "Could not refresh prices right now. Try again shortly.");
+    }
+    setScanning(false);
   };
 
   const toggleCheck = async (idx: number) => {
@@ -202,6 +236,15 @@ export default function TripPlanner() {
           <ArrowLeft color={colors.textPrimary} size={20} />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>{trip.destination_name}</Text>
+        <TouchableOpacity
+          style={styles.iconBtn}
+          onPress={togglePin}
+          disabled={pinning}
+          testID="trip-pin"
+        >
+          {pinning ? <ActivityIndicator size="small" color={colors.primaryGlow} /> :
+            trip.pinned ? <PinOff color={colors.primaryGlow} size={18} /> : <Pin color={colors.textSecondary} size={18} />}
+        </TouchableOpacity>
         <TouchableOpacity style={styles.iconBtn} onPress={deleteTrip} testID="trip-delete">
           <Trash2 color={colors.danger} size={18} />
         </TouchableOpacity>
@@ -229,6 +272,60 @@ export default function TripPlanner() {
               <Clock size={11} color={colors.textTertiary} />
               <Text style={styles.heroMetaText}>{insights.time_zone}</Text>
             </View>
+          )}
+        </View>
+
+        {/* Live prices — scan & update */}
+        <View style={styles.card} testID="scan-card">
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardLabel}>LIVE PRICES</Text>
+            <TouchableOpacity
+              style={[styles.scanBtn, scanning && { opacity: 0.6 }]}
+              onPress={scanAndUpdate}
+              disabled={scanning}
+              testID="scan-btn"
+              activeOpacity={0.85}
+            >
+              {scanning ? <ActivityIndicator size="small" color="#fff" /> : <RadioTower size={13} color="#fff" />}
+              <Text style={styles.scanBtnText}>{scanning ? "Scanning…" : trip.scan_result ? "Rescan" : "Scan"}</Text>
+            </TouchableOpacity>
+          </View>
+          {trip.scan_result ? (
+            <>
+              <View style={styles.priceStrip}>
+                <View style={styles.priceCell}>
+                  <Text style={styles.priceLabel}>ONE-WAY</Text>
+                  <Text style={styles.priceValue}>{fmtUSD(trip.scan_result.best_one_way_usd)}</Text>
+                </View>
+                <View style={styles.priceDivider} />
+                <View style={styles.priceCell}>
+                  <Text style={styles.priceLabel}>ROUND-TRIP</Text>
+                  <Text style={styles.priceValue}>{fmtUSD(trip.scan_result.best_round_trip_usd)}</Text>
+                </View>
+                <View style={styles.priceDivider} />
+                <View style={styles.priceCell}>
+                  <Text style={styles.priceLabel}>HOTEL/NIGHT</Text>
+                  <Text style={styles.priceValue}>{fmtUSD(trip.scan_result.avg_hotel_per_night_usd)}</Text>
+                </View>
+              </View>
+              {trip.scan_result.weather_snapshot ? (
+                <Text style={styles.body}>☀️ {trip.scan_result.weather_snapshot}</Text>
+              ) : null}
+              {trip.scan_result.top_deal ? (
+                <View style={styles.dealBanner}>
+                  <DollarSign size={12} color={colors.success} />
+                  <Text style={styles.dealBannerText}>{trip.scan_result.top_deal}</Text>
+                </View>
+              ) : null}
+              <Text style={styles.scannedMeta}>
+                Scanned {trip.last_scanned_at ? new Date(trip.last_scanned_at).toLocaleString() : "just now"}
+                {trip.scan_result.platform_used ? ` · via ${trip.scan_result.platform_used}` : ""}
+              </Text>
+            </>
+          ) : (
+            <Text style={styles.body}>
+              Tap Scan to fetch current one-way & round-trip prices, hotel rates, weather, and top deals for this trip.
+            </Text>
           )}
         </View>
 
@@ -577,4 +674,14 @@ const styles = StyleSheet.create({
   costTotalLabel: { color: colors.textTertiary, fontSize: 10, fontWeight: "700", letterSpacing: 1 },
   costTotal: { color: colors.success, fontSize: 20, fontWeight: "700" },
   impactText: { color: colors.textSecondary, fontSize: 11, lineHeight: 17, marginTop: 6 },
+  scanBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: colors.primary, paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.sm },
+  scanBtnText: { color: "#fff", fontSize: 11, fontWeight: "700" },
+  priceStrip: { flexDirection: "row", backgroundColor: "rgba(16,185,129,0.08)", borderRadius: radius.md, paddingVertical: spacing.sm, marginTop: 4 },
+  priceCell: { flex: 1, alignItems: "center" },
+  priceDivider: { width: 1, backgroundColor: colors.borderSubtle },
+  priceLabel: { color: colors.textTertiary, fontSize: 9, fontWeight: "700", letterSpacing: 0.8 },
+  priceValue: { color: colors.success, fontSize: 15, fontWeight: "700", marginTop: 2 },
+  dealBanner: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: spacing.sm, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: "rgba(16,185,129,0.12)", borderRadius: radius.sm, borderWidth: 1, borderColor: colors.success },
+  dealBannerText: { color: colors.success, fontSize: 11, fontWeight: "600", flex: 1 },
+  scannedMeta: { color: colors.textTertiary, fontSize: 10, marginTop: 4 },
 });

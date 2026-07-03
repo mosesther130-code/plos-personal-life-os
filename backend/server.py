@@ -5268,7 +5268,13 @@ async def get_hotels(city: str = "Manila"):
 
 @api_router.get("/travel/trips")
 async def list_trips(user_id: str = Depends(get_current_user_id)):
-    items = await db.trips.find({"user_id": user_id}, {"_id": 0}).sort("departure_date", 1).to_list(100)
+    items = await db.trips.find({"user_id": user_id}, {"_id": 0}).to_list(200)
+    # Sort: pinned first (True > False), then upcoming departures ascending, undated last
+    def _sort_key(t: Dict[str, Any]):
+        pinned = 0 if bool(t.get("pinned")) else 1
+        dep = t.get("departure_date") or "9999-12-31"
+        return (pinned, dep)
+    items.sort(key=_sort_key)
     return {"trips": [_normalize_trip(t) for t in items]}
 
 
@@ -5312,6 +5318,83 @@ async def delete_trip(trip_id: str, user_id: str = Depends(get_current_user_id))
         raise HTTPException(status_code=404, detail="Trip not found")
     await db.trip_checklists.delete_one({"trip_id": trip_id, "user_id": user_id})
     return {"ok": True}
+
+
+# --- NEW: pin / unpin / scan-refresh for trips ---
+class PinBody(BaseModel):
+    pinned: bool
+
+
+@api_router.put("/travel/trips/{trip_id}/pin")
+async def pin_trip(trip_id: str, body: PinBody,
+                   user_id: str = Depends(get_current_user_id)):
+    now = datetime.now(timezone.utc).isoformat()
+    r = await db.trips.update_one(
+        {"trip_id": trip_id, "user_id": user_id},
+        {"$set": {"pinned": bool(body.pinned), "updated_at": now}},
+    )
+    if r.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    return {"ok": True, "pinned": bool(body.pinned)}
+
+
+@api_router.post("/travel/trips/{trip_id}/scan")
+async def scan_trip(trip_id: str, user_id: str = Depends(get_current_user_id)):
+    """Full-refresh: fetch fresh flight/hotel prices, weather, advisory,
+    and AI recommendations for a trip.  Routes AI calls via the AI Router
+    with task_type=real_time_research (Perplexity when configured,
+    otherwise Claude fallback)."""
+    trip = await db.trips.find_one({"trip_id": trip_id, "user_id": user_id}, {"_id": 0})
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    dest = trip.get("destination") or trip.get("destination_name") or ""
+    country = trip.get("country") or ""
+    dep = trip.get("departure_date") or trip.get("start_date") or ""
+    ret = trip.get("return_date") or trip.get("end_date") or ""
+
+    prompt = (
+        f"For a trip to {dest}, {country} departing {dep} and returning {ret}, "
+        "return a JSON object with keys: "
+        "best_one_way_usd (number, cheapest one-way economy flight from ATL/USA), "
+        "best_round_trip_usd (number, cheapest round-trip economy), "
+        "avg_hotel_per_night_usd (number, mid-range hotel), "
+        "weather_snapshot (short string), "
+        "advisory (short travel advisory summary), "
+        "top_deal (one-line current deal you can find today). "
+        "Return ONLY the JSON — no markdown."
+    )
+    routed = await ai_router.route_ai_task(
+        task_type="real_time_research",
+        payload={"prompt": prompt},
+        user_id=user_id,
+    )
+    import re
+    import json as _j
+    text = routed.get("content") or "{}"
+    m = re.search(r"\{[\s\S]*\}", text)
+    parsed: Dict[str, Any] = {}
+    if m:
+        try:
+            parsed = _j.loads(m.group(0))
+        except Exception:
+            parsed = {}
+    now = datetime.now(timezone.utc).isoformat()
+    scan_result = {
+        "best_one_way_usd": parsed.get("best_one_way_usd"),
+        "best_round_trip_usd": parsed.get("best_round_trip_usd"),
+        "avg_hotel_per_night_usd": parsed.get("avg_hotel_per_night_usd"),
+        "weather_snapshot": parsed.get("weather_snapshot", ""),
+        "advisory": parsed.get("advisory", ""),
+        "top_deal": parsed.get("top_deal", ""),
+        "scanned_at": now,
+        "platform_used": routed.get("platform"),
+        "model_used": routed.get("model_used"),
+    }
+    await db.trips.update_one(
+        {"trip_id": trip_id, "user_id": user_id},
+        {"$set": {"scan_result": scan_result, "last_scanned_at": now}},
+    )
+    return scan_result
 
 
 class InsightsRequest(BaseModel):

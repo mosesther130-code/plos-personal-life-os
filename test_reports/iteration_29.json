@@ -1,0 +1,31 @@
+{
+  "summary": "Travel Advisor iteration 29 backend testing complete: pin/unpin, edit, delete, scan (AI Router fallback), and pinned-first list sort all pass. 11/11 tests green in 8.3s. Verified Perplexity 401 gracefully falls back to Claude — scan returns actual prices (one_way=650, round_trip=1100, hotel=120 for Tokyo test) and persists scan_result + last_scanned_at.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_29_travel_pin_scan.py",
+    "/app/test_reports/pytest/iteration_29_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is 6321 lines — well beyond the 700-line guideline. Recommend splitting into modules (travel, finance, career, security). Not blocking but degrades maintainability.",
+    "scan_trip endpoint has no rate-limit / cooldown. A user could hammer it and incur AI cost. Consider gating (e.g., min 60s between scans per trip).",
+    "TripIn body is fully-required for PUT /trips/{id} (destination_name & country mandatory) — frontend must always send full payload for partial edits. Consider a TripPatch model with optional fields to allow true PATCH semantics.",
+    "list_trips.to_list(200) hard-caps at 200 — fine for now but not paginated."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "not tested (backend-only request)"},
+  "seed_data_creation": "None — tests create and self-clean up TEST_-prefixed trips.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Test file at /app/backend/tests/test_iteration_29_travel_pin_scan.py covers all new travel endpoints (pin, scan, edit, delete, list sort) plus regression (insights, checklist, cost-estimate). Uses EXPO_PUBLIC_BACKEND_URL. Scan endpoint depends on ai_router Claude fallback path — the Perplexity key (236e7cf2-...) is currently invalid and reliably triggers the fallback path. Auto-cleanup removes any TEST_-prefixed trip before/after the module.",
+  "rca_of_issue": "N/A — no bugs found. AI Router's broadened `except Exception` in route_ai_task (ai_router.py:500) correctly catches Perplexity's 401 (raised by httpx.raise_for_status()) and cleanly routes to Claude via _call_claude_fallback. Verified platform_used='claude' with model_used='claude-sonnet-4-5' in scan response; JSON parsing of Claude output yields valid numeric prices."
+}
