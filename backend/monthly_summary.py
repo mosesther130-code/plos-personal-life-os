@@ -158,7 +158,6 @@ async def _claude_narrative(month_label: str, cur: Dict[str, Any], prev: Dict[st
             LlmChat(api_key=api_key, session_id=f"plos-monthly-{month_label}",
                     system_message="You are a warm, direct personal financial coach.")
             .with_model("anthropic", "claude-sonnet-4-5-20250929")
-            .with_max_tokens(2000)
         )
         resp = await chat.send_message(UserMessage(text=prompt))
         return resp if isinstance(resp, str) else str(resp)
