@@ -288,7 +288,7 @@ async def _call_openai(system: str, prompt: str, model: str = "gpt-4o") -> Tuple
     return text, int(tokens), data.get("model", model)
 
 
-async def _call_gemini(system: str, prompt: str, model: str = "gemini-1.5-flash") -> Tuple[str, int, str]:
+async def _call_gemini(system: str, prompt: str, model: str = "gemini-2.5-flash") -> Tuple[str, int, str]:
     key = _key_for("gemini")
     if not key:
         raise KeyError("gemini")
@@ -309,7 +309,7 @@ async def _call_gemini(system: str, prompt: str, model: str = "gemini-1.5-flash"
 
 
 async def _call_perplexity(system: str, prompt: str,
-                           model: str = "llama-3.1-sonar-large-128k-online") -> Tuple[str, int, str]:
+                           model: str = "sonar-pro") -> Tuple[str, int, str]:
     key = _key_for("perplexity")
     if not key:
         raise KeyError("perplexity")
@@ -332,7 +332,7 @@ async def _call_perplexity(system: str, prompt: str,
     return text, int(tokens), data.get("model", model)
 
 
-async def _call_grok(system: str, prompt: str, model: str = "grok-beta") -> Tuple[str, int, str]:
+async def _call_grok(system: str, prompt: str, model: str = "grok-4-fast-reasoning") -> Tuple[str, int, str]:
     key = _key_for("grok")
     if not key:
         raise KeyError("grok")
