@@ -25,6 +25,7 @@ import { financeApi } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
 import { EditModal, Field } from "@/src/components/EditModal";
 import { ReportsModal } from "@/src/components/ReportsModal";
+import { PlaidSection } from "@/src/components/PlaidSection";
 import { categoryMeta } from "@/src/lib/categories";
 
 const fmtUSD = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
@@ -216,6 +217,9 @@ export default function Finance() {
             testID="summary-surplus"
           />
         </View>
+
+        {/* Plaid — connect banks + connected institutions */}
+        <PlaidSection />
 
         {/* Debt manager entry */}
         <TouchableOpacity

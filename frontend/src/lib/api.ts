@@ -779,6 +779,19 @@ export const travelSearchApi = {
     ),
 };
 
+// ----------------- Plaid ---------------------------------
+export const plaidApi = {
+  status: () => request<{ has_real_keys: boolean; env: string; webhook_configured: boolean; android_package: string }>("/plaid/status"),
+  createLinkToken: () => request<{ link_token: string; sandbox_fallback?: boolean; message?: string }>("/plaid/create-link-token", { method: "POST" }),
+  exchangeToken: (public_token: string) => request<any>("/plaid/exchange-token", { method: "POST", body: { public_token } }),
+  listItems: () => request<{ items: any[] }>("/plaid/items"),
+  refresh: (item_id: string) => request<any>(`/plaid/items/${item_id}/refresh`, { method: "POST" }),
+  disconnect: (item_id: string) => request<any>(`/plaid/items/${item_id}`, { method: "DELETE" }),
+  transactions: (limit = 100) => request<{ transactions: any[]; count: number }>(`/plaid/transactions?limit=${limit}`),
+  sandboxSimulate: () => request<any>("/plaid/sandbox/simulate", { method: "POST" }),
+  summary: () => request<any>("/plaid/summary"),
+};
+
 // ----------------- Push Notifications (Firebase via Emergent relay) ----
 export const pushApi = {
   register: (platform: string, device_token: string) =>

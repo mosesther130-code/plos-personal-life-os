@@ -1,0 +1,40 @@
+{
+  "summary": "Phase 1 Plaid backend testing complete. All 17 pytest cases pass (100%) covering status, link-token, sandbox/simulate (idempotent), items, transactions, summary aggregates, refresh, webhook (no-auth), delete, AES-256-GCM encryption round-trip, and regression on /api/travel/trips & /api/auth/me. Sandbox seed fallback works end-to-end without real Plaid credentials — 1 item, 3 accounts (Checking $2847.50 / Savings $4200 / CC $410), 9 seeded transactions matching PLOS profile (GSU payroll x2, EBT, mortgage, Chase CC pmt, Georgia Power, AT&T, Kroger, Murphy Express). Summary math validated: income_30d=6165.00, expenses_30d=2296.63, monthly_surplus=3868.37, total_balance=7047.50, credit_debt=410.00, sandbox=true. Access token encryption tag verified (bad-AAD raises). No /api/finance/snapshot endpoint exists in codebase; substituted /api/auth/me + /api/travel/trips for regression sanity.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/plaid/*", "issue": "Plaid router is mounted TWICE at server.py:6274-6276 — once via `api_router.include_router(make_plaid_router(...))` (prefix /api) and again via `app.include_router(make_plaid_router(...), prefix=\"/api\")`. Both resolve to the same path so first match wins, but it registers duplicate routes and duplicate notify hooks may run. Recommend removing the second mount."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_plaid_service.py",
+    "/app/test_reports/pytest/plaid_service_results.xml"
+  ],
+  "action_items": [
+    "Remove duplicate Plaid router mount at server.py:6275-6276 (app.include_router of make_plaid_router with prefix='/api') — api_router already includes it.",
+    "When user provides real PLAID_CLIENT_ID / PLAID_SECRET_SANDBOX, re-run these tests against real Plaid sandbox; the tests currently pass only because HAS_REAL_KEYS is false (sandbox-seed short-circuit). Real-key tests will need Plaid public_token mocking or Plaid sandbox_public_token_create.",
+    "Consider adding /api/finance/snapshot alias (mentioned in review request but not present in codebase) or clarify with user."
+  ],
+  "critical_code_review_comments": [
+    "plaid_service.py:474 — webhook handler correctly excludes auth (public endpoint) as required by Plaid; good.",
+    "plaid_service.py:390 — GET /plaid/items projection correctly excludes access_token_enc from response; verified.",
+    "plaid_service.py:481-483 — sandbox_simulate idempotency check on {user_id, sandbox_seed:true} works correctly and returns already_exists=true on 2nd call.",
+    "plaid_service.py:52-63 — AES-256-GCM uses random 12-byte IV per encryption and AAD binding to user_id — solid implementation.",
+    "server.py:6274-6276 — DUPLICATE mount of Plaid router (see minor issue above)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_plaid_service.py (new)"
+  ],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "N/A (backend-only test scope)"},
+  "seed_data_creation": "Tests self-seed via POST /api/plaid/sandbox/simulate and clean up both pre- and post-run via DELETE /api/plaid/items/{id}. No manual seeding required.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Plaid Phase 1 sandbox-seed mode fully validated. Test file at /app/backend/tests/test_plaid_service.py is reusable. When Phase 2+ adds real Plaid credentials, HAS_REAL_KEYS will flip true and several assertions (sandbox_fallback=true, sandbox=true, sandbox_seed=true, accounts_synced==3) will need to be gated behind `if not HAS_REAL_KEYS`. The autouse cleanup fixture only removes sandbox_seed items so real Plaid items would survive across runs — adjust accordingly.",
+  "rca_of_issue": "N/A — no failures."
+}

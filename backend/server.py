@@ -6249,6 +6249,32 @@ app.include_router(
     make_travel_search_router(db, get_current_user_id, EMERGENT_LLM_KEY, LlmChat, UserMessage)
 )
 
+# Plaid — bank account, transactions, investments, liabilities sync
+from plaid_service import make_router as make_plaid_router  # noqa: E402
+
+
+async def _plaid_notify(user_id: str, event: str, data: Dict[str, Any]):
+    """Log-based notification stub. When Firebase push is wired live, this
+    will dispatch to the Emergent-managed push notification service."""
+    inst = data.get("institution_name", "your bank")
+    messages = {
+        "plaid_connection_success": f"✅ {inst} connected — {data.get('transactions_synced', 0)} transactions synced.",
+        "plaid_sync_complete": None,  # silent
+        "plaid_login_required": f"⚠️ Your {inst} connection needs to be refreshed.",
+        "plaid_pending_expiration": f"🔔 Your {inst} connection expires soon — tap to renew.",
+    }
+    msg = messages.get(event)
+    if msg:
+        await db.notifications_outbox.insert_one({
+            "user_id": user_id, "event": event, "message": msg,
+            "data": data, "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+
+
+api_router.include_router(make_plaid_router(db, get_current_user_id, notify_user=_plaid_notify))
+app.include_router(make_plaid_router(db, get_current_user_id, notify_user=_plaid_notify),
+                   prefix="/api")
+
 # Mount Career Intelligence sub-router (Enhancements 4c, 4d, 4e)
 from career_intelligence import make_router as make_career_intel_router  # noqa: E402
 
