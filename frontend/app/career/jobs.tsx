@@ -268,19 +268,26 @@ export default function JobsFeedScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <ChevronLeft size={22} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Verified Jobs</Text>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-          <TouchableOpacity
-            onPress={() => router.push("/career/filter-center" as any)}
-            style={styles.backBtn}
-            testID="open-filters"
-          >
-            <SlidersHorizontal size={18} color={colors.primaryGlow} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={triggerRefresh} style={styles.backBtn} disabled={aggregating}>
-            {aggregating ? <ActivityIndicator size="small" color={colors.primaryGlow} /> : <RefreshCw size={18} color={colors.primaryGlow} />}
-          </TouchableOpacity>
-        </View>
+        <Text style={styles.headerTitle}>Jobs Center</Text>
+        <TouchableOpacity onPress={triggerRefresh} style={styles.backBtn} disabled={aggregating}>
+          {aggregating ? <ActivityIndicator size="small" color={colors.primaryGlow} /> : <RefreshCw size={18} color={colors.primaryGlow} />}
+        </TouchableOpacity>
+      </View>
+
+      {/* Jobs Center tab pill */}
+      <View style={styles.centerTabs}>
+        <TouchableOpacity style={[styles.centerTab, styles.centerTabActive]} testID="tab-verified">
+          <ShieldCheck size={12} color="#fff" />
+          <Text style={styles.centerTabTextActive}>Verified Jobs</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.centerTab}
+          onPress={() => router.push("/career/filter-center" as any)}
+          testID="tab-filters"
+        >
+          <SlidersHorizontal size={12} color={colors.primaryGlow} />
+          <Text style={styles.centerTabText}>Filter & Criteria</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Sort chips (Best Match / Most Recent / Highest Salary) */}
@@ -345,6 +352,11 @@ const styles = StyleSheet.create({
   },
   backBtn: { padding: 4, width: 36, alignItems: "center" },
   headerTitle: { color: colors.textPrimary, fontSize: 15, fontWeight: "700" },
+  centerTabs: { flexDirection: "row", paddingHorizontal: spacing.lg, paddingVertical: 8, gap: 8 },
+  centerTab: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 9, borderRadius: 20, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderSubtle },
+  centerTabActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  centerTabText: { color: colors.primaryGlow, fontSize: 12, fontWeight: "700" },
+  centerTabTextActive: { color: "#fff", fontSize: 12, fontWeight: "700" },
   counterStrip: {
     paddingHorizontal: spacing.lg, paddingVertical: 8,
     borderBottomWidth: 1, borderBottomColor: colors.borderSubtle,

@@ -3,13 +3,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
-  Alert, TextInput, Modal, Pressable, Switch,
+  Alert, TextInput, Modal, Pressable, Switch, Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import {
   ChevronLeft, Save, Wand2, Plus, X, Star, RefreshCw, Search,
   ChevronDown, ChevronUp, Globe, MapPin, Building2, Hash,
+  ShieldCheck, SlidersHorizontal, Trash2,
 } from "lucide-react-native";
 import { careerPrefsApi, FilterProfile, LocationEntry } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
@@ -32,6 +33,7 @@ export default function FilterCenterScreen() {
   const [saving, setSaving] = useState(false);
   const [newRoleTag, setNewRoleTag] = useState("");
   const [newExcludeTag, setNewExcludeTag] = useState("");
+  const [newSectorName, setNewSectorName] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -85,6 +87,64 @@ export default function FilterCenterScreen() {
     }
   }
 
+  const promptText = (title: string, initial: string, onDone: (v: string) => void) => {
+    if (Platform.OS === "ios" && (Alert as any).prompt) {
+      (Alert as any).prompt(title, undefined, (v: string) => { if (v && v.trim()) onDone(v.trim()); }, "plain-text", initial);
+    } else if (Platform.OS === "web") {
+      const v = typeof window !== "undefined" ? window.prompt(title, initial) : null;
+      if (v && v.trim()) onDone(v.trim());
+    } else {
+      onDone(initial + " (renamed)");
+    }
+  };
+
+  const onProfileLongPress = (p: FilterProfile) => {
+    Alert.alert(p.profile_name, "What would you like to do with this track?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Rename",
+        onPress: () => promptText("New name", p.profile_name, async (newName) => {
+          try {
+            await careerPrefsApi.updateProfile(p.profile_id, { profile_name: newName });
+            await load();
+          } catch (e: any) { Alert.alert("Rename failed", String(e?.message || e)); }
+        }),
+      },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          if (profiles.length <= 1) {
+            Alert.alert("Cannot delete", "At least one track must remain.");
+            return;
+          }
+          try {
+            await careerPrefsApi.deleteProfile(p.profile_id);
+            if (p.profile_id === active?.profile_id) {
+              const remaining = profiles.filter((x) => x.profile_id !== p.profile_id);
+              if (remaining[0]) await careerPrefsApi.applyProfile(remaining[0].profile_id);
+            }
+            await load();
+          } catch (e: any) { Alert.alert("Delete failed", String(e?.message || e)); }
+        },
+      },
+    ]);
+  };
+
+  const onAddProfile = () => {
+    promptText("Name for the new track", "New Track", async (name) => {
+      try {
+        const cloned: any = { ...(active || {}), profile_name: name };
+        delete cloned.profile_id;
+        delete cloned._id;
+        cloned.is_active = false;
+        const created = await careerPrefsApi.createProfile(cloned);
+        await careerPrefsApi.applyProfile(created.profile_id);
+        await load();
+      } catch (e: any) { Alert.alert("Create failed", String(e?.message || e)); }
+    });
+  };
+
   if (loading || !active) {
     return (
       <SafeAreaView style={styles.container}>
@@ -99,8 +159,24 @@ export default function FilterCenterScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <ChevronLeft size={22} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle} numberOfLines={1}>{active.profile_name}</Text>
+        <Text style={styles.headerTitle}>Jobs Center</Text>
         <View style={{ width: 36 }} />
+      </View>
+
+      {/* Jobs Center tab pill */}
+      <View style={styles.centerTabs}>
+        <TouchableOpacity
+          style={styles.centerTab}
+          onPress={() => router.push("/career/jobs" as any)}
+          testID="tab-verified"
+        >
+          <ShieldCheck size={12} color={colors.primaryGlow} />
+          <Text style={styles.centerTabText}>Verified Jobs</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.centerTab, styles.centerTabActive]} testID="tab-filters">
+          <SlidersHorizontal size={12} color="#fff" />
+          <Text style={styles.centerTabTextActive}>Filter & Criteria</Text>
+        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
@@ -112,13 +188,23 @@ export default function FilterCenterScreen() {
               style={[styles.profileChip, active.profile_id === p.profile_id && styles.profileChipOn,
                      p.is_active && styles.profileChipActive]}
               onPress={() => switchProfile(p.profile_id)}
+              onLongPress={() => onProfileLongPress(p)}
               testID={`profile-${p.profile_id}`}
             >
               {p.is_active && <Star size={10} color="#fff" fill="#fff" />}
               <Text style={[styles.profileChipText, p.is_active && { color: "#fff" }]}>{p.profile_name}</Text>
             </TouchableOpacity>
           ))}
+          <TouchableOpacity
+            style={[styles.profileChip, { borderStyle: "dashed" }]}
+            onPress={onAddProfile}
+            testID="profile-add"
+          >
+            <Plus size={11} color={colors.primaryGlow} />
+            <Text style={styles.profileChipText}>New Track</Text>
+          </TouchableOpacity>
         </ScrollView>
+        <Text style={styles.hint}>Long-press a track to rename or delete it.</Text>
 
         {/* ===== Section 1: Target Roles ===== */}
         <Text style={styles.section}>1. Target Roles & Keywords</Text>
@@ -204,6 +290,7 @@ export default function FilterCenterScreen() {
 
         {/* ===== Section 2: Sectors ===== */}
         <Text style={styles.section}>2. Industries & Employer Types</Text>
+        <Text style={styles.hint}>Toggle on/off, set priority, or tap the trash to delete. Add custom sectors below.</Text>
         {active.sectors.map((s, i) => (
           <View key={s.id} style={styles.sectorRow}>
             <Switch
@@ -232,8 +319,47 @@ export default function FilterCenterScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+            <TouchableOpacity
+              onPress={() => update("sectors", active.sectors.filter((_, j) => j !== i))}
+              hitSlop={8}
+              testID={`sector-delete-${s.id}`}
+              style={{ padding: 4 }}
+            >
+              <Trash2 size={14} color={colors.danger} />
+            </TouchableOpacity>
           </View>
         ))}
+        <View style={styles.addTagRow}>
+          <TextInput
+            style={styles.tagInput}
+            placeholder="Add industry / employer type…"
+            placeholderTextColor={colors.textTertiary}
+            value={newSectorName}
+            onChangeText={setNewSectorName}
+            onSubmitEditing={() => {
+              const nm = newSectorName.trim();
+              if (nm) {
+                const nid = `sector_${Date.now()}`;
+                update("sectors", [...active.sectors, { id: nid, name: nm, enabled: true, priority: "medium" }]);
+                setNewSectorName("");
+              }
+            }}
+            testID="add-sector-input"
+          />
+          <TouchableOpacity
+            style={styles.addBtn}
+            onPress={() => {
+              const nm = newSectorName.trim();
+              if (nm) {
+                const nid = `sector_${Date.now()}`;
+                update("sectors", [...active.sectors, { id: nid, name: nm, enabled: true, priority: "medium" }]);
+                setNewSectorName("");
+              }
+            }}
+          >
+            <Plus size={14} color="#fff" />
+          </TouchableOpacity>
+        </View>
 
         {/* ===== Section 3: Locations ===== */}
         <Text style={styles.section}>3. Where You Want to Work</Text>
@@ -433,6 +559,11 @@ const styles = StyleSheet.create({
   },
   backBtn: { padding: 4, width: 36, alignItems: "center" },
   headerTitle: { color: colors.textPrimary, fontSize: 14, fontWeight: "700", flex: 1, textAlign: "center" },
+  centerTabs: { flexDirection: "row", paddingHorizontal: spacing.lg, paddingVertical: 8, gap: 8 },
+  centerTab: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 9, borderRadius: 20, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderSubtle },
+  centerTabActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  centerTabText: { color: colors.primaryGlow, fontSize: 12, fontWeight: "700" },
+  centerTabTextActive: { color: "#fff", fontSize: 12, fontWeight: "700" },
   scroll: { padding: spacing.lg, paddingBottom: 100 },
   profileRow: { gap: 6, paddingBottom: 8 },
   profileChip: {
