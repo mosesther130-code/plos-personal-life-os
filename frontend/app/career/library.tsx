@@ -13,7 +13,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import {
   Upload, FileText, Star, Trash2, Download, Sparkles, ChevronRight,
-  Briefcase, Edit3, ClipboardPaste, Wand2, TriangleAlert, Plus,
+  Briefcase, Wand2, TriangleAlert, Plus,
 } from "lucide-react-native";
 import { careerLibraryApi, LibResume, LibJd, TailorVersion } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
@@ -619,25 +619,7 @@ export default function CareerLibraryScreen() {
           testID="open-jobs"
         >
           <Sparkles size={16} color={colors.primaryGlow} />
-          <Text style={styles.linkText}>Verified Jobs Feed</Text>
-          <ChevronRight size={14} color={colors.primaryGlow} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.linkCard}
-          onPress={() => router.push("/career/insights" as any)}
-          testID="open-insights"
-        >
-          <Wand2 size={16} color={colors.primaryGlow} />
-          <Text style={styles.linkText}>Career Insights Dashboard</Text>
-          <ChevronRight size={14} color={colors.primaryGlow} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.linkCard}
-          onPress={() => router.push("/career/filter-center" as any)}
-          testID="open-filter-center"
-        >
-          <Wand2 size={16} color={colors.primaryGlow} />
-          <Text style={styles.linkText}>Filter & Criteria Center</Text>
+          <Text style={styles.linkText}>Jobs Center</Text>
           <ChevronRight size={14} color={colors.primaryGlow} />
         </TouchableOpacity>
         <TouchableOpacity
@@ -656,6 +638,15 @@ export default function CareerLibraryScreen() {
         >
           <FileText size={16} color={colors.primaryGlow} />
           <Text style={styles.linkText}>Connect Job Sources</Text>
+          <ChevronRight size={14} color={colors.primaryGlow} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.linkCard}
+          onPress={() => router.push("/career/insights" as any)}
+          testID="open-insights"
+        >
+          <Wand2 size={16} color={colors.primaryGlow} />
+          <Text style={styles.linkText}>Career Insights Dashboard</Text>
           <ChevronRight size={14} color={colors.primaryGlow} />
         </TouchableOpacity>
 

@@ -1305,8 +1305,14 @@ export const careerPrefsApi = {
     request<{ ok: boolean }>(`/career/preferences/watch-list/${id}`, { method: "DELETE" }),
 
   listSourceConfigs: () => request<{ sources: JobSourceConfig[] }>("/career/preferences/sources"),
-  updateSource: (id: string, b: { update_frequency_min?: number; paused?: boolean }) =>
+  updateSource: (id: string, b: { update_frequency_min?: number; paused?: boolean; label?: string }) =>
     request<{ ok: boolean }>(`/career/preferences/sources/${id}`, { method: "PUT", body: b }),
+  createSource: (b: { label: string; kind?: string; url?: string; update_frequency_min?: number; note?: string }) =>
+    request<JobSourceConfig>("/career/preferences/sources", { method: "POST", body: b }),
+  deleteSource: (id: string) =>
+    request<{ ok: boolean }>(`/career/preferences/sources/${id}`, { method: "DELETE" }),
+  restoreDefaultSources: () =>
+    request<{ ok: boolean; restored: number }>("/career/preferences/sources/restore-defaults", { method: "POST" }),
 
   activityLog: () => request<{ log: any[] }>("/career/preferences/activity-log"),
   rankRefresh: () => request<any>("/career/preferences/rank/refresh", { method: "POST" }),

@@ -268,7 +268,115 @@ PRESEED_PROFILES = [
         "alert_frequency_cap": 3,
         "quiet_hours_start": "22:00", "quiet_hours_end": "07:00",
     },
+    # ---- v2 expansion (4 additional tracks) ----
+    {
+        "profile_name": "International Organizations Track",
+        "is_default": False, "is_active": False,
+        "target_roles": ["Finance Specialist", "Financial Management Officer",
+                         "Budget Officer", "Programme Analyst",
+                         "Operations Officer", "Treasury Specialist",
+                         "Grants Manager"],
+        "excluded_keywords": DEFAULT_EXCLUDED,
+        "sectors": [{**s, "priority": "high" if s["id"] == "international_org"
+                    else "medium" if s["id"] == "international_dev_ngo"
+                    else "low"} for s in DEFAULT_SECTORS],
+        "locations": [{**loc, "priority": "high" if loc["label"] in
+                      ("Washington, DC, USA", "Manila, Philippines",
+                       "Brussels, Belgium") else loc.get("priority", "low")}
+                     for loc in DEFAULT_LOCATIONS],
+        "work_types": ["on_site", "hybrid", "remote", "international"],
+        "min_salary": 95000, "max_salary": None, "include_no_salary": True,
+        "experience_levels": ["senior", "executive"],
+        "education_requirement": "masters_preferred",
+        "clearance_filter": "no_requirement",
+        "ranking_weights": DEFAULT_RANKING_WEIGHTS,
+        "alert_min_match_score": 80, "alert_min_rank": 20,
+        "alert_frequency_cap": 3,
+        "quiet_hours_start": "22:00", "quiet_hours_end": "07:00",
+    },
+    {
+        "profile_name": "Nonprofit & Foundations Track",
+        "is_default": False, "is_active": False,
+        "target_roles": ["Director of Finance", "Controller", "Grants Manager",
+                         "Program Director", "Chief Financial Officer",
+                         "Foundation Program Officer", "Compliance Officer"],
+        "excluded_keywords": DEFAULT_EXCLUDED,
+        "sectors": [{**s, "priority": "high" if s["id"] in
+                    ("nonprofit", "international_dev_ngo") else "low"}
+                   for s in DEFAULT_SECTORS],
+        "locations": [{**loc, "priority": "high" if loc["label"] in
+                      ("Atlanta, Georgia, USA", "Washington, DC, USA",
+                       "New York City, New York, USA")
+                      else loc.get("priority", "low")}
+                     for loc in DEFAULT_LOCATIONS],
+        "work_types": ["remote", "hybrid", "on_site"],
+        "min_salary": 75000, "max_salary": None, "include_no_salary": True,
+        "experience_levels": ["mid", "senior", "executive"],
+        "education_requirement": "masters_preferred",
+        "clearance_filter": "no_requirement",
+        "ranking_weights": DEFAULT_RANKING_WEIGHTS,
+        "alert_min_match_score": 75, "alert_min_rank": 20,
+        "alert_frequency_cap": 3,
+        "quiet_hours_start": "22:00", "quiet_hours_end": "07:00",
+    },
+    {
+        "profile_name": "Global Development Consulting Track",
+        "is_default": False, "is_active": False,
+        "target_roles": ["Home Office Financial Manager", "Project Controller",
+                         "Director of Finance and Operations",
+                         "Contracts Manager", "Compliance Manager",
+                         "Senior Financial Advisor"],
+        "excluded_keywords": DEFAULT_EXCLUDED,
+        "sectors": [{**s, "priority": "high" if s["id"] ==
+                    "international_dev_consulting" else "low"}
+                   for s in DEFAULT_SECTORS],
+        "locations": [{**loc, "priority": "high" if loc["label"] in
+                      ("Washington, DC, USA", "Washington DC Metro Area",
+                       "Atlanta, Georgia, USA")
+                      else loc.get("priority", "low")}
+                     for loc in DEFAULT_LOCATIONS],
+        "work_types": ["hybrid", "remote", "on_site"],
+        "min_salary": 90000, "max_salary": None, "include_no_salary": True,
+        "experience_levels": ["senior", "executive"],
+        "education_requirement": "masters_preferred",
+        "clearance_filter": "top_secret_eligible",
+        "ranking_weights": DEFAULT_RANKING_WEIGHTS,
+        "alert_min_match_score": 80, "alert_min_rank": 20,
+        "alert_frequency_cap": 3,
+        "quiet_hours_start": "22:00", "quiet_hours_end": "07:00",
+    },
+    {
+        "profile_name": "Remote-First Global Track",
+        "is_default": False, "is_active": False,
+        "target_roles": ["Director of Finance", "Financial Controller",
+                         "Head of Operations", "Finance Business Partner",
+                         "Global Program Manager", "Remote CFO"],
+        "excluded_keywords": DEFAULT_EXCLUDED,
+        "sectors": [{**s, "enabled": True, "priority": "medium"}
+                   for s in DEFAULT_SECTORS],
+        "locations": [{**loc, "priority": "high" if loc.get("special_kind")
+                      in ("remote", "flexible") else "low"}
+                     for loc in DEFAULT_LOCATIONS],
+        "work_types": ["remote"],
+        "min_salary": 90000, "max_salary": None, "include_no_salary": False,
+        "experience_levels": ["senior", "executive"],
+        "education_requirement": "masters_preferred",
+        "clearance_filter": "no_requirement",
+        "ranking_weights": {**DEFAULT_RANKING_WEIGHTS, "work_type": 10,
+                            "location_match": 4},
+        "alert_min_match_score": 78, "alert_min_rank": 20,
+        "alert_frequency_cap": 5,
+        "quiet_hours_start": "22:00", "quiet_hours_end": "07:00",
+    },
 ]
+
+# Names of the v2 tracks we auto-top-up for existing users (once).
+V2_TOPUP_NAMES = {
+    "International Organizations Track",
+    "Nonprofit & Foundations Track",
+    "Global Development Consulting Track",
+    "Remote-First Global Track",
+}
 
 # 15 sources with honest phase-1 status
 SEED_SOURCES: List[Dict[str, Any]] = [
@@ -369,6 +477,15 @@ class EmployerBody(BaseModel):
 class SourceUpdateBody(BaseModel):
     update_frequency_min: Optional[int] = None
     paused: Optional[bool] = None
+    label: Optional[str] = None
+
+
+class SourceCreateBody(BaseModel):
+    label: str = Field(..., min_length=1, max_length=80)
+    kind: str = "custom_url"
+    url: Optional[str] = None
+    update_frequency_min: int = 240
+    note: Optional[str] = None
 
 
 class AutocompleteBody(BaseModel):
@@ -595,7 +712,37 @@ def make_router(db, get_current_user_id):
                     "created_at": _now_iso(), "last_modified": _now_iso(),
                     "last_applied": _now_iso() if p.get("is_active") else None,
                 })
+            # Mark v2 top-up as satisfied so we don't re-add later.
+            await db.career_seed_state.update_one(
+                {"user_id": user_id},
+                {"$set": {"v2_tracks_seeded": True, "updated_at": _now_iso()}},
+                upsert=True,
+            )
             return
+        # ---- v2 top-up: add missing default tracks ONCE per user ----
+        state = await db.career_seed_state.find_one({"user_id": user_id}) or {}
+        if not state.get("v2_tracks_seeded"):
+            existing_names = {
+                (d.get("profile_name") or "").strip()
+                for d in await db.job_filter_profiles.find(
+                    {"user_id": user_id}, {"_id": 0, "profile_name": 1}
+                ).to_list(200)
+            }
+            for p in PRESEED_PROFILES:
+                nm = p["profile_name"].strip()
+                if nm in V2_TOPUP_NAMES and nm not in existing_names:
+                    await db.job_filter_profiles.insert_one({
+                        **p, "user_id": user_id,
+                        "profile_id": f"prof_{uuid.uuid4().hex[:10]}",
+                        "is_active": False,
+                        "created_at": _now_iso(), "last_modified": _now_iso(),
+                        "last_applied": None,
+                    })
+            await db.career_seed_state.update_one(
+                {"user_id": user_id},
+                {"$set": {"v2_tracks_seeded": True, "updated_at": _now_iso()}},
+                upsert=True,
+            )
         # Migration: upgrade legacy string-labeled locations to full location objects
         docs = await db.job_filter_profiles.find(
             {"user_id": user_id}, {"_id": 0, "profile_id": 1, "locations": 1}
@@ -792,6 +939,8 @@ def make_router(db, get_current_user_id):
             update["update_frequency_min"] = body.update_frequency_min
         if body.paused is not None:
             update["paused"] = body.paused
+        if body.label is not None and body.label.strip():
+            update["label"] = body.label.strip()[:80]
         if not update:
             raise HTTPException(400, "No fields to update")
         res = await db.job_sources.update_one(
@@ -800,6 +949,60 @@ def make_router(db, get_current_user_id):
         if res.matched_count == 0:
             raise HTTPException(404, "Source not found")
         return {"ok": True}
+
+    @r.post("/sources", status_code=201)
+    async def create_source(body: SourceCreateBody,
+                            user_id: str = Depends(get_current_user_id)):
+        await _ensure_seed_sources(user_id)
+        sid = f"custom_{uuid.uuid4().hex[:10]}"
+        doc = {
+            "source_id": sid,
+            "user_id": user_id,
+            "label": body.label.strip()[:80],
+            "kind": body.kind or "custom_url",
+            "operational": False,
+            "update_frequency_min": max(15, int(body.update_frequency_min or 240)),
+            "paused": False,
+            "note": body.note or ("Custom user-added source. "
+                                  "URL saved; scraping requires Phase 2 web-search."),
+            "url": body.url or None,
+            "custom": True,
+            "last_run_at": None,
+            "last_result": None,
+            "created_at": _now_iso(),
+        }
+        await db.job_sources.insert_one(doc)
+        doc.pop("_id", None)
+        return doc
+
+    @r.delete("/sources/{source_id}")
+    async def delete_source(source_id: str,
+                            user_id: str = Depends(get_current_user_id)):
+        res = await db.job_sources.delete_one(
+            {"user_id": user_id, "source_id": source_id}
+        )
+        if res.deleted_count == 0:
+            raise HTTPException(404, "Source not found")
+        return {"ok": True}
+
+    @r.post("/sources/restore-defaults")
+    async def restore_default_sources(user_id: str = Depends(get_current_user_id)):
+        """Re-insert any missing seed sources without touching user-added ones."""
+        existing = {
+            d["source_id"] async for d in db.job_sources.find(
+                {"user_id": user_id}, {"_id": 0, "source_id": 1}
+            )
+        }
+        added = 0
+        for s in SEED_SOURCES:
+            if s["source_id"] not in existing:
+                await db.job_sources.insert_one({
+                    **s, "user_id": user_id,
+                    "last_run_at": None, "last_result": None,
+                    "created_at": _now_iso(),
+                })
+                added += 1
+        return {"ok": True, "restored": added}
 
     @r.get("/activity-log")
     async def activity_log(user_id: str = Depends(get_current_user_id)):
