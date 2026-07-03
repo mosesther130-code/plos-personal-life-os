@@ -31,6 +31,7 @@ export default function FilterCenterScreen() {
   const [active, setActive] = useState<FilterProfile | null>(null);
   const [saving, setSaving] = useState(false);
   const [newRoleTag, setNewRoleTag] = useState("");
+  const [newExcludeTag, setNewExcludeTag] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -171,6 +172,33 @@ export default function FilterCenterScreen() {
                 </TouchableOpacity>
               </View>
             ))}
+          </View>
+          <View style={styles.addTagRow}>
+            <TextInput
+              style={styles.tagInput}
+              placeholder="Add keyword to exclude…"
+              placeholderTextColor={colors.textTertiary}
+              value={newExcludeTag}
+              onChangeText={setNewExcludeTag}
+              onSubmitEditing={() => {
+                if (newExcludeTag.trim()) {
+                  update("excluded_keywords", [...active.excluded_keywords, newExcludeTag.trim()]);
+                  setNewExcludeTag("");
+                }
+              }}
+              testID="add-exclude-input"
+            />
+            <TouchableOpacity
+              style={[styles.addBtn, { backgroundColor: "#EF4444" }]}
+              onPress={() => {
+                if (newExcludeTag.trim()) {
+                  update("excluded_keywords", [...active.excluded_keywords, newExcludeTag.trim()]);
+                  setNewExcludeTag("");
+                }
+              }}
+            >
+              <Plus size={14} color="#fff" />
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -344,37 +372,8 @@ export default function FilterCenterScreen() {
           })}
         </View>
 
-        {/* ===== Section 6: Ranking Weights ===== */}
-        <View style={styles.rankHead}>
-          <Text style={styles.section}>6. Ranking Weights</Text>
-          <TouchableOpacity onPress={resetWeights} style={styles.resetBtn}>
-            <RefreshCw size={11} color={colors.primaryGlow} />
-            <Text style={styles.resetBtnText}>Reset</Text>
-          </TouchableOpacity>
-        </View>
-        <Text style={styles.hint}>0 = ignore, 10 = maximum weight. Tap to adjust.</Text>
-        {Object.entries(RANK_LABELS).map(([k, lbl]) => {
-          const w = active.ranking_weights[k] || 0;
-          return (
-            <View key={k} style={styles.weightRow}>
-              <Text style={styles.weightLabel}>{lbl}</Text>
-              <View style={styles.weightPickerRow}>
-                {[0, 2, 4, 6, 8, 10].map((v) => (
-                  <TouchableOpacity
-                    key={v}
-                    style={[styles.wDot, w >= v && { backgroundColor: colors.primary }]}
-                    onPress={() => update("ranking_weights", { ...active.ranking_weights, [k]: v })}
-                    testID={`w-${k}-${v}`}
-                  />
-                ))}
-                <Text style={styles.weightValue}>{w}</Text>
-              </View>
-            </View>
-          );
-        })}
-
-        {/* ===== Section 7: Alerts ===== */}
-        <Text style={styles.section}>7. Alerts</Text>
+        {/* ===== Section 6: Alerts ===== */}
+        <Text style={styles.section}>6. Alerts</Text>
         <View style={styles.salaryCard}>
           <Text style={styles.subHead}>Minimum match score for alerts</Text>
           <View style={styles.weightPickerRow}>

@@ -8,7 +8,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import * as Clipboard from "expo-clipboard";
 import {
-  ChevronLeft, RefreshCw, Filter, ShieldCheck, Wand2, Bookmark,
+  ChevronLeft, RefreshCw, SlidersHorizontal, ShieldCheck, Wand2, Bookmark,
   Copy, ExternalLink, Lock, TriangleAlert, Building2, Zap,
 } from "lucide-react-native";
 import { jobIntelApi, FeedJob } from "@/src/lib/api";
@@ -217,20 +217,17 @@ export default function JobsFeedScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [aggregating, setAggregating] = useState(false);
   const [jobs, setJobs] = useState<FeedJob[]>([]);
-  const [counters, setCounters] = useState<any>({});
   const [sort, setSort] = useState<"best_match" | "most_recent" | "highest_salary">("best_match");
-  const [minScore, setMinScore] = useState<number>(0);
-  const [applyWarning, setApplyWarning] = useState<FeedJob | null>(null);
-
+  // Server-side sort covers everything; no client-side score filter.
+  const minScore = 0;
   const load = useCallback(async () => {
     try {
       const d = await jobIntelApi.feed(minScore, sort, 80);
       setJobs(d.jobs || []);
-      setCounters(d.counters || {});
     } catch (e: any) {
       Alert.alert("Feed load failed", String(e?.message || e));
     }
-  }, [minScore, sort]);
+  }, [sort]);
 
   useEffect(() => { (async () => { setLoading(true); await load(); setLoading(false); })(); }, [load]);
 
@@ -271,22 +268,22 @@ export default function JobsFeedScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <ChevronLeft size={22} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Job Feed</Text>
-        <TouchableOpacity onPress={triggerRefresh} style={styles.backBtn} disabled={aggregating}>
-          {aggregating ? <ActivityIndicator size="small" color={colors.primaryGlow} /> : <RefreshCw size={18} color={colors.primaryGlow} />}
-        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Verified Jobs</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+          <TouchableOpacity
+            onPress={() => router.push("/career/filter-center" as any)}
+            style={styles.backBtn}
+            testID="open-filters"
+          >
+            <SlidersHorizontal size={18} color={colors.primaryGlow} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={triggerRefresh} style={styles.backBtn} disabled={aggregating}>
+            {aggregating ? <ActivityIndicator size="small" color={colors.primaryGlow} /> : <RefreshCw size={18} color={colors.primaryGlow} />}
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {/* Counter strip */}
-      <View style={styles.counterStrip}>
-        <Text style={styles.counterText}>
-          Scanned <Text style={styles.counterVal}>{counters.scanned_today || 0}</Text> · Filtered{" "}
-          <Text style={styles.counterVal}>{counters.filtered_today || 0}</Text> · Verified{" "}
-          <Text style={[styles.counterVal, { color: colors.success }]}>{counters.verified_shown || jobs.length}</Text>
-        </Text>
-      </View>
-
-      {/* Sort chips */}
+      {/* Sort chips (Best Match / Most Recent / Highest Salary) */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sortRow}>
         {[
           { k: "best_match", l: "Best Match" },
@@ -302,13 +299,9 @@ export default function JobsFeedScreen() {
             <Text style={[styles.sortChipText, sort === s.k && { color: "#fff" }]}>{s.l}</Text>
           </TouchableOpacity>
         ))}
-        <View style={{ width: 6 }} />
-        <TouchableOpacity
-          style={[styles.sortChip, minScore >= 70 && styles.sortChipOn]}
-          onPress={() => setMinScore(minScore >= 70 ? 0 : 70)}
-        >
-          <Text style={[styles.sortChipText, minScore >= 70 && { color: "#fff" }]}>Match ≥ 70</Text>
-        </TouchableOpacity>
+        <Text style={styles.verifiedCount}>
+          {jobs.length} verified {jobs.length === 1 ? "job" : "jobs"}
+        </Text>
       </ScrollView>
 
       {loading ? (
@@ -356,9 +349,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg, paddingVertical: 8,
     borderBottomWidth: 1, borderBottomColor: colors.borderSubtle,
   },
-  counterText: { color: colors.textSecondary, fontSize: 11 },
-  counterVal: { color: colors.textPrimary, fontWeight: "800" },
-  sortRow: { paddingHorizontal: spacing.lg, paddingVertical: 8, gap: 6 },
+  counterText: { display: "none" },
+  counterVal: { display: "none" },
+  verifiedCount: { color: colors.success, fontSize: 11, fontWeight: "700", marginLeft: 8, alignSelf: "center" },
+  sortRow: { paddingHorizontal: spacing.lg, paddingVertical: 8, gap: 6, alignItems: "center", flexDirection: "row" },
+  sortChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderSubtle },
   sortChip: {
     paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14,
     borderWidth: 1, borderColor: colors.borderSubtle, backgroundColor: colors.surface,

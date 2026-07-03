@@ -659,17 +659,6 @@ export default function CareerLibraryScreen() {
           <ChevronRight size={14} color={colors.primaryGlow} />
         </TouchableOpacity>
 
-        {/* Applications quick link */}
-        <TouchableOpacity
-          style={styles.linkCard}
-          onPress={() => router.push("/career/applications" as any)}
-          testID="open-applications"
-        >
-          <Briefcase size={16} color={colors.primaryGlow} />
-          <Text style={styles.linkText}>Application Pipeline</Text>
-          <ChevronRight size={14} color={colors.primaryGlow} />
-        </TouchableOpacity>
-
         <View style={{ height: 80 }} />
       </ScrollView>
 
