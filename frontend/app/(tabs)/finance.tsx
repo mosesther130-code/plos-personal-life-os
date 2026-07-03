@@ -26,6 +26,7 @@ import { colors, spacing, radius } from "@/src/lib/theme";
 import { EditModal, Field } from "@/src/components/EditModal";
 import { ReportsModal } from "@/src/components/ReportsModal";
 import { PlaidSection } from "@/src/components/PlaidSection";
+import { CashFlowForecast } from "@/src/components/CashFlowForecast";
 import { categoryMeta } from "@/src/lib/categories";
 
 const fmtUSD = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
@@ -220,6 +221,26 @@ export default function Finance() {
 
         {/* Plaid — connect banks + connected institutions */}
         <PlaidSection />
+
+        {/* 90-day Cash Flow Forecast */}
+        <CashFlowForecast />
+
+        {/* Fraud review entry */}
+        <TouchableOpacity
+          style={styles.debtMgrBtn}
+          onPress={() => router.push("/finance/fraud-review")}
+          testID="open-fraud-review"
+          activeOpacity={0.85}
+        >
+          <View style={[styles.debtMgrIcon, { backgroundColor: "rgba(239,68,68,0.15)" }]}>
+            <CreditCard size={18} color={colors.danger} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.debtMgrTitle}>Fraud Review</Text>
+            <Text style={styles.debtMgrSub}>7-signal fraud detection · trusted list</Text>
+          </View>
+          <ChevronRight color={colors.textSecondary} size={18} />
+        </TouchableOpacity>
 
         {/* Debt manager entry */}
         <TouchableOpacity

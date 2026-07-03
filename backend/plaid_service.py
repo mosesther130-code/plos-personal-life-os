@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 load_dotenv()
@@ -490,6 +490,78 @@ def make_router(db, get_current_user_id, notify_user=None):
             except Exception:
                 pass
         return {"ok": True, **res}
+
+    @r.post("/categorize")
+    async def categorize_ep(user_id: str = Depends(get_current_user_id),
+                            all_txs: bool = False):
+        from transaction_categorizer import categorize_user_transactions
+        return await categorize_user_transactions(user_id, db, only_uncategorized=not all_txs)
+
+    @r.put("/transactions/{tx_id}/category")
+    async def update_category(tx_id: str,
+                               body: Dict[str, Any] = Body(...),
+                               user_id: str = Depends(get_current_user_id)):
+        from transaction_categorizer import apply_user_correction
+        try:
+            res = await apply_user_correction(user_id, tx_id, body.get("category", ""), db)
+            return res
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @r.get("/cashflow-forecast")
+    async def cashflow_forecast(user_id: str = Depends(get_current_user_id),
+                                 days: int = 90, threshold: float = 500.0,
+                                 regenerate: bool = False):
+        from cashflow_forecaster import generate_forecast
+        if regenerate:
+            return await generate_forecast(user_id, db, days=days, low_balance_threshold=threshold)
+        cached = await db.cashflow_forecasts.find_one({"user_id": user_id}, {"_id": 0})
+        if cached and cached.get("days") and len(cached["days"]) >= days:
+            return cached
+        return await generate_forecast(user_id, db, days=days, low_balance_threshold=threshold)
+
+    @r.post("/fraud-scan")
+    async def fraud_scan(user_id: str = Depends(get_current_user_id), days: int = 30):
+        from fraud_detector import scan_recent_transactions
+        return await scan_recent_transactions(user_id, db, days=days)
+
+    @r.get("/fraud-alerts")
+    async def fraud_alerts(user_id: str = Depends(get_current_user_id), limit: int = 50):
+        docs = await db.security_alerts.find(
+            {"user_id": user_id, "module": "financial"}, {"_id": 0},
+        ).sort("created_at", -1).limit(limit).to_list(limit)
+        return {"alerts": docs, "count": len(docs)}
+
+    @r.put("/fraud-alerts/{alert_id}")
+    async def resolve_fraud(alert_id: str,
+                             body: Dict[str, Any] = Body(...),
+                             user_id: str = Depends(get_current_user_id)):
+        decision = (body or {}).get("decision", "")
+        if decision not in ("trusted", "disputed", "reported"):
+            raise HTTPException(400, "decision must be one of: trusted|disputed|reported")
+        alert = await db.security_alerts.find_one({"alert_id": alert_id, "user_id": user_id})
+        if not alert:
+            raise HTTPException(404, "Alert not found")
+        await db.security_alerts.update_one(
+            {"alert_id": alert_id, "user_id": user_id},
+            {"$set": {"status": "resolved", "decision": decision,
+                      "resolved_at": datetime.now(timezone.utc).isoformat()}},
+        )
+        if decision == "trusted":
+            merchant = alert.get("merchant_name")
+            if merchant:
+                await db.trusted_merchants.update_one(
+                    {"user_id": user_id, "merchant_name": merchant},
+                    {"$set": {"user_id": user_id, "merchant_name": merchant,
+                              "trusted_at": datetime.now(timezone.utc).isoformat()}},
+                    upsert=True,
+                )
+        return {"ok": True}
+
+    @r.get("/cache-stats")
+    async def cache_stats():
+        from cache_manager import stats
+        return await stats(db)
 
     @r.get("/summary")
     async def summary(user_id: str = Depends(get_current_user_id)):

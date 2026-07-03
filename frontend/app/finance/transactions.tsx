@@ -186,11 +186,13 @@ export default function TransactionsScreen() {
                     <View style={{ flex: 1 }}>
                       <Text style={styles.txName} numberOfLines={1}>{t.merchant_name || t.name}</Text>
                       <View style={styles.txMetaRow}>
+                        {t.category_plos ? (
+                          <View style={styles.catChip}>
+                            <Text style={styles.catChipText}>{t.category_plos}</Text>
+                          </View>
+                        ) : null}
                         <Text style={styles.txMeta}>{t.institution_name || "Bank"}</Text>
                         {t.pending ? <View style={styles.pendingPill}><Text style={styles.pendingText}>PENDING</Text></View> : null}
-                        {t.category_plaid && t.category_plaid.length ? (
-                          <Text style={styles.txMeta}>· {t.category_plaid[0]}</Text>
-                        ) : null}
                       </View>
                     </View>
                     <Text style={[styles.txAmount, { color: isIncome ? colors.success : colors.textPrimary }]}>
@@ -228,8 +230,10 @@ const styles = StyleSheet.create({
   txRow: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colors.surface, borderRadius: radius.md, paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: colors.borderSubtle, marginBottom: 6 },
   txIcon: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
   txName: { color: colors.textPrimary, fontSize: 13, fontWeight: "600" },
-  txMetaRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 },
+  txMetaRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4, flexWrap: "wrap" },
   txMeta: { color: colors.textTertiary, fontSize: 10 },
+  catChip: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, backgroundColor: colors.primaryMuted, borderWidth: 1, borderColor: colors.primary },
+  catChipText: { color: colors.primaryGlow, fontSize: 9, fontWeight: "700", letterSpacing: 0.3 },
   pendingPill: { paddingHorizontal: 5, paddingVertical: 1, borderRadius: 3, backgroundColor: "rgba(245,158,11,0.2)", borderWidth: 1, borderColor: "#F59E0B" },
   pendingText: { color: "#F59E0B", fontSize: 8, fontWeight: "700", letterSpacing: 0.5 },
   txAmount: { fontSize: 13, fontWeight: "700" },

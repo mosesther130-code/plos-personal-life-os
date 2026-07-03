@@ -790,6 +790,16 @@ export const plaidApi = {
   transactions: (limit = 100) => request<{ transactions: any[]; count: number }>(`/plaid/transactions?limit=${limit}`),
   sandboxSimulate: () => request<any>("/plaid/sandbox/simulate", { method: "POST" }),
   summary: () => request<any>("/plaid/summary"),
+  categorize: () => request<any>("/plaid/categorize", { method: "POST" }),
+  updateCategory: (tx_id: string, category: string) =>
+    request<any>(`/plaid/transactions/${tx_id}/category`, { method: "PUT", body: { category } }),
+  cashflowForecast: (days = 90, threshold = 500, regenerate = false) =>
+    request<any>(`/plaid/cashflow-forecast?days=${days}&threshold=${threshold}&regenerate=${regenerate}`),
+  fraudScan: (days = 30) => request<any>(`/plaid/fraud-scan?days=${days}`, { method: "POST" }),
+  fraudAlerts: () => request<any>("/plaid/fraud-alerts"),
+  resolveFraud: (alert_id: string, decision: "trusted" | "disputed" | "reported") =>
+    request<any>(`/plaid/fraud-alerts/${alert_id}`, { method: "PUT", body: { decision } }),
+  cacheStats: () => request<any>("/plaid/cache-stats"),
 };
 
 // ----------------- Push Notifications (Firebase via Emergent relay) ----

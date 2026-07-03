@@ -1,0 +1,45 @@
+{
+  "summary": "PLOS Phase 2-5 backend testing complete — 20/20 pytest cases pass (100%). Coverage: (Phase 2) POST /api/plaid/categorize matches all 9 sandbox txs via rule engine (rule_matched=9, ai_matched=0, unmatched=0) with correct PLOS categories (GSU→Salary Income, EBT→Income, Mortgage→Housing, Chase→Debt Payment, Georgia Power/AT&T→Utilities, Kroger→Groceries, Murphy Express→Gas); PUT category (Kroger→Dining) persists, creates user_merchant_rules row, cascades to same-merchant transactions, and user_rule wins on re-categorize (never reverts to Groceries); invalid category returns 400. (Phase 3) 90-day forecast has 90 days, starting_balance=7047.50, all required day fields (opening_balance, closing_balance, is_low_balance_day, cash_in, cash_out), summary keys (min/max/ending_balance, total_income, total_outflow, low_balance_days), cache is served on 2nd call without regenerate (same generated_at); threshold=10000 triggers low_balance alert. (Phase 4) fraud-scan returns {scanned, flagged, alerts_created} — 0 flagged on seed as expected; fraud-alerts returns {alerts, count}; PUT decision=trusted marks resolved and inserts trusted_merchants row (verified via mongo); missing alert → 404. (Phase 5) cache-stats has {total_cached_items, total_cache_hits, est_tokens_saved, est_cost_saved_usd, by_task_type}; compute_cache_key deterministic across key order; get_cached returns None for missing; set_cached round-trip stores expires_at + default TTL=12h. Regression on /api/plaid/status, /summary, /transactions all green. IMPORTANT: fixed a critical routing bug on PUT /api/plaid/fraud-alerts/{alert_id} — the FraudDecision Pydantic model defined inside make_router() closure could not be resolved by FastAPI's TypeAdapter (ForwardRef unresolvable), causing every PUT to fail with 422 'query.body missing'. Replaced with Body(...) dict + explicit decision validation to make endpoint operational.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "PUT /api/plaid/fraud-alerts/{alert_id}", "issue": "FIXED — PydanticUserError: ForwardRef('FraudDecision') not fully defined because the model was declared inside make_router() function scope; FastAPI could not introspect the type and fell back to treating `body` as a query param, so every request returned 422. Replaced `body: FraudDecision` with `body: Dict[str, Any] = Body(...)` and manual whitelist validation (trusted|disputed|reported). Root cause is compounded by duplicate router mount at server.py:6274-6279 (already flagged in iteration_31)."},
+      {"endpoint": "/api/plaid/*", "issue": "Duplicate mount persists: server.py:6274 (via api_router.include_router) + server.py:6278 (app.include_router prefix='/api'). Each call re-instantiates make_router which redeclares nested Pydantic classes — this made the FraudDecision ForwardRef bug worse. Recommend removing the redundant mount OR moving all Pydantic models to module scope."},
+      {"endpoint": "GET /api/plaid/cashflow-forecast", "issue": "With sandbox seed ($7047 starting balance + biweekly $2920 GSU income + monthly expenses/debts) the closing balance never drops below $5000, so review-request expectation that threshold=5000 should trigger a low_balance alert is not met. Test uses threshold=10000 which does reliably trigger. Not a code bug — expectation vs data mismatch. Consider using threshold=8000 as the default demo threshold in UI docs."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_plos_phase2_5.py",
+    "/app/test_reports/pytest/plos_phase2_5_results.xml"
+  ],
+  "action_items": [
+    "Move all Pydantic BaseModel definitions (FraudDecision, ExchangeBody) out of make_router() closure to module scope in plaid_service.py — prevents ForwardRef resolution failures when FastAPI introspects request bodies.",
+    "Remove duplicate Plaid router mount at server.py:6274 OR server.py:6278 (keep only one). The second mount re-runs make_router and duplicates nested class registrations.",
+    "Optional: consider a default low_balance_threshold=1500 (matching the safe_to_save floor) or expose a per-user threshold; the review-request-implied 5000 default is above min balance for the seed profile."
+  ],
+  "critical_code_review_comments": [
+    "plaid_service.py:535 (pre-fix) — nested Pydantic BaseModel in a factory function fails Pydantic v2 TypeAdapter resolution and silently falls back to Query param. This pattern is anti-idiomatic; models must live at module scope.",
+    "transaction_categorizer.py:270-286 — cascade query correctly filters on `user_category_override: None` so user-overridden transactions from other cascades are protected. Good.",
+    "cashflow_forecaster.py:161 — `date.today()` used directly; consider making it injectable for deterministic testing.",
+    "cache_manager.py:38-41 — compute_cache_key uses sort_keys=True and default=str; deterministic ✓.",
+    "cache_manager.py:44-50 — ensure_indexes swallows all exceptions; if it runs on cold DB but silently fails on TTL index, expiry won't fire. Consider warning-level for real prod.",
+    "fraud_detector.py:96 — `if amt > 20 and tx.get('authorized_datetime') or tx.get('datetime')` has ambiguous precedence; Python parses as `(amt>20 AND authorized_datetime) OR datetime` — always truthy when datetime present. Wrap the OR in parens: `and (tx.get('authorized_datetime') or tx.get('datetime'))`. Not currently exploitable since sandbox data lacks these fields, but bug will surface on real Plaid data.",
+    "plaid_service.py:519 — cache check uses `len(cached['days']) >= days` which correctly refreshes when caller requests longer horizon. Good."
+  ],
+  "updated_files": [
+    "/app/backend/plaid_service.py (fix: replaced FraudDecision Pydantic model on PUT /fraud-alerts/{alert_id} with Body(...) dict + explicit decision whitelist to work around nested-class ForwardRef bug)",
+    "/app/backend/tests/test_plos_phase2_5.py (new — 20 test cases for Phase 2-5)"
+  ],
+  "success_rate": {"backend": "100% (20/20)", "frontend": "N/A (backend-only scope)"},
+  "seed_data_creation": "Fixture _prep_sandbox re-seeds via POST /api/plaid/sandbox/simulate on module setup and cleans plaid_items + user_merchant_rules for the test user pre-run. Post-run also deletes sandbox items. Fraud-alert trusted-flow test inserts a synthetic security_alerts doc directly via motor (using MONGO_URL/DB_NAME env), then cleans it and the trusted_merchants row it creates.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "test_plos_phase2_5.py is reusable and self-cleaning. It requires MONGO_URL + DB_NAME env vars (already present via /app/backend/.env) because two tests hit Mongo directly to seed/verify fraud alerts and cache round-trip. Note: the fraud endpoint fix moved from Pydantic model to Body(dict) with manual validation — if main agent restores Pydantic model, must move FraudDecision to module scope first. Cashflow low_balance test uses threshold=10000 (not 5000 as review-request said) because seed data does not dip below $5000.",
+  "rca_of_issue": "PUT /api/plaid/fraud-alerts/{alert_id} 422 failure — Root cause: FraudDecision(BaseModel) was declared as a local class inside the make_router() factory function. FastAPI on Pydantic v2 uses TypeAdapter with ForwardRef resolution against globalns, but a class defined in a function's local scope is NOT in globalns — so Pydantic raised PydanticUserError: 'TypeAdapter[Annotated[ForwardRef(FraudDecision), Query(PydanticUndefined)]] is not fully defined'. FastAPI then fell back to treating the `body` parameter as a Query field, hence the odd `loc: ['query', 'body']` error. This bug was made worse (guaranteed) by the duplicate router mount at server.py:6274+6278 which calls make_router twice, redeclaring the class each time. Mitigation applied: replaced Pydantic model with `Dict[str, Any] = Body(...)` and manual whitelist validation. Permanent fix (recommended to main agent): move FraudDecision + ExchangeBody to module scope."
+}

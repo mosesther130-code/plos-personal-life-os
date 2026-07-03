@@ -6278,6 +6278,15 @@ api_router.include_router(make_plaid_router(db, get_current_user_id, notify_user
 app.include_router(make_plaid_router(db, get_current_user_id, notify_user=_plaid_notify),
                    prefix="/api")
 
+
+@app.on_event("startup")
+async def _init_cache_indexes():
+    try:
+        from cache_manager import ensure_indexes
+        await ensure_indexes(db)
+    except Exception as _e:
+        pass
+
 # Mount Career Intelligence sub-router (Enhancements 4c, 4d, 4e)
 from career_intelligence import make_router as make_career_intel_router  # noqa: E402
 
