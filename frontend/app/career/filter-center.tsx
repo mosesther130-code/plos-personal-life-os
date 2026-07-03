@@ -10,7 +10,7 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import {
   ChevronLeft, Save, Wand2, Plus, X, Star, RefreshCw, Search,
   ChevronDown, ChevronUp, Globe, MapPin, Building2, Hash,
-  ShieldCheck, SlidersHorizontal, Trash2,
+  ShieldCheck, SlidersHorizontal, Trash2, Edit3,
 } from "lucide-react-native";
 import { careerPrefsApi, FilterProfile, LocationEntry } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
@@ -98,36 +98,47 @@ export default function FilterCenterScreen() {
     }
   };
 
+  const onProfileRename = (p: FilterProfile) => {
+    promptText("New name", p.profile_name, async (newName) => {
+      try {
+        await careerPrefsApi.updateProfile(p.profile_id, { profile_name: newName });
+        await load();
+      } catch (e: any) { Alert.alert("Rename failed", String(e?.message || e)); }
+    });
+  };
+
+  const onProfileDelete = (p: FilterProfile) => {
+    if (profiles.length <= 1) {
+      Alert.alert("Cannot delete", "At least one track must remain.");
+      return;
+    }
+    Alert.alert(
+      `Delete "${p.profile_name}"?`,
+      "This track's filters and criteria will be removed. This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete", style: "destructive",
+          onPress: async () => {
+            try {
+              await careerPrefsApi.deleteProfile(p.profile_id);
+              if (p.profile_id === active?.profile_id) {
+                const remaining = profiles.filter((x) => x.profile_id !== p.profile_id);
+                if (remaining[0]) await careerPrefsApi.applyProfile(remaining[0].profile_id);
+              }
+              await load();
+            } catch (e: any) { Alert.alert("Delete failed", String(e?.message || e)); }
+          },
+        },
+      ],
+    );
+  };
+
   const onProfileLongPress = (p: FilterProfile) => {
     Alert.alert(p.profile_name, "What would you like to do with this track?", [
       { text: "Cancel", style: "cancel" },
-      {
-        text: "Rename",
-        onPress: () => promptText("New name", p.profile_name, async (newName) => {
-          try {
-            await careerPrefsApi.updateProfile(p.profile_id, { profile_name: newName });
-            await load();
-          } catch (e: any) { Alert.alert("Rename failed", String(e?.message || e)); }
-        }),
-      },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          if (profiles.length <= 1) {
-            Alert.alert("Cannot delete", "At least one track must remain.");
-            return;
-          }
-          try {
-            await careerPrefsApi.deleteProfile(p.profile_id);
-            if (p.profile_id === active?.profile_id) {
-              const remaining = profiles.filter((x) => x.profile_id !== p.profile_id);
-              if (remaining[0]) await careerPrefsApi.applyProfile(remaining[0].profile_id);
-            }
-            await load();
-          } catch (e: any) { Alert.alert("Delete failed", String(e?.message || e)); }
-        },
-      },
+      { text: "Rename", onPress: () => onProfileRename(p) },
+      { text: "Delete", style: "destructive", onPress: () => onProfileDelete(p) },
     ]);
   };
 
@@ -204,7 +215,38 @@ export default function FilterCenterScreen() {
             <Text style={styles.profileChipText}>New Track</Text>
           </TouchableOpacity>
         </ScrollView>
-        <Text style={styles.hint}>Long-press a track to rename or delete it.</Text>
+
+        {/* Track manage bar — always-visible Rename / Delete for the selected track */}
+        <View style={styles.manageBar} testID="track-manage-bar">
+          <View style={styles.manageLabelWrap}>
+            <Text style={styles.manageLabel} numberOfLines={1}>
+              Editing: <Text style={styles.manageLabelStrong}>{active.profile_name}</Text>
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.manageBtn}
+            onPress={() => onProfileRename(active)}
+            testID="track-rename-btn"
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+          >
+            <Edit3 size={12} color={colors.primaryGlow} />
+            <Text style={styles.manageBtnText}>Rename</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.manageBtn, styles.manageBtnDanger,
+                    profiles.length <= 1 && { opacity: 0.4 }]}
+            onPress={() => onProfileDelete(active)}
+            disabled={profiles.length <= 1}
+            testID="track-delete-btn"
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+          >
+            <Trash2 size={12} color="#EF4444" />
+            <Text style={styles.manageBtnTextDanger}>Delete</Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.hint}>
+          Tap a chip to switch tracks · Rename or Delete the current track above · long-press also works on mobile.
+        </Text>
 
         {/* ===== Section 1: Target Roles ===== */}
         <Text style={styles.section}>1. Target Roles & Keywords</Text>
@@ -574,6 +616,23 @@ const styles = StyleSheet.create({
   profileChipOn: { borderColor: colors.primaryGlow },
   profileChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   profileChipText: { color: colors.textSecondary, fontSize: 11, fontWeight: "700" },
+  manageBar: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    marginTop: 6,
+    backgroundColor: colors.surface, borderColor: colors.borderSubtle, borderWidth: 1,
+    borderRadius: radius.sm, paddingHorizontal: 10, paddingVertical: 6,
+  },
+  manageLabelWrap: { flex: 1, minWidth: 0 },
+  manageLabel: { color: colors.textTertiary, fontSize: 10, fontWeight: "700" },
+  manageLabelStrong: { color: colors.textPrimary, fontSize: 11, fontWeight: "800" },
+  manageBtn: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12,
+    backgroundColor: colors.primaryMuted,
+  },
+  manageBtnDanger: { backgroundColor: "rgba(239,68,68,0.14)" },
+  manageBtnText: { color: colors.primaryGlow, fontSize: 10, fontWeight: "800" },
+  manageBtnTextDanger: { color: "#EF4444", fontSize: 10, fontWeight: "800" },
   section: { color: colors.textPrimary, fontSize: 14, fontWeight: "800", marginTop: spacing.lg, marginBottom: 6 },
   subHead: { color: colors.textTertiary, fontSize: 11, fontWeight: "700", marginTop: 8 },
   hint: { color: colors.textTertiary, fontSize: 10, fontStyle: "italic" },
