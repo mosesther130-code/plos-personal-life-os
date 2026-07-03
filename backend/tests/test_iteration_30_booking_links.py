@@ -90,9 +90,9 @@ def _scan(session, tid):
 
 
 def _find(links, platform):
-    for l in links:
-        if l["platform"].lower() == platform.lower():
-            return l["url"]
+    for item in links:
+        if item["platform"].lower() == platform.lower():
+            return item["url"]
     return None
 
 
