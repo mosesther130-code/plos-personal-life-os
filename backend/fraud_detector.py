@@ -93,7 +93,7 @@ async def evaluate_transaction(tx: Dict[str, Any], user_id: str, db,
                             "desc": f"Round ${amt:.0f} charge from unfamiliar merchant '{merchant}'."})
 
     # Signal 5 — Rapid sequential transactions (3+ debits > $20 in 5 mins)
-    if amt > 20 and tx.get("authorized_datetime") or tx.get("datetime"):
+    if amt > 20 and (tx.get("authorized_datetime") or tx.get("datetime")):
         try:
             ts_str = tx.get("authorized_datetime") or tx.get("datetime")
             ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
