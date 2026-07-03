@@ -2712,14 +2712,12 @@ Respond with EXACTLY this JSON (no markdown):
 {{"summary": "<one-line headline summarizing the day>", "items": ["<advice1>", "<advice2>", "<advice3>"]}}
 """
 
-    chat = LlmChat(
-        api_key=EMERGENT_LLM_KEY,
-        session_id=f"daily-{user_id}-{today}",
-        system_message=PLOS_SYSTEM_PROMPT,
-    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
-
-    response = await chat.send_message(UserMessage(text=prompt))
-    text = response.strip() if isinstance(response, str) else str(response).strip()
+    routed = await ai_router.route_ai_task(
+        task_type="financial_advice",
+        payload={"system": PLOS_SYSTEM_PROMPT, "prompt": prompt},
+        user_id=user_id,
+    )
+    text = (routed.get("content") or "").strip()
 
     import json
     import re
@@ -3929,17 +3927,16 @@ async def translate(
     else:
         effective_source = source
 
-    chat = LlmChat(
-        api_key=EMERGENT_LLM_KEY,
-        session_id=f"translate-{user_id}",
-        system_message=TRANSLATOR_SYS,
-    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
     prompt = (
         f"Translate from {effective_source} to {payload.target_language}.\n\n"
         f"Text:\n{payload.text}"
     )
-    response = await chat.send_message(UserMessage(text=prompt))
-    translated = (response if isinstance(response, str) else str(response)).strip()
+    routed = await ai_router.route_ai_task(
+        task_type="translation",
+        payload={"system": TRANSLATOR_SYS, "prompt": prompt},
+        user_id=user_id,
+    )
+    translated = (routed.get("content") or "").strip()
     # Strip surrounding quotes if Claude wrapped output
     if translated.startswith(("'", '"')) and translated.endswith(("'", '"')):
         translated = translated[1:-1]
@@ -5961,21 +5958,26 @@ async def legal_topic(slug: str, force_refresh: bool = False, user_id: str = Dep
             except Exception:
                 pass
 
-    chat = LlmChat(
-        api_key=EMERGENT_LLM_KEY,
-        session_id=f"legal-{user_id}-{slug}-{int(time.time())}",
-        system_message=(
-            "You are a legal information assistant for PLOS users based in Atlanta, Georgia. "
-            "Provide accurate, plain-English overviews of US/Georgia law. Use markdown structure: "
-            "## Overview of Key Rights, ## Common Situations, ## When to Consult an Attorney, "
-            "## Georgia Resources. Keep total response UNDER 600 words, focused on actionable info. "
-            "ALWAYS end with: '⚖️ This is general legal information only and not legal advice. For specific legal situations, consult a licensed attorney in your jurisdiction.'"
-        ),
-    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
     prompt = f"Generate the overview for category: {cat['title']}. Description: {cat['description']}. User is in Georgia."
+    # Route to Mistral (european_legal) for non-US jurisdiction topics; Claude (financial_advice) for US
+    is_non_us = any(k in (cat.get("title", "") + " " + cat.get("description", "")).lower()
+                    for k in ("philippine", "gdpr", "european", "eu ", "international",
+                              "cross-border", "belgium", "germany", "france", "uk law"))
+    task = "european_legal" if is_non_us else "financial_advice"
+    legal_system = (
+        "You are a legal information assistant for PLOS users based in Atlanta, Georgia. "
+        "Provide accurate, plain-English overviews of US/Georgia law. Use markdown structure: "
+        "## Overview of Key Rights, ## Common Situations, ## When to Consult an Attorney, "
+        "## Georgia Resources. Keep total response UNDER 600 words, focused on actionable info. "
+        "ALWAYS end with: '⚖️ This is general legal information only and not legal advice. For specific legal situations, consult a licensed attorney in your jurisdiction.'"
+    )
     try:
-        r = await chat.send_message(UserMessage(text=prompt))
-        text = r if isinstance(r, str) else str(r)
+        routed = await ai_router.route_ai_task(
+            task_type=task,
+            payload={"system": legal_system, "prompt": prompt},
+            user_id=user_id,
+        )
+        text = routed.get("content") or ""
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Legal topic failed: {e}")
 
@@ -6201,6 +6203,25 @@ app.include_router(make_push_router(get_current_user_id))
 from family_locations_router import make_router as make_family_locations_router  # noqa: E402
 
 app.include_router(make_family_locations_router(db, get_current_user_id))
+
+# ---------------------------------------------------------------------------
+# AI Router — multi-model dispatch layer
+# ---------------------------------------------------------------------------
+import ai_router  # noqa: E402
+from ai_router_endpoints import build_router as build_ai_router_endpoints  # noqa: E402
+from emergentintegrations.llm.chat import LlmChat as _LlmChat, UserMessage as _UserMessage  # noqa: E402
+
+
+async def _shared_call_claude(session_id: str, system: str, prompt: str) -> str:
+    chat = _LlmChat(
+        api_key=EMERGENT_LLM_KEY, session_id=session_id, system_message=system,
+    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+    resp = await chat.send_message(_UserMessage(text=prompt))
+    return resp if isinstance(resp, str) else str(resp)
+
+
+ai_router.init(db, _shared_call_claude)
+app.include_router(build_ai_router_endpoints(get_current_user_id))
 
 app.add_middleware(
     CORSMiddleware,

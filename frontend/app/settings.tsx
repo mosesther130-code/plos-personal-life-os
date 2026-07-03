@@ -26,6 +26,7 @@ import {
   X,
   Fingerprint,
   ScanFace,
+  Sparkles,
 } from "lucide-react-native";
 
 import { useAuth } from "@/src/lib/auth-context";
@@ -397,6 +398,20 @@ export default function Settings() {
               <View style={{ flex: 1 }}>
                 <Text style={[styles.actionTitle, { color: colors.danger }]}>Sign Out</Text>
                 <Text style={styles.actionSub}>End your session</Text>
+              </View>
+            </View>
+          </Card>
+        </TouchableOpacity>
+
+        {/* AI Router */}
+        <Text style={styles.section}>AI</Text>
+        <TouchableOpacity onPress={() => router.push("/settings/ai-platforms" as any)} testID="open-ai-platforms">
+          <Card>
+            <View style={styles.actionRow}>
+              <Sparkles color={colors.primaryGlow} size={20} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.actionTitle}>AI Platform Connections</Text>
+                <Text style={styles.actionSub}>Manage keys · view usage · rotate</Text>
               </View>
             </View>
           </Card>

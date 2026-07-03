@@ -91,18 +91,20 @@ async def _run_claude_finder(
         '"buy_url_hint": "shop.brand.com/path-or-search-string" }, ... ] }'
     )
 
-    chat = LlmChat(
-        api_key=EMERGENT_LLM_KEY,
-        session_id=f"deal-finder-{user_id}",
-        system_message=(
-            "You are a careful product deal expert. Output ONLY valid JSON. "
-            "Never fabricate URLs that include fake tracking; if unsure, return "
-            "a brand-domain hint instead."
-        ),
-    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
-
-    raw = await chat.send_message(UserMessage(text=prompt))
-    text = raw if isinstance(raw, str) else str(raw)
+    import ai_router  # local to avoid circular
+    routed = await ai_router.route_ai_task(
+        task_type="real_time_research",
+        payload={
+            "system": (
+                "You are a careful product deal expert. Output ONLY valid JSON. "
+                "Never fabricate URLs that include fake tracking; if unsure, return "
+                "a brand-domain hint instead."
+            ),
+            "prompt": prompt,
+        },
+        user_id=user_id,
+    )
+    text = routed.get("content") or ""
     parsed: Dict[str, Any] = {}
     m = re.search(r"\{.*\}", text, re.DOTALL)
     if m:

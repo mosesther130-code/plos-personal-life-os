@@ -23,7 +23,7 @@ export async function clearToken(): Promise<void> {
   await storage.secureRemove(TOKEN_KEY);
 }
 
-async function request<T = any>(
+export async function request<T = any>(
   path: string,
   options: { method?: string; body?: any; auth?: boolean } = {}
 ): Promise<T> {
