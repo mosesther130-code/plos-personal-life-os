@@ -6265,6 +6265,14 @@ app.include_router(
     prefix="/api",
 )
 
+# Jobs — Deep Search Engine (SerpApi Google Jobs + LinkedIn/Indeed/Glassdoor + Devex + ReliefWeb + USAJobs)
+from jobs_deep_search import make_router as make_jobs_deep_router  # noqa: E402
+
+app.include_router(
+    make_jobs_deep_router(db, get_current_user_id),
+    prefix="/api",
+)
+
 # Plaid — bank account, transactions, investments, liabilities sync
 from plaid_service import make_router as make_plaid_router  # noqa: E402
 

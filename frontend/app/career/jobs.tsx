@@ -1,264 +1,130 @@
-// PLOS Career — Job Intelligence: Redesigned Job Search Results screen.
+// PLOS Jobs Center — Deep Search Engine feed with verified apply links.
 import React, { useCallback, useEffect, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
-  Alert, Linking, RefreshControl, Modal, Pressable,
+  Alert, RefreshControl, Linking, Modal, Pressable,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import * as Clipboard from "expo-clipboard";
 import {
-  ChevronLeft, RefreshCw, SlidersHorizontal, ShieldCheck, Wand2, Bookmark,
-  Copy, ExternalLink, Lock, TriangleAlert, Building2, Zap,
+  ChevronLeft, RefreshCw, Filter, Shield, ShieldCheck, ExternalLink,
+  Copy, X, Sparkles, MapPin, Clock, DollarSign, Building2, ArrowUpRight,
+  Zap,
 } from "lucide-react-native";
-import { jobIntelApi, FeedJob } from "@/src/lib/api";
+import { jobsDeepApi, careerPrefsApi, type DeepSearchJob } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
-import Svg, { Circle } from "react-native-svg";
 
-const EMPLOYER_TYPE_COLORS: Record<string, { bg: string; fg: string; label: string }> = {
-  federal_government: { bg: "rgba(30,64,175,0.20)", fg: "#3B82F6", label: "Federal" },
-  international_org: { bg: "rgba(6,95,70,0.20)", fg: "#10B981", label: "Intl Org" },
-  nonprofit: { bg: "rgba(6,95,70,0.20)", fg: "#10B981", label: "NGO" },
-  ngo: { bg: "rgba(6,95,70,0.20)", fg: "#10B981", label: "NGO" },
-  higher_education: { bg: "rgba(168,85,247,0.20)", fg: "#A855F7", label: "Higher Ed" },
-  private_sector: { bg: "rgba(107,114,128,0.20)", fg: "#9CA3AF", label: "Private" },
-};
+const FRESHNESS = [
+  { k: "24h", label: "Today" },
+  { k: "3d", label: "3 days" },
+  { k: "7d", label: "7 days" },
+  { k: "30d", label: "30 days" },
+  { k: "any", label: "Any time" },
+];
 
-function ScoreGauge({ score, size = 52 }: { score: number; size?: number }) {
-  const stroke = 5;
-  const r = (size - stroke) / 2;
-  const c = 2 * Math.PI * r;
-  const dash = (Math.max(0, Math.min(100, score)) / 100) * c;
-  const color = score >= 85 ? colors.success : score >= 70 ? colors.warning : score >= 50 ? "#9CA3AF" : "#EF4444";
-  return (
-    <View style={{ alignItems: "center", justifyContent: "center" }}>
-      <Svg width={size} height={size}>
-        <Circle cx={size / 2} cy={size / 2} r={r} stroke="rgba(255,255,255,0.06)" strokeWidth={stroke} fill="none" />
-        <Circle
-          cx={size / 2} cy={size / 2} r={r} stroke={color} strokeWidth={stroke}
-          fill="none" strokeDasharray={`${dash} ${c - dash}`}
-          strokeDashoffset={c / 4} strokeLinecap="round"
-          transform={`rotate(-90 ${size / 2} ${size / 2})`}
-        />
-      </Svg>
-      <View style={{ position: "absolute", alignItems: "center" }}>
-        <Text style={{ color: colors.textPrimary, fontSize: 15, fontWeight: "800" }}>{Math.round(score)}</Text>
-      </View>
-    </View>
-  );
+const SORT_OPTIONS = [
+  { k: "best_match", label: "Best Match" },
+  { k: "most_recent", label: "Most Recent" },
+  { k: "highest_salary", label: "Highest Salary" },
+];
+
+const QUICK_CHIPS = [
+  { k: "all", label: "All Jobs" },
+  { k: "remote", label: "Remote", filter: "remote" as const },
+  { k: "new", label: "Posted Today", filter: "new" as const },
+  { k: "high", label: "High Match 85%+", filter: "high" as const },
+  { k: "federal", label: "USAJobs", filter: "usajobs" as const },
+];
+
+function fmtRel(iso?: string | null) {
+  if (!iso) return "—";
+  try {
+    const diff = (Date.now() - new Date(iso).getTime()) / 60000;
+    if (diff < 1) return "just now";
+    if (diff < 60) return `${Math.floor(diff)} min ago`;
+    if (diff < 60 * 24) return `${Math.floor(diff / 60)}h ago`;
+    return `${Math.floor(diff / 60 / 24)}d ago`;
+  } catch { return "recently"; }
 }
 
-function ApplyBtn({ url, quality, onCopy }: {
-  url: string; quality: string; onCopy: () => void;
-}) {
-  const cfg: Record<string, { bg: string; fg: string; label: string; icon: string }> = {
-    direct_apply:    { bg: colors.success, fg: "#fff", label: "Apply Now",         icon: "ext" },
-    posting_page:    { bg: colors.primary, fg: "#fff", label: "View & Apply",      icon: "ext" },
-    requires_login:  { bg: colors.primary, fg: "#fff", label: "Apply (Login Req.)",icon: "lock" },
-    unverified:      { bg: colors.warning, fg: "#fff", label: "Apply (Unverified)",icon: "warn" },
-    general_careers: { bg: "#4B5563",      fg: "#fff", label: "Careers Page",      icon: "ext" },
-  };
-  const c = cfg[quality] || cfg.posting_page;
-  return (
-    <View style={{ flexDirection: "row", gap: 6, flex: 1.6 }}>
-      <TouchableOpacity
-        style={[styles.applyBtn, { backgroundColor: c.bg }]}
-        onPress={() => Linking.openURL(url)}
-        testID="apply-btn"
-      >
-        {c.icon === "lock" ? <Lock size={12} color="#fff" /> :
-         c.icon === "warn" ? <TriangleAlert size={12} color="#fff" /> :
-         <ExternalLink size={12} color="#fff" />}
-        <Text style={[styles.applyBtnText, { color: c.fg }]} numberOfLines={1}>{c.label}</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.copyBtn} onPress={onCopy} testID="copy-link">
-        <Copy size={12} color={colors.primaryGlow} />
-      </TouchableOpacity>
-    </View>
-  );
+function fmtSalary(min?: number | null, max?: number | null, disp?: string) {
+  if (disp) return disp;
+  if (min && max) return `$${(min / 1000).toFixed(0)}K–$${(max / 1000).toFixed(0)}K`;
+  if (min) return `$${(min / 1000).toFixed(0)}K+`;
+  return "";
 }
 
-function JobCard({ job, onOpen, onTailor, onSave }: {
-  job: FeedJob; onOpen: () => void; onTailor: () => void; onSave: () => void;
-}) {
-  const score = job.display_score || 0;
-  const scoreData: any = (job.match_scores || {})[Object.keys(job.match_scores || {})[0] || ""] || {};
-  const spotlight: string[] = scoreData.keyword_spotlight || [];
-  const strengths: string[] = scoreData.top_strengths || [];
-  const et = EMPLOYER_TYPE_COLORS[job.employer_type] || EMPLOYER_TYPE_COLORS.private_sector;
-  const bd = scoreData.score_breakdown || {};
-
-  const copyLink = async () => {
-    await Clipboard.setStringAsync(job.apply_url);
-    Alert.alert("Copied", "Application link copied — paste anywhere to share or save.");
-  };
-
-  return (
-    <View style={styles.card} testID={`job-${job.job_id}`}>
-      {/* Rank position pill (top-left) */}
-      {(job as any).rank_position && (
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 2 }}>
-          <View style={{ backgroundColor: (job as any).watch_list_hit ? "#F59E0B" : "#374151", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
-            <Text style={{ color: "#fff", fontSize: 9, fontWeight: "800", letterSpacing: 0.4 }}>
-              # {(job as any).rank_position}
-            </Text>
-          </View>
-          {(job as any).watch_list_hit && (
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 2, backgroundColor: "rgba(245,158,11,0.15)", paddingHorizontal: 5, paddingVertical: 2, borderRadius: 3 }}>
-              <Text style={{ color: "#F59E0B", fontSize: 8, fontWeight: "800" }}>★ WATCH LIST</Text>
-            </View>
-          )}
-          {(job as any).rank_score !== undefined && (
-            <Text style={{ color: colors.textTertiary, fontSize: 9, marginLeft: 2 }}>
-              Rank Score {(job as any).rank_score.toFixed(1)}
-            </Text>
-          )}
-        </View>
-      )}
-      {/* Header row */}
-      <View style={{ flexDirection: "row", gap: 10 }}>
-        <TouchableOpacity style={{ flex: 1 }} onPress={onOpen} activeOpacity={0.7}>
-          <Text style={styles.title} numberOfLines={2}>{job.job_title}</Text>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
-            <Text style={styles.employer} numberOfLines={1}>{job.employer}</Text>
-            <View style={[styles.badge, { backgroundColor: et.bg }]}>
-              <Text style={[styles.badgeText, { color: et.fg }]}>{et.label}</Text>
-            </View>
-            {job.early_posting_flag && (
-              <View style={styles.earlyBadge}>
-                <Zap size={9} color="#F59E0B" fill="#F59E0B" />
-                <Text style={styles.earlyBadgeText}>NEW</Text>
-              </View>
-            )}
-            <View style={styles.verifiedBadge}>
-              <ShieldCheck size={9} color={colors.success} />
-              <Text style={styles.verifiedBadgeText}>Verified</Text>
-            </View>
-          </View>
-          <Text style={styles.meta} numberOfLines={1}>
-            {job.location || "Remote"} · {job.location_type.replace("_", "-")} · via {job.source}
-            {job.salary_text ? ` · ${job.salary_text}` : ""}
-          </Text>
-          <Text style={styles.meta} numberOfLines={1}>
-            {job.days_since_posted === 0 ? "Posted today" : `${job.days_since_posted}d ago`}
-          </Text>
-        </TouchableOpacity>
-        {/* Score gauge */}
-        {score > 0 && (
-          <View style={{ alignItems: "center" }}>
-            <ScoreGauge score={score} />
-            <Text style={styles.tier}>{scoreData.match_tier || "—"}</Text>
-          </View>
-        )}
-      </View>
-
-      {/* 6-cell breakdown */}
-      {bd && Object.keys(bd).length > 0 && (
-        <View style={styles.bdGrid}>
-          {(
-            [["skills_match", "Skills"], ["experience_match", "Exp"],
-             ["education_match", "Educ"], ["industry_match", "Industry"],
-             ["location_match", "Loc"], ["clearance_match", "Clear"]] as [string, string][]
-          ).map(([k, lbl]) => (
-            <View key={k} style={styles.bdCell}>
-              <Text style={styles.bdLabel}>{lbl}</Text>
-              <View style={styles.bdBar}>
-                <View style={[styles.bdFill, {
-                  width: `${Math.min(100, bd[k] || 0)}%`,
-                  backgroundColor: (bd[k] || 0) >= 70 ? colors.success : (bd[k] || 0) >= 50 ? colors.warning : "#6B7280",
-                }]} />
-              </View>
-              <Text style={styles.bdVal}>{bd[k] || 0}</Text>
-            </View>
-          ))}
-        </View>
-      )}
-
-      {/* Keyword spotlight */}
-      {spotlight.length > 0 && (
-        <View>
-          <Text style={styles.spotlightLabel}>Key skills for this role</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 4 }}>
-            {spotlight.slice(0, 8).map((k, i) => (
-              <View key={i} style={styles.chipBlue}>
-                <Text style={styles.chipBlueText}>{k}</Text>
-              </View>
-            ))}
-          </ScrollView>
-        </View>
-      )}
-
-      {/* Top strength */}
-      {strengths.length > 0 && (
-        <Text style={styles.strengthText} numberOfLines={2}>{strengths[0]}</Text>
-      )}
-
-      {/* Actions */}
-      <View style={styles.actions}>
-        <TouchableOpacity style={styles.secondaryBtn} onPress={onOpen} testID="view-details">
-          <Text style={styles.secondaryBtnText}>Details</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.secondaryBtn} onPress={onTailor} testID="tailor-cta">
-          <Wand2 size={11} color={colors.primaryGlow} />
-          <Text style={styles.secondaryBtnText}>Tailor</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.saveBtn} onPress={onSave} testID="save-job">
-          <Bookmark size={11} color={colors.primaryGlow} />
-        </TouchableOpacity>
-        <ApplyBtn url={job.apply_url} quality={job.link_quality} onCopy={copyLink} />
-      </View>
-    </View>
-  );
-}
-
-export default function JobsFeedScreen() {
+export default function JobsCenterScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [aggregating, setAggregating] = useState(false);
-  const [jobs, setJobs] = useState<FeedJob[]>([]);
-  const [sort, setSort] = useState<"best_match" | "most_recent" | "highest_salary">("best_match");
-  // Server-side sort covers everything; no client-side score filter.
-  const minScore = 0;
+  const [searching, setSearching] = useState(false);
+  const [feed, setFeed] = useState<any>({ jobs: [], counts_by_source: {}, new_today: 0 });
+  const [freshness, setFreshness] = useState("7d");
+  const [sort, setSort] = useState("best_match");
+  const [quickFilter, setQuickFilter] = useState("all");
+  const [applyJob, setApplyJob] = useState<DeepSearchJob | null>(null);
+  const [meta, setMeta] = useState<any>(null); // last deep-search response
+
   const load = useCallback(async () => {
+    setLoading(true);
     try {
-      const d = await jobIntelApi.feed(minScore, sort, 80);
-      setJobs(d.jobs || []);
+      const opts: any = { freshness, sort, limit: 60 };
+      if (quickFilter === "new") opts.filter_new = true;
+      if (quickFilter === "remote") { /* client-side filter */ }
+      if (quickFilter === "high") opts.min_score = 85;
+      if (quickFilter === "federal") opts.source = "USAJobs";
+      const r = await jobsDeepApi.verifiedFeed(opts);
+      setFeed(r);
     } catch (e: any) {
-      Alert.alert("Feed load failed", String(e?.message || e));
-    }
-  }, [sort]);
+      Alert.alert("Load failed", String(e?.message || e));
+    } finally { setLoading(false); }
+  }, [freshness, sort, quickFilter]);
 
-  useEffect(() => { (async () => { setLoading(true); await load(); setLoading(false); })(); }, [load]);
+  useEffect(() => { load(); }, [load]);
 
-  async function triggerRefresh() {
-    Alert.alert(
-      "Refresh Now",
-      "This aggregates 3 job sources and scores against your default resume via Claude. Takes 2–4 minutes. Continue?",
-      [
-        { text: "Cancel" },
-        {
-          text: "Refresh",
-          onPress: async () => {
-            setAggregating(true);
-            try {
-              await jobIntelApi.refresh();
-              await load();
-              Alert.alert("Done", "Feed refreshed with latest verified jobs.");
-            } catch (e: any) {
-              Alert.alert("Refresh failed", String(e?.message || e));
-            } finally { setAggregating(false); }
-          },
-        },
-      ]
-    );
-  }
-
-  async function onSaveJob(j: FeedJob) {
+  const runDeepSearch = useCallback(async () => {
+    setSearching(true);
     try {
-      await jobIntelApi.saveJob(j.job_id);
-      Alert.alert("Saved", `${j.job_title} added to saved jobs.`);
-    } catch (e: any) { Alert.alert("Failed", String(e?.message || e)); }
+      // Pull active profile criteria
+      const prof = await careerPrefsApi.listProfiles().catch(() => ({ profiles: [] }));
+      const active = prof.profiles?.find((p: any) => p.is_active) || prof.profiles?.[0] || {};
+      const industries = (await jobsDeepApi.listIndustries()).industries
+        .filter((i) => i.enabled).map((i) => i.label);
+      const locations = (active.locations || []).map((l: any) => l.label || l.city || "").filter(Boolean);
+      const result = await jobsDeepApi.deepSearch({
+        target_roles: active.target_roles || ["Financial Management"],
+        excluded_keywords: active.excluded_keywords || [],
+        industries,
+        locations: locations.length ? locations : ["Atlanta, GA", "Washington DC"],
+        min_salary: active.min_salary || 0,
+        freshness,
+        priority_employers: [],
+      });
+      setMeta(result);
+      await load();
+      Alert.alert(
+        "Search complete",
+        `Found ${result.total_verified_active} verified jobs across ${Object.keys(result.counts || {}).filter((k) => (result.counts as any)[k] > 0).length} sources`,
+      );
+    } catch (e: any) {
+      Alert.alert("Search failed", String(e?.message || e));
+    } finally { setSearching(false); }
+  }, [freshness, load]);
+
+  const displayed = (feed.jobs || []).filter((j: DeepSearchJob) => {
+    if (quickFilter === "remote") return j.location_type === "remote";
+    return true;
+  });
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loader}>
+          <ActivityIndicator color={colors.primaryGlow} />
+        </View>
+      </SafeAreaView>
+    );
   }
 
   return (
@@ -269,76 +135,301 @@ export default function JobsFeedScreen() {
           <ChevronLeft size={22} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Jobs Center</Text>
-        <TouchableOpacity onPress={triggerRefresh} style={styles.backBtn} disabled={aggregating}>
-          {aggregating ? <ActivityIndicator size="small" color={colors.primaryGlow} /> : <RefreshCw size={18} color={colors.primaryGlow} />}
-        </TouchableOpacity>
-      </View>
-
-      {/* Jobs Center tab pill */}
-      <View style={styles.centerTabs}>
-        <TouchableOpacity style={[styles.centerTab, styles.centerTabActive]} testID="tab-verified">
-          <ShieldCheck size={12} color="#fff" />
-          <Text style={styles.centerTabTextActive}>Verified Jobs</Text>
-        </TouchableOpacity>
         <TouchableOpacity
-          style={styles.centerTab}
           onPress={() => router.push("/career/filter-center" as any)}
-          testID="tab-filters"
+          style={styles.backBtn}
         >
-          <SlidersHorizontal size={12} color={colors.primaryGlow} />
-          <Text style={styles.centerTabText}>Filter & Criteria</Text>
+          <Filter size={18} color={colors.primaryGlow} />
         </TouchableOpacity>
       </View>
 
-      {/* Sort chips (Best Match / Most Recent / Highest Salary) */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sortRow}>
-        {[
-          { k: "best_match", l: "Best Match" },
-          { k: "most_recent", l: "Most Recent" },
-          { k: "highest_salary", l: "Highest Salary" },
-        ].map((s) => (
-          <TouchableOpacity
-            key={s.k}
-            style={[styles.sortChip, sort === s.k && styles.sortChipOn]}
-            onPress={() => setSort(s.k as any)}
-            testID={`sort-${s.k}`}
-          >
-            <Text style={[styles.sortChipText, sort === s.k && { color: "#fff" }]}>{s.l}</Text>
-          </TouchableOpacity>
+      <ScrollView
+        refreshControl={
+          <RefreshControl refreshing={loading} onRefresh={load}
+            tintColor={colors.primaryGlow} />
+        }
+        contentContainerStyle={styles.scroll}
+      >
+        {/* Summary row */}
+        <View style={styles.summary}>
+          <Text style={styles.summaryText}>
+            <Text style={styles.summaryStrong}>{feed.count} verified jobs</Text>
+            {" · "}{feed.new_today} new today
+          </Text>
+          <Text style={styles.summarySub}>
+            Sources active: {Object.entries(feed.counts_by_source || {}).map(([k, v]: any) => `${k} ${v}`).join(" · ") || "none yet"}
+          </Text>
+          <Text style={styles.summarySub}>
+            Last search: {fmtRel(feed.last_fetched_at)}
+          </Text>
+        </View>
+
+        {/* Deep search button */}
+        <TouchableOpacity
+          style={styles.deepBtn}
+          onPress={runDeepSearch}
+          disabled={searching}
+          testID="run-deep-search"
+        >
+          {searching ? <ActivityIndicator size="small" color="#fff" /> :
+            <Sparkles size={14} color="#fff" />}
+          <Text style={styles.deepBtnText}>
+            {searching ? "Searching every source…" : "Run Deep Search Now"}
+          </Text>
+        </TouchableOpacity>
+
+        {/* Quick filter chips */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chipsRow}>
+          {QUICK_CHIPS.map((c) => (
+            <TouchableOpacity
+              key={c.k}
+              style={[styles.chip, quickFilter === c.k && styles.chipOn]}
+              onPress={() => setQuickFilter(c.k)}
+            >
+              <Text style={[styles.chipText, quickFilter === c.k && { color: "#fff" }]}>
+                {c.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
+        {/* Sort + Freshness row */}
+        <View style={styles.controlsRow}>
+          <View style={styles.controlsGroup}>
+            <Text style={styles.controlsLabel}>Sort</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.miniChips}>
+              {SORT_OPTIONS.map((s) => (
+                <TouchableOpacity
+                  key={s.k}
+                  style={[styles.miniChip, sort === s.k && styles.miniChipOn]}
+                  onPress={() => setSort(s.k)}
+                >
+                  <Text style={[styles.miniChipText, sort === s.k && { color: "#fff" }]}>
+                    {s.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+
+        <View style={styles.controlsRow}>
+          <Text style={styles.controlsLabel}>Freshness</Text>
+          <View style={styles.miniChipsRow}>
+            {FRESHNESS.map((f) => (
+              <TouchableOpacity
+                key={f.k}
+                style={[styles.miniChip, freshness === f.k && styles.miniChipOn]}
+                onPress={() => setFreshness(f.k)}
+              >
+                <Text style={[styles.miniChipText, freshness === f.k && { color: "#fff" }]}>
+                  {f.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* Job cards */}
+        {displayed.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyText}>
+              No jobs in the feed yet. Tap {"\u201C"}Run Deep Search Now{"\u201D"} to fetch fresh listings.
+            </Text>
+          </View>
+        ) : displayed.map((j: DeepSearchJob) => (
+          <JobCard key={j.job_id} job={j} onApply={() => setApplyJob(j)} />
         ))}
-        <Text style={styles.verifiedCount}>
-          {jobs.length} verified {jobs.length === 1 ? "job" : "jobs"}
-        </Text>
+
+        <View style={{ height: 40 }} />
       </ScrollView>
 
-      {loading ? (
-        <View style={styles.loader}><ActivityIndicator color={colors.primaryGlow} /></View>
-      ) : (
-        <ScrollView
-          contentContainerStyle={styles.list}
-          showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} tintColor={colors.primaryGlow} />}
-        >
-          {jobs.length === 0 ? (
-            <View style={styles.emptyCard}>
-              <Building2 size={28} color={colors.textTertiary} />
-              <Text style={styles.emptyText}>No verified jobs yet.</Text>
-              <Text style={styles.emptyHint}>Tap the refresh icon to run the first aggregation.</Text>
-            </View>
-          ) : (
-            jobs.map((j) => (
-              <JobCard
-                key={j.job_id}
-                job={j}
-                onOpen={() => router.push(`/career/job-detail?job_id=${encodeURIComponent(j.job_id)}` as any)}
-                onTailor={() => router.push(`/career/tailor-modal?jd_id=` as any)}
-                onSave={() => onSaveJob(j)}
-              />
-            ))
-          )}
-        </ScrollView>
-      )}
+      {/* Apply Now confirmation sheet */}
+      <ApplyNowSheet job={applyJob} onClose={() => setApplyJob(null)} />
     </SafeAreaView>
+  );
+}
+
+// ================================================================
+// Job Card
+// ================================================================
+function JobCard({ job, onApply }: { job: DeepSearchJob; onApply: () => void }) {
+  const verified = job.is_verified;
+  const applyBtnColor = verified ? "#10B981"
+    : job.apply_url_status >= 400 ? "#EF4444"
+    : "#F59E0B";
+  const applyBtnLabel = verified ? "Apply Now"
+    : job.apply_url_status >= 400 ? "Link Broken"
+    : "Apply — Verifying";
+  const worktypeLabel = ({
+    remote: "Remote", hybrid: "Hybrid", on_site: "On-site",
+    international: "International",
+  } as any)[job.location_type] || "";
+  return (
+    <View style={cardStyles.card}>
+      <View style={cardStyles.topRow}>
+        {job.rank_position && (
+          <View style={cardStyles.rankPill}>
+            <Text style={cardStyles.rankText}>#{job.rank_position}</Text>
+          </View>
+        )}
+        {job.is_new && (
+          <View style={cardStyles.newBadge}>
+            <Zap size={9} color="#fff" />
+            <Text style={cardStyles.newBadgeText}>NEW</Text>
+          </View>
+        )}
+        {!job.is_new && job.is_early && (
+          <View style={cardStyles.earlyBadge}>
+            <Text style={cardStyles.earlyBadgeText}>EARLY · 72h</Text>
+          </View>
+        )}
+        {verified ? (
+          <ShieldCheck size={14} color="#10B981" />
+        ) : (
+          <Shield size={14} color="#F59E0B" />
+        )}
+        <View style={{ flex: 1 }} />
+        <View style={cardStyles.sourcePill}>
+          <Text style={cardStyles.sourceText}>{job.source_platform}</Text>
+        </View>
+      </View>
+
+      <Text style={cardStyles.title} numberOfLines={2}>{job.title}</Text>
+      <View style={cardStyles.employerRow}>
+        <Building2 size={12} color={colors.textSecondary} />
+        <Text style={cardStyles.employer} numberOfLines={1}>{job.employer}</Text>
+      </View>
+
+      <View style={cardStyles.metaRow}>
+        {!!job.location && (
+          <View style={cardStyles.metaChip}>
+            <MapPin size={10} color={colors.textTertiary} />
+            <Text style={cardStyles.metaText} numberOfLines={1}>{job.location}</Text>
+          </View>
+        )}
+        {!!worktypeLabel && (
+          <View style={[cardStyles.metaChip, job.location_type === "remote" && cardStyles.metaChipRemote]}>
+            <Text style={[cardStyles.metaText,
+              job.location_type === "remote" && { color: "#10B981", fontWeight: "800" }]}>
+              {worktypeLabel}
+            </Text>
+          </View>
+        )}
+        {!!fmtSalary(job.salary_min, job.salary_max, job.salary_display) && (
+          <View style={cardStyles.metaChip}>
+            <DollarSign size={10} color="#10B981" />
+            <Text style={[cardStyles.metaText, { color: "#10B981", fontWeight: "800" }]}>
+              {fmtSalary(job.salary_min, job.salary_max, job.salary_display)}
+            </Text>
+          </View>
+        )}
+        {(!!job.posted_at || !!job.posted_display) && (
+          <View style={cardStyles.metaChip}>
+            <Clock size={10} color={colors.textTertiary} />
+            <Text style={cardStyles.metaText}>
+              {job.posted_display || fmtRel(job.posted_at)}
+            </Text>
+          </View>
+        )}
+      </View>
+
+      <View style={cardStyles.scoreRow}>
+        <View style={[cardStyles.scoreGauge,
+          job.match_score >= 85 ? { backgroundColor: "#10B981" }
+          : job.match_score >= 70 ? { backgroundColor: colors.primary }
+          : { backgroundColor: colors.textTertiary }]}>
+          <Text style={cardStyles.scoreText}>{Math.round(job.match_score)}%</Text>
+        </View>
+        <Text style={cardStyles.scoreExplain} numberOfLines={2}>
+          {job.match_score >= 85 ? "Strong match — most criteria align"
+          : job.match_score >= 70 ? "Good match — several qualifications overlap"
+          : "Partial match — some criteria met"}
+          {job.watch_list_employer ? " · Priority employer" : ""}
+        </Text>
+      </View>
+
+      <TouchableOpacity
+        style={[cardStyles.applyBtn, { backgroundColor: applyBtnColor }]}
+        onPress={onApply}
+        disabled={job.apply_url_status >= 400}
+        testID={`apply-${job.job_id}`}
+      >
+        <ExternalLink size={13} color="#fff" />
+        <Text style={cardStyles.applyBtnText}>{applyBtnLabel}</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// ================================================================
+// Apply Now sheet — confirmation before launching browser
+// ================================================================
+function ApplyNowSheet({ job, onClose }: {
+  job: DeepSearchJob | null; onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const [launched, setLaunched] = useState(false);
+
+  useEffect(() => {
+    if (!job) { setCopied(false); setLaunched(false); return; }
+    const t = setTimeout(async () => {
+      if (!launched) {
+        setLaunched(true);
+        try {
+          await Linking.openURL(job.apply_url_final || job.apply_url);
+        } catch {
+          Alert.alert("Could not open link");
+        }
+        setTimeout(onClose, 400);
+      }
+    }, 1600);
+    return () => clearTimeout(t);
+  }, [job, launched, onClose]);
+
+  if (!job) return null;
+
+  const url = job.apply_url_final || job.apply_url;
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={sheetStyles.backdrop} onPress={onClose}>
+        <Pressable style={sheetStyles.sheet} onPress={(e) => e.stopPropagation()}>
+          <View style={sheetStyles.head}>
+            <View style={{ flex: 1 }}>
+              <Text style={sheetStyles.title} numberOfLines={2}>{job.title}</Text>
+              <Text style={sheetStyles.sub}>{job.employer}</Text>
+            </View>
+            <TouchableOpacity onPress={onClose}><X size={16} color={colors.textTertiary} /></TouchableOpacity>
+          </View>
+          <View style={sheetStyles.sourceRow}>
+            <View style={sheetStyles.sourceBadge}>
+              <Text style={sheetStyles.sourceBadgeText}>{job.source_platform}</Text>
+            </View>
+            <ArrowUpRight size={12} color={colors.primaryGlow} />
+          </View>
+          <Text style={sheetStyles.body}>
+            Opening the official job posting on <Text style={{ fontWeight: "700", color: colors.textPrimary }}>{job.source_platform}</Text>.
+            You{"\u2019"}ll complete your application there.
+          </Text>
+          <TouchableOpacity
+            style={sheetStyles.copyBtn}
+            onPress={async () => {
+              await Clipboard.setStringAsync(url);
+              setCopied(true);
+            }}
+          >
+            <Copy size={12} color={colors.primaryGlow} />
+            <Text style={sheetStyles.copyBtnText}>{copied ? "Copied!" : "Copy link"}</Text>
+          </TouchableOpacity>
+          <View style={sheetStyles.loadingRow}>
+            <ActivityIndicator size="small" color={colors.primaryGlow} />
+            <Text style={sheetStyles.loadingText}>Launching…</Text>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -351,89 +442,135 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: colors.borderSubtle,
   },
   backBtn: { padding: 4, width: 36, alignItems: "center" },
-  headerTitle: { color: colors.textPrimary, fontSize: 15, fontWeight: "700" },
-  centerTabs: { flexDirection: "row", paddingHorizontal: spacing.lg, paddingVertical: 8, gap: 8 },
-  centerTab: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 9, borderRadius: 20, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderSubtle },
-  centerTabActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  centerTabText: { color: colors.primaryGlow, fontSize: 12, fontWeight: "700" },
-  centerTabTextActive: { color: "#fff", fontSize: 12, fontWeight: "700" },
-  counterStrip: {
-    paddingHorizontal: spacing.lg, paddingVertical: 8,
-    borderBottomWidth: 1, borderBottomColor: colors.borderSubtle,
+  headerTitle: { color: colors.textPrimary, fontSize: 14, fontWeight: "800", flex: 1, textAlign: "center" },
+  scroll: { padding: spacing.lg, paddingBottom: 40 },
+
+  summary: {
+    backgroundColor: colors.surface, borderRadius: radius.sm, padding: 10,
+    borderWidth: 1, borderColor: colors.borderSubtle,
+    marginBottom: 10,
   },
-  counterText: { display: "none" },
-  counterVal: { display: "none" },
-  verifiedCount: { color: colors.success, fontSize: 11, fontWeight: "700", marginLeft: 8, alignSelf: "center" },
-  sortRow: { paddingHorizontal: spacing.lg, paddingVertical: 8, gap: 6, alignItems: "center", flexDirection: "row" },
-  sortChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderSubtle },
-  sortChip: {
-    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14,
-    borderWidth: 1, borderColor: colors.borderSubtle, backgroundColor: colors.surface,
+  summaryText: { color: colors.textPrimary, fontSize: 12, fontWeight: "700" },
+  summaryStrong: { color: colors.primaryGlow, fontWeight: "900" },
+  summarySub: { color: colors.textTertiary, fontSize: 10, marginTop: 2 },
+
+  deepBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    backgroundColor: colors.primary, paddingVertical: 12,
+    borderRadius: radius.sm, marginBottom: 10,
   },
-  sortChipOn: { backgroundColor: colors.primary, borderColor: colors.primary },
-  sortChipText: { color: colors.textSecondary, fontSize: 11, fontWeight: "700" },
-  list: { padding: spacing.md, gap: 10, paddingBottom: 40 },
+  deepBtnText: { color: "#fff", fontSize: 13, fontWeight: "900" },
+
+  chipsRow: { gap: 6, paddingRight: 20, marginBottom: 4 },
+  chip: {
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999,
+    backgroundColor: colors.surface, borderColor: colors.borderSubtle, borderWidth: 1,
+  },
+  chipOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  chipText: { color: colors.textSecondary, fontSize: 10, fontWeight: "700" },
+
+  controlsRow: { marginTop: 6 },
+  controlsGroup: { gap: 4 },
+  controlsLabel: { color: colors.textTertiary, fontSize: 9, fontWeight: "800", letterSpacing: 0.5, marginBottom: 4 },
+  miniChips: { gap: 5, paddingRight: 20 },
+  miniChipsRow: { flexDirection: "row", flexWrap: "wrap", gap: 5 },
+  miniChip: {
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999,
+    backgroundColor: colors.surface, borderColor: colors.borderSubtle, borderWidth: 1,
+  },
+  miniChipOn: { backgroundColor: colors.primaryGlow, borderColor: colors.primaryGlow },
+  miniChipText: { color: colors.textSecondary, fontSize: 10, fontWeight: "700" },
+
   emptyCard: {
     backgroundColor: colors.surface, borderColor: colors.borderSubtle, borderWidth: 1,
-    borderRadius: radius.md, padding: spacing.xl, alignItems: "center", gap: 6,
+    borderRadius: radius.md, padding: spacing.lg, alignItems: "center", marginTop: 10,
   },
-  emptyText: { color: colors.textSecondary, fontSize: 13, fontWeight: "600" },
-  emptyHint: { color: colors.textTertiary, fontSize: 11 },
+  emptyText: { color: colors.textSecondary, fontSize: 12, textAlign: "center" },
+});
+
+const cardStyles = StyleSheet.create({
   card: {
     backgroundColor: colors.surface, borderColor: colors.borderSubtle, borderWidth: 1,
-    borderRadius: radius.md, padding: spacing.md, gap: 8,
+    borderRadius: radius.md, padding: spacing.md, marginTop: 10, gap: 8,
   },
-  title: { color: colors.textPrimary, fontSize: 14, fontWeight: "800", lineHeight: 18 },
-  employer: { color: colors.textSecondary, fontSize: 12, fontWeight: "700", flexShrink: 1 },
-  meta: { color: colors.textTertiary, fontSize: 10, marginTop: 3 },
-  badge: { paddingHorizontal: 5, paddingVertical: 2, borderRadius: 3 },
-  badgeText: { fontSize: 9, fontWeight: "800", letterSpacing: 0.3 },
-  earlyBadge: {
-    flexDirection: "row", alignItems: "center", gap: 2,
-    backgroundColor: "rgba(245,158,11,0.20)", paddingHorizontal: 5, paddingVertical: 2, borderRadius: 3,
+  topRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  rankPill: {
+    backgroundColor: colors.primaryMuted, paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 999,
   },
-  earlyBadgeText: { color: "#F59E0B", fontSize: 8, fontWeight: "800", letterSpacing: 0.4 },
-  verifiedBadge: {
+  rankText: { color: colors.primaryGlow, fontSize: 10, fontWeight: "900" },
+  newBadge: {
     flexDirection: "row", alignItems: "center", gap: 3,
-    backgroundColor: "rgba(16,185,129,0.15)", paddingHorizontal: 5, paddingVertical: 2, borderRadius: 3,
+    backgroundColor: "#EF4444", paddingHorizontal: 6, paddingVertical: 2,
+    borderRadius: 999,
   },
-  verifiedBadgeText: { color: colors.success, fontSize: 8, fontWeight: "800", letterSpacing: 0.3 },
-  tier: { color: colors.textTertiary, fontSize: 8, fontWeight: "800", marginTop: 2, textTransform: "uppercase" },
-  bdGrid: { flexDirection: "row", flexWrap: "wrap", gap: 4 },
-  bdCell: { flexBasis: "31%", flexGrow: 1, gap: 2 },
-  bdLabel: { color: colors.textTertiary, fontSize: 9, fontWeight: "700" },
-  bdBar: {
-    height: 3, backgroundColor: colors.surfaceElevated, borderRadius: 2, overflow: "hidden",
+  newBadgeText: { color: "#fff", fontSize: 8, fontWeight: "900", letterSpacing: 0.5 },
+  earlyBadge: {
+    backgroundColor: "rgba(245,158,11,0.20)", paddingHorizontal: 6, paddingVertical: 2,
+    borderRadius: 999,
   },
-  bdFill: { height: 3 },
-  bdVal: { color: colors.textSecondary, fontSize: 9, fontWeight: "700", alignSelf: "flex-end" },
-  spotlightLabel: {
-    color: colors.textTertiary, fontSize: 9, fontWeight: "800",
-    letterSpacing: 0.4, textTransform: "uppercase", marginBottom: 4,
+  earlyBadgeText: { color: "#F59E0B", fontSize: 8, fontWeight: "900", letterSpacing: 0.5 },
+  sourcePill: {
+    backgroundColor: colors.surfaceElevated, paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 6,
   },
-  chipBlue: {
-    backgroundColor: colors.primaryMuted, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10,
+  sourceText: { color: colors.textSecondary, fontSize: 9, fontWeight: "800", letterSpacing: 0.3 },
+
+  title: { color: colors.textPrimary, fontSize: 14, fontWeight: "800", lineHeight: 18 },
+  employerRow: { flexDirection: "row", alignItems: "center", gap: 5 },
+  employer: { color: colors.textSecondary, fontSize: 12, fontWeight: "700", flex: 1 },
+
+  metaRow: { flexDirection: "row", flexWrap: "wrap", gap: 5 },
+  metaChip: {
+    flexDirection: "row", alignItems: "center", gap: 3,
+    backgroundColor: colors.surfaceElevated, paddingHorizontal: 7, paddingVertical: 3,
+    borderRadius: 6,
   },
-  chipBlueText: { color: colors.primaryGlow, fontSize: 10, fontWeight: "700" },
-  strengthText: { color: colors.textSecondary, fontSize: 11, fontStyle: "italic", lineHeight: 15 },
-  actions: { flexDirection: "row", gap: 5, marginTop: 4 },
-  secondaryBtn: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 3,
-    borderWidth: 1, borderColor: colors.borderSubtle, backgroundColor: colors.surfaceElevated,
-    borderRadius: radius.sm, paddingVertical: 8, paddingHorizontal: 8, flex: 1,
+  metaChipRemote: { backgroundColor: "rgba(16,185,129,0.15)" },
+  metaText: { color: colors.textSecondary, fontSize: 10, fontWeight: "600" },
+
+  scoreRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  scoreGauge: {
+    width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center",
   },
-  secondaryBtnText: { color: colors.primaryGlow, fontSize: 10, fontWeight: "700" },
-  saveBtn: {
-    borderWidth: 1, borderColor: colors.borderSubtle, backgroundColor: colors.surfaceElevated,
-    borderRadius: radius.sm, paddingVertical: 8, paddingHorizontal: 10, alignItems: "center", justifyContent: "center",
-  },
+  scoreText: { color: "#fff", fontSize: 11, fontWeight: "900" },
+  scoreExplain: { color: colors.textSecondary, fontSize: 10, flex: 1, lineHeight: 14 },
+
   applyBtn: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4,
-    borderRadius: radius.sm, paddingVertical: 8, paddingHorizontal: 8, flex: 1,
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    paddingVertical: 10, borderRadius: radius.sm,
   },
-  applyBtnText: { fontSize: 10.5, fontWeight: "800" },
+  applyBtnText: { color: "#fff", fontSize: 13, fontWeight: "900" },
+});
+
+const sheetStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.65)",
+    justifyContent: "flex-end",
+  },
+  sheet: {
+    backgroundColor: colors.bg, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    padding: 18, gap: 10,
+  },
+  head: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
+  title: { color: colors.textPrimary, fontSize: 15, fontWeight: "800", lineHeight: 20 },
+  sub: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
+  sourceRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  sourceBadge: {
+    backgroundColor: colors.primaryMuted, paddingHorizontal: 10, paddingVertical: 4,
+    borderRadius: 6,
+  },
+  sourceBadgeText: { color: colors.primaryGlow, fontSize: 11, fontWeight: "800" },
+  body: { color: colors.textSecondary, fontSize: 12, lineHeight: 16 },
   copyBtn: {
-    borderRadius: radius.sm, paddingHorizontal: 10, paddingVertical: 8,
-    borderWidth: 1, borderColor: colors.borderSubtle, alignItems: "center", justifyContent: "center",
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5,
+    backgroundColor: colors.surface, borderColor: colors.borderSubtle, borderWidth: 1,
+    paddingVertical: 10, borderRadius: radius.sm,
   },
+  copyBtnText: { color: colors.primaryGlow, fontSize: 12, fontWeight: "800" },
+  loadingRow: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    paddingVertical: 4,
+  },
+  loadingText: { color: colors.textTertiary, fontSize: 11 },
 });

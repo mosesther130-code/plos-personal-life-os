@@ -835,6 +835,62 @@ export const routesApi = {
     request<{ ok: boolean }>(`/travel/routes/${id}`, { method: "DELETE" }),
 };
 
+// ---------- Jobs Deep Search ----------
+export type Industry = { industry_id: string; label: string; enabled: boolean };
+export type DeepSearchJob = {
+  job_id: string; title: string; employer: string; employer_domain?: string;
+  location: string; location_type: "remote" | "hybrid" | "on_site" | "international";
+  salary_min?: number | null; salary_max?: number | null; salary_display?: string;
+  posted_at?: string | null; posted_display?: string;
+  fetched_at?: string;
+  description_full?: string; description_highlights?: any;
+  apply_url: string; apply_url_final?: string;
+  apply_url_status: number; apply_url_verified_at?: string;
+  is_active: boolean; is_verified: boolean;
+  is_new?: boolean; is_early?: boolean;
+  watch_list_employer?: boolean;
+  source_platform: string; source_url?: string; thumbnail?: string;
+  match_score: number; match_breakdown?: any;
+  rank_position?: number; rank_score?: number;
+};
+export const jobsDeepApi = {
+  listIndustries: () => request<{ industries: Industry[] }>("/jobs/industries"),
+  addIndustry: (label: string) =>
+    request<Industry>("/jobs/industries", { method: "POST", body: { label } }),
+  updateIndustry: (id: string, b: { label: string; enabled: boolean }) =>
+    request<{ ok: boolean }>(`/jobs/industries/${id}`, { method: "PUT", body: b }),
+  deleteIndustry: (id: string) =>
+    request<{ ok: boolean }>(`/jobs/industries/${id}`, { method: "DELETE" }),
+  deepSearch: (body: {
+    target_roles: string[]; excluded_keywords?: string[];
+    industries: string[]; locations: string[];
+    min_salary?: number; freshness?: string; priority_employers?: string[];
+  }) =>
+    request<{
+      counts: Record<string, number>;
+      total_raw: number; total_after_dedup: number; total_after_freshness: number;
+      total_verified_active: number; jobs_count: number; search_seconds: number;
+      top_job: DeepSearchJob | null;
+    }>("/jobs/deep-search", { method: "POST", body }),
+  verifiedFeed: (opts: {
+    freshness?: string; sort?: string; min_score?: number;
+    filter_new?: boolean; source?: string; limit?: number;
+  }) => {
+    const q = new URLSearchParams();
+    if (opts.freshness) q.set("freshness", opts.freshness);
+    if (opts.sort) q.set("sort", opts.sort);
+    if (opts.min_score) q.set("min_score", String(opts.min_score));
+    if (opts.filter_new) q.set("filter_new", "true");
+    if (opts.source) q.set("source", opts.source);
+    if (opts.limit) q.set("limit", String(opts.limit));
+    return request<{
+      jobs: DeepSearchJob[]; count: number;
+      counts_by_source: Record<string, number>;
+      new_today: number; last_fetched_at: string | null;
+    }>(`/jobs/verified-feed?${q.toString()}`);
+  },
+};
+
 // ----------------- Plaid ---------------------------------
 export const plaidApi = {
   status: () => request<{ has_real_keys: boolean; env: string; webhook_configured: boolean; android_package: string }>("/plaid/status"),
