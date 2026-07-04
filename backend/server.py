@@ -6249,6 +6249,14 @@ app.include_router(
     make_travel_search_router(db, get_current_user_id, EMERGENT_LLM_KEY, LlmChat, UserMessage)
 )
 
+# Travel LIVE Search — SerpApi Google Flights + Google Hotels + universal deep-links
+from travel_live_search import make_router as make_travel_live_router  # noqa: E402
+
+app.include_router(
+    make_travel_live_router(db, get_current_user_id),
+    prefix="/api",
+)
+
 # Plaid — bank account, transactions, investments, liabilities sync
 from plaid_service import make_router as make_plaid_router  # noqa: E402
 

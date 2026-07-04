@@ -41,7 +41,7 @@ import {
 } from "lucide-react-native";
 import { travelApi } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
-import { TripSearchResults } from "@/src/components/TripSearchResults";
+import { LiveTripSearchResults } from "@/src/components/LiveTripSearchResults";
 
 const advisoryColor = (level?: number) => {
   if (level === 1) return colors.success;
@@ -415,8 +415,8 @@ export default function TripPlanner() {
           </View>
         )}
 
-        {/* AI-searched Flights + Hotels (moved up — primary reason to open a trip) */}
-        <TripSearchResults
+        {/* LIVE Flights + Hotels via SerpApi (with Claude fallback) */}
+        <LiveTripSearchResults
           tripId={String(id)}
           destination={trip?.city || trip?.destination}
         />

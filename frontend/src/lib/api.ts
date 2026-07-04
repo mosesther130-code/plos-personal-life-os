@@ -779,6 +779,32 @@ export const travelSearchApi = {
     ),
 };
 
+// ---------- Travel LIVE Search (SerpApi Google Flights + Hotels) ----------
+export const travelLiveApi = {
+  serpapiStatus: () =>
+    request<{
+      configured: boolean;
+      key_hint: string | null;
+      last_error: null | {
+        error: string; status_code?: number; kind: string; timestamp: string;
+      };
+    }>("/travel/serpapi-status"),
+  deepLinks: (trip_id: string, one_way = false) =>
+    request<any>(`/travel/trips/${trip_id}/deep-links?one_way=${one_way}`),
+  searchLive: (trip_id: string, body: {
+    refresh?: boolean; one_way?: boolean; cabin?: string; adults?: number;
+  }) =>
+    request<any>(`/travel/trips/${trip_id}/search-live`, {
+      method: "POST",
+      body: {
+        refresh: !!body.refresh,
+        one_way: !!body.one_way,
+        cabin: body.cabin || "economy",
+        adults: body.adults ?? 1,
+      },
+    }),
+};
+
 // ----------------- Plaid ---------------------------------
 export const plaidApi = {
   status: () => request<{ has_real_keys: boolean; env: string; webhook_configured: boolean; android_package: string }>("/plaid/status"),
