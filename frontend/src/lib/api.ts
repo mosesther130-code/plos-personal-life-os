@@ -861,6 +861,11 @@ export const jobsDeepApi = {
     request<{ ok: boolean }>(`/jobs/industries/${id}`, { method: "PUT", body: b }),
   deleteIndustry: (id: string) =>
     request<{ ok: boolean }>(`/jobs/industries/${id}`, { method: "DELETE" }),
+  fetchFullDescription: (jobId: string) =>
+    request<{
+      job_id: string; description_source: string; word_count: number;
+      description_full: string; fetched: boolean; fetch_error?: string;
+    }>(`/jobs/${jobId}/fetch-full-description`, { method: "POST" }),
   deepSearch: (body: {
     target_roles: string[]; excluded_keywords?: string[];
     industries: string[]; locations: string[];

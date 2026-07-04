@@ -6273,6 +6273,14 @@ app.include_router(
     prefix="/api",
 )
 
+# Jobs — Live JD fetcher (BeautifulSoup site-specific extraction)
+from jobs_jd_fetch import make_router as make_jobs_jd_router  # noqa: E402
+
+app.include_router(
+    make_jobs_jd_router(db, get_current_user_id),
+    prefix="/api",
+)
+
 # Plaid — bank account, transactions, investments, liabilities sync
 from plaid_service import make_router as make_plaid_router  # noqa: E402
 

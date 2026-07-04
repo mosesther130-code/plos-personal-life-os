@@ -65,6 +65,7 @@ export default function JobsCenterScreen() {
   const [quickFilter, setQuickFilter] = useState("all");
   const [applyJob, setApplyJob] = useState<DeepSearchJob | null>(null);
   const [meta, setMeta] = useState<any>(null); // last deep-search response
+  const [tailoringJobId, setTailoringJobId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -252,18 +253,44 @@ export default function JobsCenterScreen() {
             key={j.job_id}
             job={j}
             onApply={() => setApplyJob(j)}
-            onTailor={() => {
-              router.push({
-                pathname: "/career/tailor" as any,
-                params: {
-                  jobId: j.job_id,
-                  jobTitle: j.title,
-                  employer: j.employer,
-                  jobDescription: j.description_full || "",
-                  applyUrl: j.apply_url_final || j.apply_url,
-                },
-              });
+            onTailor={async () => {
+              setTailoringJobId(j.job_id);
+              try {
+                const r = await jobsDeepApi.fetchFullDescription(j.job_id);
+                const jd = r.description_full || j.description_full || "";
+                setTailoringJobId(null);
+                router.push({
+                  pathname: "/career/tailor" as any,
+                  params: {
+                    jobId: j.job_id,
+                    jobTitle: j.title,
+                    employer: j.employer,
+                    jobDescription: jd,
+                    applyUrl: j.apply_url_final || j.apply_url,
+                    descriptionSource: r.description_source,
+                    descriptionWordCount: String(r.word_count),
+                  },
+                });
+              } catch (e: any) {
+                setTailoringJobId(null);
+                Alert.alert(
+                  "JD fetch failed",
+                  "Opening tailor with the aggregated description.",
+                );
+                router.push({
+                  pathname: "/career/tailor" as any,
+                  params: {
+                    jobId: j.job_id,
+                    jobTitle: j.title,
+                    employer: j.employer,
+                    jobDescription: j.description_full || "",
+                    applyUrl: j.apply_url_final || j.apply_url,
+                    descriptionSource: "stored",
+                  },
+                });
+              }
             }}
+            tailoringLoading={tailoringJobId === j.job_id}
           />
         ))}
 
@@ -279,10 +306,11 @@ export default function JobsCenterScreen() {
 // ================================================================
 // Job Card
 // ================================================================
-function JobCard({ job, onApply, onTailor }: {
+function JobCard({ job, onApply, onTailor, tailoringLoading }: {
   job: DeepSearchJob;
   onApply: () => void;
   onTailor: () => void;
+  tailoringLoading?: boolean;
 }) {
   const verified = job.is_verified;
   const applyBtnColor = verified ? "#10B981"
