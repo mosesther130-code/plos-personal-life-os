@@ -255,7 +255,44 @@ export default function TripPlanner() {
         <View style={styles.heroCard} testID="trip-hero">
           <Text style={styles.heroFlag}>{trip.flag || "🏳️"}</Text>
           <Text style={styles.heroTitle}>{trip.destination_name}</Text>
+          {(trip.departure_iata || trip.origin_iata) && trip.destination_iata && (
+            <View style={styles.routeBar}>
+              <View style={styles.routeBarIata}>
+                <Text style={styles.routeBarIataText}>{trip.departure_iata || trip.origin_iata}</Text>
+              </View>
+              <Text style={styles.routeBarArrow}>→</Text>
+              <View style={styles.routeBarIata}>
+                <Text style={styles.routeBarIataText}>{trip.destination_iata}</Text>
+              </View>
+            </View>
+          )}
+          {(trip.departure_city || trip.destination_city) && (
+            <Text style={styles.routeCities}>
+              {trip.departure_city || "Atlanta"} → {trip.destination_city || trip.city}
+            </Text>
+          )}
+          {(trip.departure_airport_name || trip.destination_airport_name) && (
+            <Text style={styles.routeAirports} numberOfLines={2}>
+              {trip.departure_airport_name || "Hartsfield-Jackson"}
+              {"  →  "}
+              {trip.destination_airport_name || "—"}
+            </Text>
+          )}
           <Text style={styles.heroSub}>{[trip.city, trip.country].filter(Boolean).join(" · ")}</Text>
+          {trip._migration_default_origin && (
+            <TouchableOpacity
+              style={styles.migrationBanner}
+              onPress={async () => {
+                await travelApi.updateTrip(String(id), { _migration_default_origin: false } as any);
+                await load();
+              }}
+              testID="migration-dismiss"
+            >
+              <Text style={styles.migrationBannerText}>
+                ⚠️ Departure defaulted to ATL (Atlanta) — tap to acknowledge, or Edit trip to change
+              </Text>
+            </TouchableOpacity>
+          )}
           <View style={styles.heroRow}>
             <View style={styles.heroMeta}>
               <Calendar size={11} color={colors.textTertiary} />
@@ -673,6 +710,29 @@ const styles = StyleSheet.create({
   heroFlag: { fontSize: 28 },
   heroTitle: { color: colors.textPrimary, fontSize: 20, fontWeight: "700" },
   heroSub: { color: colors.textSecondary, fontSize: 12 },
+  routeBar: {
+    flexDirection: "row", alignItems: "center", gap: 10, marginTop: 8, marginBottom: 4,
+  },
+  routeBarIata: {
+    backgroundColor: colors.primary, paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: radius.sm, minWidth: 60, alignItems: "center",
+  },
+  routeBarIataText: {
+    color: "#fff", fontSize: 15, fontWeight: "900", letterSpacing: 1.5,
+  },
+  routeBarArrow: {
+    color: colors.primaryGlow, fontSize: 20, fontWeight: "800",
+  },
+  routeCities: { color: colors.textPrimary, fontSize: 13, fontWeight: "700",
+                 marginTop: 2 },
+  routeAirports: { color: colors.textTertiary, fontSize: 10, marginTop: 1 },
+  migrationBanner: {
+    marginTop: 10, padding: 10, borderRadius: radius.sm,
+    backgroundColor: "rgba(245,158,11,0.14)",
+  },
+  migrationBannerText: {
+    color: "#F59E0B", fontSize: 10, fontWeight: "700",
+  },
   heroRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: spacing.sm },
   heroMeta: { flexDirection: "row", alignItems: "center", gap: 6 },
   heroMetaText: { color: colors.textTertiary, fontSize: 12 },

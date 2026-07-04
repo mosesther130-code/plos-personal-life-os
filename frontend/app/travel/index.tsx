@@ -39,6 +39,7 @@ import { travelApi } from "@/src/lib/api";
 import { storage } from "@/src/utils/storage";
 import { colors, spacing, radius } from "@/src/lib/theme";
 import { EditModal, type Field } from "@/src/components/EditModal";
+import { TripPlannerModal } from "@/src/components/TripPlannerModal";
 
 const fmtUSD = (n?: number | null) =>
   typeof n === "number" && !isNaN(n) ? `$${Math.round(n).toLocaleString("en-US")}` : "—";
@@ -208,17 +209,32 @@ export default function TravelHome() {
 
   const submitTrip = async (values: any) => {
     const payload: any = {
-      destination_name: (values.destination_name || "").trim(),
-      city: (values.city || "").trim(),
-      country: (values.country || "").trim(),
+      destination_name: (values.destination_name || "").trim() ||
+        (values.destination_city ? `${values.departure_iata} → ${values.destination_iata} · ${values.destination_city}` : ""),
+      city: (values.city || values.destination_city || "").trim(),
+      country: (values.country || values.destination_country || "").trim(),
       country_code: (values.country_code || "").trim().toUpperCase(),
       departure_date: values.departure_date || null,
       return_date: values.return_date || null,
       purpose: values.purpose || "leisure",
       status: values.status || "planning",
+      travelers: values.travelers || 1,
+      // NEW: dual-airport fields
+      departure_iata: values.departure_iata || null,
+      departure_city: values.departure_city || null,
+      departure_airport_name: values.departure_airport_name || null,
+      origin_iata: values.departure_iata || null,
+      destination_iata: values.destination_iata || null,
+      destination_city: values.destination_city || null,
+      destination_airport_name: values.destination_airport_name || null,
     };
-    if (!payload.destination_name) throw new Error("Destination name required");
-    if (!payload.country) throw new Error("Country required");
+    if (!payload.departure_iata) throw new Error("Departure airport required");
+    if (!payload.destination_iata) throw new Error("Destination airport required");
+    if (!payload.destination_name) {
+      payload.destination_name = `${payload.departure_iata} → ${payload.destination_iata}`;
+    }
+    if (!payload.city) payload.city = payload.destination_city;
+    if (!payload.country) payload.country = values.destination_country || "";
     const created = editingId
       ? await travelApi.updateTrip(editingId, payload)
       : await travelApi.createTrip(payload);
@@ -715,14 +731,12 @@ export default function TravelHome() {
         <View style={{ height: 40 }} />
       </ScrollView>
 
-      <EditModal
+      <TripPlannerModal
         visible={editorOpen}
-        title={editingId ? "Edit Trip" : "New Trip"}
-        fields={NEW_TRIP_FIELDS}
+        title={editingId ? "Edit Trip" : "Plan a Trip"}
         initial={editorInitial || {}}
         onClose={() => setEditorOpen(false)}
         onSubmit={submitTrip}
-        testID="trip-editor"
       />
 
       <EditModal

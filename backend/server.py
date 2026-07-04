@@ -6257,6 +6257,14 @@ app.include_router(
     prefix="/api",
 )
 
+# Airports database + smart search + saved routes
+from airports_db import make_router as make_airports_router  # noqa: E402
+
+app.include_router(
+    make_airports_router(db, get_current_user_id),
+    prefix="/api",
+)
+
 # Plaid — bank account, transactions, investments, liabilities sync
 from plaid_service import make_router as make_plaid_router  # noqa: E402
 

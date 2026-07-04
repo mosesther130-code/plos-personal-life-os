@@ -667,12 +667,14 @@ def make_router(db, get_current_user_id):
         return t
 
     def _params_from_trip(t: Dict[str, Any], body: LiveSearchBody) -> Dict[str, Any]:
-        # Origin — try explicit IATA, then home-airport, then default ATL.
-        origin = (t.get("origin_iata")
-                  or t.get("origin_code")
-                  or t.get("origin")
-                  or "ATL").upper()
-        origin = _derive_iata(origin, origin if len(origin) == 3 else None) or "ATL"
+        # Origin — try explicit new-schema field, then legacy fields, then default.
+        origin_raw = (t.get("departure_iata")
+                      or t.get("origin_iata")
+                      or t.get("origin_code")
+                      or t.get("origin")
+                      or "ATL")
+        origin = _derive_iata((origin_raw or "").upper(),
+                              origin_raw.upper() if len(origin_raw) == 3 else None) or "ATL"
         # Destination — resolve from IATA field or city name.
         dest_city = (t.get("destination_city")
                      or t.get("city")

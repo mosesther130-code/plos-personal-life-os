@@ -805,6 +805,36 @@ export const travelLiveApi = {
     }),
 };
 
+// ---------- Airports directory + saved routes ----------
+export type Airport = {
+  iata: string; name: string; city: string; region?: string; country: string;
+  match?: string;
+};
+export type SavedRoute = {
+  route_id: string; origin_iata: string; destination_iata: string;
+  label: string; context?: string; default?: boolean;
+  origin?: Airport; destination?: Airport;
+};
+export const airportsApi = {
+  search: (q: string) =>
+    request<{ results: Airport[] }>(
+      `/travel/airports/search?q=${encodeURIComponent(q)}&limit=8`
+    ),
+  autoFill: () =>
+    request<Airport & { auto: boolean; source_city: string }>(
+      "/travel/airports/home/auto-fill"
+    ),
+  byIata: (iata: string) =>
+    request<Airport>(`/travel/airports/${iata.toUpperCase()}`),
+};
+export const routesApi = {
+  list: () => request<{ routes: SavedRoute[] }>("/travel/routes"),
+  create: (b: { origin_iata: string; destination_iata: string; label?: string }) =>
+    request<SavedRoute>("/travel/routes", { method: "POST", body: b }),
+  remove: (id: string) =>
+    request<{ ok: boolean }>(`/travel/routes/${id}`, { method: "DELETE" }),
+};
+
 // ----------------- Plaid ---------------------------------
 export const plaidApi = {
   status: () => request<{ has_real_keys: boolean; env: string; webhook_configured: boolean; android_package: string }>("/plaid/status"),
