@@ -875,6 +875,7 @@ export const jobsDeepApi = {
   verifiedFeed: (opts: {
     freshness?: string; sort?: string; min_score?: number;
     filter_new?: boolean; source?: string; limit?: number;
+    work_type_filter?: string; require_location_match?: boolean;
   }) => {
     const q = new URLSearchParams();
     if (opts.freshness) q.set("freshness", opts.freshness);
@@ -882,6 +883,8 @@ export const jobsDeepApi = {
     if (opts.min_score) q.set("min_score", String(opts.min_score));
     if (opts.filter_new) q.set("filter_new", "true");
     if (opts.source) q.set("source", opts.source);
+    if (opts.work_type_filter) q.set("work_type_filter", opts.work_type_filter);
+    if (opts.require_location_match !== undefined) q.set("require_location_match", String(opts.require_location_match));
     if (opts.limit) q.set("limit", String(opts.limit));
     return request<{
       jobs: DeepSearchJob[]; count: number;

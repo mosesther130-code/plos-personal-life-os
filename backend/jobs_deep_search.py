@@ -123,19 +123,32 @@ def _parse_salary(text: str) -> Tuple[Optional[int], Optional[int]]:
     return min(parsed), max(parsed)
 
 
-def _classify_location_type(location: str, extensions: Dict[str, Any]) -> str:
-    """remote / hybrid / on_site / international."""
-    combined = f"{(location or '').lower()} {' '.join(str(v).lower() for v in extensions.values())}"
-    if extensions.get("work_from_home") or "remote" in combined or "anywhere" in combined:
+def _classify_location_type(location: str, extensions: Dict[str, Any],
+                            description: str = "") -> str:
+    """Deep classifier: remote / hybrid / on_site / international / unknown."""
+    ext_str = " ".join(str(v).lower() for v in extensions.values())
+    desc = (description or "").lower()[:2000]
+    combined = f"{(location or '').lower()} {ext_str} {desc}"
+    # Explicit signals first
+    if extensions.get("work_from_home") is True:
         return "remote"
-    if "hybrid" in combined:
+    if any(k in combined for k in ("fully remote", "100% remote", "work from home",
+                                    "work from anywhere", "remote-first",
+                                    "remote position")):
+        return "remote"
+    if any(k in combined for k in ("hybrid", "2 days remote", "3 days in office",
+                                    "partial remote", "flex remote")):
         return "hybrid"
-    if any(country in combined for country in
-           ("philippines", "belgium", "france", "canada", "united kingdom",
-            "germany", "switzerland", "singapore", "japan", "india", "manila",
-            "brussels", "geneva", "london", "paris")):
+    if any(k in combined for k in ("on-site", "onsite", "on site", "in-office",
+                                    "must be located in", "relocation required")):
+        return "on_site"
+    if any(k in combined for k in ("international", "overseas", "field-based",
+                                    "country office", "expat", "duty station")):
         return "international"
-    return "on_site"
+    # Only trust bare "remote" in location field
+    if "remote" in (location or "").lower() or "anywhere" in (location or "").lower():
+        return "remote"
+    return "unknown"
 
 
 def _employer_domain(employer: str, url: str = "") -> str:
@@ -195,11 +208,14 @@ async def _serpapi_google_jobs(client: httpx.AsyncClient, q: str,
         posted_at = _parse_relative_time(ext.get("posted_at") or j.get("detected_extensions", {}).get("posted_at", ""))
         smin, smax = _parse_salary(ext.get("salary") or "")
         loc = j.get("location") or ""
+        description = (j.get("description") or "")
+        loc_type = _classify_location_type(loc, ext, description)
         out.append({
             "title": j.get("title") or "",
             "employer": j.get("company_name") or "",
             "location": loc,
-            "location_type": _classify_location_type(loc, ext),
+            "location_type": loc_type,
+            "location_type_raw": (ext.get("schedule_type") or "") + " | " + (loc or ""),
             "salary_min": smin, "salary_max": smax,
             "salary_display": ext.get("salary") or "",
             "posted_at": _iso(posted_at) if posted_at else None,
@@ -505,6 +521,67 @@ def _score(job: Dict[str, Any], roles: List[str], keywords_excl: List[str],
 # ---------------------------------------------------------------------------
 # Router
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Router
+# ---------------------------------------------------------------------------
+DC_METRO = {"washington", "dc", "arlington", "alexandria", "bethesda",
+            "silver spring", "rockville", "mclean", "tysons", "reston",
+            "falls church", "chevy chase", "gaithersburg"}
+ATL_METRO = {"atlanta", "decatur", "stone mountain", "sandy springs",
+             "marietta", "roswell", "alpharetta", "smyrna", "dunwoody",
+             "brookhaven", "college park", "east point", "kennesaw"}
+METRO_SETS = {"washington": DC_METRO, "dc": DC_METRO, "atlanta": ATL_METRO}
+
+
+def _job_matches_locations(job_location: str, job_type: str,
+                           accepted_locations: List[str]) -> Tuple[bool, str]:
+    if not accepted_locations:
+        return True, "no_locations_criteria"
+    if not job_location:
+        return True, "no_location_data"
+    jl = job_location.lower()
+    for loc in accepted_locations:
+        low = (loc or "").lower().strip()
+        if not low:
+            continue
+        if "remote" in low or "anywhere" in low:
+            if job_type == "remote":
+                return True, f"remote_matches_{low}"
+            continue
+        if low in jl or jl in low:
+            return True, f"substring_{low}"
+        for key, syns in METRO_SETS.items():
+            if key in low:
+                for s in syns:
+                    if s in jl:
+                        return True, f"metro_{key}_{s}"
+        for country_kw, city_kws in (
+            ("philippines", ("manila", "cebu", "davao")),
+            ("belgium", ("brussels",)),
+            ("france", ("paris",)),
+            ("japan", ("tokyo",)),
+            ("canada", ("toronto", "vancouver")),
+        ):
+            if country_kw in low and (country_kw in jl or any(c in jl for c in city_kws)):
+                return True, f"country_{country_kw}"
+    return False, "no_match"
+
+
+def _work_type_matches(job_type: str, filter_val: str) -> bool:
+    fv = (filter_val or "any").lower()
+    if fv == "any":
+        return True
+    if fv == "remote":
+        return job_type == "remote"
+    if fv == "hybrid":
+        return job_type == "hybrid"
+    if fv == "on_site":
+        return job_type in ("on_site", "unknown", "international")
+    if fv == "on_site_hybrid":
+        return job_type in ("on_site", "hybrid", "unknown", "international")
+    return True
+
+
 class DeepSearchBody(BaseModel):
     target_roles: List[str] = Field(default_factory=list)
     excluded_keywords: List[str] = Field(default_factory=list)
@@ -513,6 +590,7 @@ class DeepSearchBody(BaseModel):
     min_salary: int = 0
     freshness: str = "7d"
     priority_employers: List[str] = Field(default_factory=list)
+    work_type_filter: str = "any"
 
 
 class IndustryBody(BaseModel):
@@ -617,9 +695,9 @@ def make_router(db, get_current_user_id):
                         client, q=role, location=loc, freshness=body.freshness))
                     plans.append("google_jobs")
 
-            # Add one broader remote-search per role (query-only, no location)
+            # Add one broader query per role WITHOUT hardcoded "remote"
             for role in roles[:2]:
-                q = f"{role} remote"
+                q = role
                 if body.min_salary:
                     q += f" ${body.min_salary//1000}k"
                 tasks.append(_serpapi_google_jobs(client, q=q, freshness=body.freshness))
@@ -713,6 +791,18 @@ def make_router(db, get_current_user_id):
                     s += 3
                 return -s
             verified.sort(key=_rank)
+
+            # Location + work-type match — stored so verified-feed can filter fast
+            for j in verified:
+                is_loc, reason = _job_matches_locations(
+                    j.get("location", ""), j.get("location_type", "unknown"),
+                    body.locations,
+                )
+                j["is_location_match"] = is_loc
+                j["location_match_reason"] = reason
+                j["work_type_ok_default"] = _work_type_matches(
+                    j.get("location_type", "unknown"), body.work_type_filter,
+                )
             for i, j in enumerate(verified):
                 j["rank_position"] = i + 1
                 j["rank_score"] = -_rank(j)
@@ -762,6 +852,8 @@ def make_router(db, get_current_user_id):
                             min_score: int = Query(0, ge=0, le=100),
                             filter_new: bool = Query(False),
                             source: Optional[str] = Query(None),
+                            work_type_filter: str = Query("any"),
+                            require_location_match: bool = Query(True),
                             limit: int = Query(60, ge=1, le=200),
                             user_id: str = Depends(get_current_user_id)):
         q: Dict[str, Any] = {"user_id": user_id, "is_active": True}
@@ -771,6 +863,20 @@ def make_router(db, get_current_user_id):
             q["is_new"] = True
         if source:
             q["source_platform"] = source
+        # Work-type filter
+        if work_type_filter and work_type_filter != "any":
+            if work_type_filter == "remote":
+                q["location_type"] = "remote"
+            elif work_type_filter == "hybrid":
+                q["location_type"] = "hybrid"
+            elif work_type_filter == "on_site":
+                q["location_type"] = {"$in": ["on_site", "unknown", "international"]}
+            elif work_type_filter == "on_site_hybrid":
+                q["location_type"] = {"$in": ["on_site", "hybrid", "unknown", "international"]}
+        # Location match — exclude jobs that failed location matching
+        if require_location_match:
+            q["$or"] = [{"is_location_match": True},
+                        {"is_location_match": {"$exists": False}}]
         cur = db.jobs_feed.find(q, {"_id": 0})
         if sort == "most_recent":
             cur = cur.sort("posted_at", -1)

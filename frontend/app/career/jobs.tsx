@@ -69,9 +69,16 @@ export default function JobsCenterScreen() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const opts: any = { freshness, sort, limit: 60 };
+      // Read active work_type_filter from user's active profile
+      const prof = await careerPrefsApi.listProfiles().catch(() => ({ profiles: [] }));
+      const active: any = prof.profiles?.find((p: any) => p.is_active) || prof.profiles?.[0] || {};
+      const wtf = active.work_type_filter || "any";
+      const opts: any = {
+        freshness, sort, limit: 60,
+        work_type_filter: wtf,
+      } as any;
       if (quickFilter === "new") opts.filter_new = true;
-      if (quickFilter === "remote") { /* client-side filter */ }
+      if (quickFilter === "remote") opts.work_type_filter = "remote";
       if (quickFilter === "high") opts.min_score = 85;
       if (quickFilter === "federal") opts.source = "USAJobs";
       const r = await jobsDeepApi.verifiedFeed(opts);
@@ -100,7 +107,8 @@ export default function JobsCenterScreen() {
         min_salary: active.min_salary || 0,
         freshness,
         priority_employers: [],
-      });
+        work_type_filter: (active as any).work_type_filter || "any",
+      } as any);
       setMeta(result);
       await load();
       Alert.alert(
@@ -240,7 +248,23 @@ export default function JobsCenterScreen() {
             </Text>
           </View>
         ) : displayed.map((j: DeepSearchJob) => (
-          <JobCard key={j.job_id} job={j} onApply={() => setApplyJob(j)} />
+          <JobCard
+            key={j.job_id}
+            job={j}
+            onApply={() => setApplyJob(j)}
+            onTailor={() => {
+              router.push({
+                pathname: "/career/tailor" as any,
+                params: {
+                  jobId: j.job_id,
+                  jobTitle: j.title,
+                  employer: j.employer,
+                  jobDescription: j.description_full || "",
+                  applyUrl: j.apply_url_final || j.apply_url,
+                },
+              });
+            }}
+          />
         ))}
 
         <View style={{ height: 40 }} />
@@ -255,7 +279,11 @@ export default function JobsCenterScreen() {
 // ================================================================
 // Job Card
 // ================================================================
-function JobCard({ job, onApply }: { job: DeepSearchJob; onApply: () => void }) {
+function JobCard({ job, onApply, onTailor }: {
+  job: DeepSearchJob;
+  onApply: () => void;
+  onTailor: () => void;
+}) {
   const verified = job.is_verified;
   const applyBtnColor = verified ? "#10B981"
     : job.apply_url_status >= 400 ? "#EF4444"
@@ -351,15 +379,29 @@ function JobCard({ job, onApply }: { job: DeepSearchJob; onApply: () => void }) 
         </Text>
       </View>
 
-      <TouchableOpacity
-        style={[cardStyles.applyBtn, { backgroundColor: applyBtnColor }]}
-        onPress={onApply}
-        disabled={job.apply_url_status >= 400}
-        testID={`apply-${job.job_id}`}
-      >
-        <ExternalLink size={13} color="#fff" />
-        <Text style={cardStyles.applyBtnText}>{applyBtnLabel}</Text>
-      </TouchableOpacity>
+      <View style={cardStyles.actionRow}>
+        <TouchableOpacity
+          style={[cardStyles.applyBtn, cardStyles.applyBtnPrimary, { backgroundColor: applyBtnColor }]}
+          onPress={onApply}
+          disabled={job.apply_url_status >= 400}
+          testID={`apply-${job.job_id}`}
+        >
+          <ExternalLink size={12} color="#fff" />
+          <Text style={cardStyles.applyBtnText}>{applyBtnLabel}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[cardStyles.tailorBtn,
+            (job as any).has_tailored_resume && cardStyles.tailorBtnDone]}
+          onPress={onTailor}
+          testID={`tailor-${job.job_id}`}
+        >
+          <Sparkles size={11} color={(job as any).has_tailored_resume ? "#10B981" : "#8B5CF6"} />
+          <Text style={[cardStyles.tailorBtnText,
+            (job as any).has_tailored_resume && { color: "#10B981" }]}>
+            {(job as any).has_tailored_resume ? "Tailored ✓" : "Tailor Resume"}
+          </Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -540,7 +582,18 @@ const cardStyles = StyleSheet.create({
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
     paddingVertical: 10, borderRadius: radius.sm,
   },
-  applyBtnText: { color: "#fff", fontSize: 13, fontWeight: "900" },
+  applyBtnPrimary: { flex: 1.4 },
+  applyBtnText: { color: "#fff", fontSize: 12, fontWeight: "900" },
+  actionRow: { flexDirection: "row", gap: 6 },
+  tailorBtn: {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5,
+    paddingVertical: 10, borderRadius: radius.sm,
+    borderWidth: 1.5, borderColor: "#8B5CF6", backgroundColor: colors.surface,
+  },
+  tailorBtnDone: {
+    borderColor: "#10B981", backgroundColor: "rgba(16,185,129,0.10)",
+  },
+  tailorBtnText: { color: "#8B5CF6", fontSize: 11, fontWeight: "800" },
 });
 
 const sheetStyles = StyleSheet.create({

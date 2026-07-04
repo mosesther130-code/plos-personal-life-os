@@ -485,17 +485,25 @@ export default function FilterCenterScreen() {
             update("locations", [...active.locations, ...newEntries]);
           }}
         />
-        <Text style={styles.subHead}>Work types (global default)</Text>
+        <Text style={styles.subHead}>Work type (single select)</Text>
         <View style={styles.wtRow}>
-          {["remote", "hybrid", "on_site", "international"].map((wt) => {
-            const on = active.work_types.includes(wt);
+          {[
+            { k: "any", label: "Any" },
+            { k: "remote", label: "Remote" },
+            { k: "hybrid", label: "Hybrid" },
+            { k: "on_site", label: "On-site" },
+            { k: "on_site_hybrid", label: "On-site + Hybrid" },
+          ].map((wt) => {
+            const cur = (active as any).work_type_filter || "any";
+            const on = cur === wt.k;
             return (
               <TouchableOpacity
-                key={wt}
+                key={wt.k}
                 style={[styles.wtChip, on && styles.wtChipOn]}
-                onPress={() => update("work_types", on ? active.work_types.filter((x) => x !== wt) : [...active.work_types, wt])}
+                onPress={() => update("work_type_filter" as any, wt.k)}
+                testID={`wt-${wt.k}`}
               >
-                <Text style={[styles.wtChipText, on && { color: "#fff" }]}>{wt.replace("_", "-")}</Text>
+                <Text style={[styles.wtChipText, on && { color: "#fff" }]}>{wt.label}</Text>
               </TouchableOpacity>
             );
           })}
