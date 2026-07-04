@@ -256,39 +256,15 @@ export default function JobsCenterScreen() {
             onTailor={async () => {
               setTailoringJobId(j.job_id);
               try {
-                const r = await jobsDeepApi.fetchFullDescription(j.job_id);
-                const jd = r.description_full || j.description_full || "";
-                setTailoringJobId(null);
-                router.push({
-                  pathname: "/career/tailor" as any,
-                  params: {
-                    jobId: j.job_id,
-                    jobTitle: j.title,
-                    employer: j.employer,
-                    jobDescription: jd,
-                    applyUrl: j.apply_url_final || j.apply_url,
-                    descriptionSource: r.description_source,
-                    descriptionWordCount: String(r.word_count),
-                  },
-                });
-              } catch (e: any) {
-                setTailoringJobId(null);
-                Alert.alert(
-                  "JD fetch failed",
-                  "Opening tailor with the aggregated description.",
-                );
-                router.push({
-                  pathname: "/career/tailor" as any,
-                  params: {
-                    jobId: j.job_id,
-                    jobTitle: j.title,
-                    employer: j.employer,
-                    jobDescription: j.description_full || "",
-                    applyUrl: j.apply_url_final || j.apply_url,
-                    descriptionSource: "stored",
-                  },
-                });
-              }
+                // Live-fetch full JD from source URL (cached to DB)
+                await jobsDeepApi.fetchFullDescription(j.job_id);
+              } catch { /* silent — tailor-modal will still load via job_id */ }
+              setTailoringJobId(null);
+              // Pass job_id (snake_case) so tailor-modal picks it up correctly
+              router.push({
+                pathname: "/career/tailor-modal" as any,
+                params: { job_id: j.job_id },
+              });
             }}
             tailoringLoading={tailoringJobId === j.job_id}
           />

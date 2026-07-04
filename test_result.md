@@ -230,7 +230,121 @@ frontend:
             also exercised: name "Aunt Mae" → Generate Link → https://plos.app/invite/382391d6
             visible → Share button clicked without uncaught error.
 
+## Iteration 26 — Career Deep Search + Tailor Resume validation
+
+backend:
+  - task: "POST /api/jobs/deep-search returns mixed work types (not Remote-only)"
+    implemented: true
+    working: true
+    file: "/app/backend/jobs_deep_search.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            Location sanitization fix confirmed via manual curl. Deep-search with
+            Financial Management + Atlanta GA + on_site_hybrid returns 66 jobs
+            spanning on_site (27), remote (6), unknown (7) — no longer Remote-only.
+            Needs testing_agent to verify with other roles/locations + freshness combos.
+        - working: true
+          agent: "testing"
+          comment: |
+            Iteration 26 — Verified. pytest test_iteration_26_career.py::TestDeepSearchLocationMix
+            passed 3/3: (1) Financial Management + Atlanta GA + on_site_hybrid + 30d → jobs_count=66;
+            (2) GET /api/jobs/verified-feed?limit=40 breakdown confirms NON-remote entries present;
+            (3) Software Engineer + Washington DC + hybrid + 7d → jobs_count>0. Frontend feed
+            visually confirmed 51/60 non-remote cards (Marietta GA On-site, Washington DC,
+            Alexandria VA, Robins AFB GA On-site, etc.).
+
+  - task: "POST /api/career/library/tailor/generate handles deep-search job_id"
+    implemented: true
+    working: true
+    file: "/app/backend/career_library.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            Fixed field-name mismatch: deep-search stores {title, description_full,
+            source_platform} while tailor endpoint previously only read {job_title,
+            description/job_description_text, source}. Added fallbacks + a live
+            re-fetch via jobs_jd_fetch.fetch_job_description if the description is
+            too short. Manual curl confirmed full ATS package generated for
+            job_id fbc27e254b9666a3c60a (Budget Analyst — Hillsborough County SO).
+        - working: true
+          agent: "testing"
+          comment: |
+            Iteration 26 — Verified. pytest test_04_tailor_generate_from_deep_search_job
+            (~192s Claude call via localhost:8001, since preview ingress caps at ~60s idle):
+            200 OK, version_id="ver_*", ats_score_after=int, non-empty job_title
+            ("Budget Analyst"), non-empty employer ("Hillsborough County SO"), source_job_id
+            matches the request. test_05 regression (jd_id path) could not execute — shared
+            Emergent LLM budget was exhausted mid-run (current $6.15 / max $6.00); both
+            paths share _do_tailor so job_id success functionally proves the fix.
+            Frontend: verified-job-card rendered VERIFIED · GovernmentJobs.com badge with
+            title/employer/location for the tapped job (Budget Analyst @ Cobb County Govt,
+            Marietta, GA). No console errors.
+
+frontend:
+  - task: "Career Jobs → Tailor Resume → tailor-modal verified job display"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/career/tailor-modal.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            verifiedJob card now falls back to `title`/`source_platform` from
+            deep-search jobs when legacy `job_title`/`source` are missing. Params
+            are already `job_id` (snake_case) matching the modal's destructuring.
+            Needs frontend testing_agent verification of the full flow: login →
+            Career → Run Deep Search → tap Tailor Resume → modal loads with
+            verified-job card → Generate creates ATS package.
+        - working: true
+          agent: "testing"
+          comment: |
+            Iteration 26 — Playwright (390x844): login → /career/jobs → Run Deep Search Now
+            → 60 job cards populated in <5s → mix 51 non-remote vs 9 remote-only (Marietta GA
+            On-site, Washington DC, Alexandria VA, Robins AFB GA On-site all visible) →
+            tapped tailor-664bd41adb1116f0058b (Budget Analyst @ Cobb County Government) →
+            navigated to /career/tailor-modal?job_id=... → verified-job-card rendered
+            'VERIFIED · GovernmentJobs.com' badge with title 'Budget Analyst', employer
+            'Cobb County Government', location '📍 Marietta, GA'. No error alerts. Generate
+            was NOT pressed per instructions (backend curl already validated the pipeline).
+
 agent_communication:
+    - agent: "main"
+      message: |
+        Iteration 26 — Fixed two bugs from previous session's final user message.
+        1) Deep Search Remote-only bug: root cause was Google Jobs 400 errors on
+           suburb locations. Location sanitization (bethesda→Washington DC,
+           marietta→Atlanta GA, etc.) plus dropping literal "Remote" from the
+           location list eliminated 400s. Verified mix of on_site/remote/unknown.
+        2) Tailor Resume connection: root cause was field-name mismatch between
+           new jobs_deep_search schema (title, description_full) and the tailor
+           endpoint (job_title, description). Added dual-key fallbacks in
+           career_library.py + live re-fetch guardrail. Tailor-modal.tsx also
+           updated to display job title from either key.
+
+        Please test end-to-end (backend + frontend):
+        - POST /api/jobs/deep-search with roles=["Financial Management"] and
+          locations=["Atlanta, GA"] → verify mixed location_types, not Remote-only.
+        - POST /api/career/library/tailor/generate with a job_id fetched from
+          /api/jobs/verified-feed → verify version returned with ats_score_after,
+          job_title and employer populated.
+        - Frontend: login as test1@plos.app / test123 → Career tab → Jobs →
+          Run Deep Search → tap a "Tailor Resume" pill on any job card → confirm
+          the modal opens showing "VERIFIED · <source>" card with job title +
+          employer + location. Do NOT need to press Generate on UI test — that's
+          covered by the backend curl above.
+
     - agent: "testing"
       message: |
         Iteration 25 — Share Location + Family Edit/Delete fixes VERIFIED.

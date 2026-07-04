@@ -161,6 +161,27 @@ def _employer_domain(employer: str, url: str = "") -> str:
 # ---------------------------------------------------------------------------
 # SerpApi Google Jobs
 # ---------------------------------------------------------------------------
+def _sanitize_location_for_google_jobs(loc: str) -> str:
+    """Google Jobs rejects very narrow locations. Broaden common suburbs to metro."""
+    if not loc:
+        return ""
+    ll = loc.lower()
+    # DC metro suburbs → Washington
+    if any(s in ll for s in ("arlington", "alexandria", "bethesda", "silver spring",
+                              "rockville", "mclean", "tysons", "reston", "falls church")):
+        return "Washington, DC"
+    # Atlanta metro suburbs → Atlanta
+    if any(s in ll for s in ("decatur", "stone mountain", "sandy springs", "marietta",
+                              "roswell", "alpharetta", "smyrna", "dunwoody",
+                              "brookhaven", "college park", "east point", "kennesaw")):
+        return "Atlanta, GA"
+    # Truncate to "City, State" — drop trailing ", USA" etc.
+    parts = [p.strip() for p in loc.split(",") if p.strip()]
+    if len(parts) >= 2:
+        return f"{parts[0]}, {parts[1]}"
+    return parts[0] if parts else loc
+
+
 async def _serpapi_google_jobs(client: httpx.AsyncClient, q: str,
                                location: Optional[str] = None,
                                freshness: str = "7d",
@@ -176,7 +197,7 @@ async def _serpapi_google_jobs(client: httpx.AsyncClient, q: str,
         "api_key": key,
     }
     if location:
-        params["location"] = location
+        params["location"] = _sanitize_location_for_google_jobs(location)
     chips = []
     if freshness in ("24h", "3d"):
         chips.append("date_posted:today")

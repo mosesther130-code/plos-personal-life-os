@@ -186,9 +186,9 @@ export default function TailorModal() {
             <View style={styles.verifiedJobCard} testID="verified-job-card">
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                 <CheckCircle2 size={14} color={colors.success} />
-                <Text style={styles.verifiedBadge}>VERIFIED · {verifiedJob.source || "Feed"}</Text>
+                <Text style={styles.verifiedBadge}>VERIFIED · {verifiedJob.source || verifiedJob.source_platform || "Feed"}</Text>
               </View>
-              <Text style={styles.verifiedTitle} numberOfLines={2}>{verifiedJob.job_title}</Text>
+              <Text style={styles.verifiedTitle} numberOfLines={2}>{verifiedJob.job_title || verifiedJob.title}</Text>
               <Text style={styles.verifiedSub} numberOfLines={1}>{verifiedJob.employer}</Text>
               {!!verifiedJob.location && (
                 <Text style={styles.verifiedMeta} numberOfLines={1}>📍 {verifiedJob.location}</Text>

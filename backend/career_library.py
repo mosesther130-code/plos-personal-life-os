@@ -693,11 +693,32 @@ Return ONLY valid JSON with no preamble, no explanation, no markdown code fences
             job = await db.jobs_feed.find_one({"job_id": body.job_id}, {"_id": 0})
             if not job:
                 raise HTTPException(404, "Verified job not found in the feed")
+            # Support both legacy job_intelligence (job_description_text/description +
+            # job_title) and new deep-search (description_full + title) schemas.
             desc_text = (
                 job.get("job_description_text")
                 or job.get("description")
+                or job.get("description_full")
                 or ""
             ).strip()
+            if len(desc_text) < 40:
+                # Try one live re-fetch from the source URL before failing
+                try:
+                    from jobs_jd_fetch import fetch_job_description
+                    url = (job.get("apply_url_final")
+                           or job.get("apply_url")
+                           or job.get("source_url"))
+                    if url:
+                        text, kind = await fetch_job_description(url)
+                        if text and len(text) >= 40:
+                            desc_text = text
+                            await db.jobs_feed.update_one(
+                                {"job_id": body.job_id},
+                                {"$set": {"description_full": text,
+                                          "description_source": kind}},
+                            )
+                except Exception:
+                    pass
             if len(desc_text) < 40:
                 raise HTTPException(
                     400,
@@ -707,7 +728,7 @@ Return ONLY valid JSON with no preamble, no explanation, no markdown code fences
             jd = {
                 # Ephemeral JD — not stored in job_descriptions library
                 "jd_id": f"job_feed:{job.get('job_id')}",
-                "job_title": job.get("job_title", ""),
+                "job_title": job.get("job_title") or job.get("title") or "",
                 "employer": job.get("employer", ""),
                 "extracted_text": desc_text,
                 "posting_url": job.get("apply_url", "") or job.get("source_url", ""),
