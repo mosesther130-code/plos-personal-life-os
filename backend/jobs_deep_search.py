@@ -162,10 +162,25 @@ def _employer_domain(employer: str, url: str = "") -> str:
 # SerpApi Google Jobs
 # ---------------------------------------------------------------------------
 def _sanitize_location_for_google_jobs(loc: str) -> str:
-    """Google Jobs rejects very narrow locations. Broaden common suburbs to metro."""
+    """Google Jobs rejects very narrow locations and unknown text. Normalize:
+    - Drop trailing ', USA' / ', United States'
+    - Convert full state names to 2-letter abbreviations
+    - Broaden common suburbs to metro
+    - Drop trailing zip codes
+    - Skip anything that looks like a special/placeholder (returns '' which
+      makes the caller send the query with no location — safe fallback).
+    """
     if not loc:
         return ""
-    ll = loc.lower()
+    ll = loc.lower().strip()
+
+    # Reject specials/placeholders that shouldn't be sent as a location
+    if any(bad in ll for bad in (
+        "remote (work from anywhere)", "work from anywhere", "international assignment",
+        "flexible location", "anywhere",
+    )):
+        return ""
+
     # DC metro suburbs → Washington
     if any(s in ll for s in ("arlington", "alexandria", "bethesda", "silver spring",
                               "rockville", "mclean", "tysons", "reston", "falls church")):
@@ -175,11 +190,41 @@ def _sanitize_location_for_google_jobs(loc: str) -> str:
                               "roswell", "alpharetta", "smyrna", "dunwoody",
                               "brookhaven", "college park", "east point", "kennesaw")):
         return "Atlanta, GA"
-    # Truncate to "City, State" — drop trailing ", USA" etc.
-    parts = [p.strip() for p in loc.split(",") if p.strip()]
+
+    # Strip trailing country tokens
+    cleaned = re.sub(r",\s*(usa|united states|u\.s\.a\.?|us)\s*$",
+                     "", loc, flags=re.IGNORECASE).strip()
+    # Strip zip code fragment at the end ("30083" or "30083-1234")
+    cleaned = re.sub(r"\s+\d{5}(-\d{4})?\s*$", "", cleaned).strip()
+
+    parts = [p.strip() for p in cleaned.split(",") if p.strip()]
+    if not parts:
+        return ""
+
+    # Convert full state names in the second token to 2-letter abbr
+    US_STATES = {
+        "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR",
+        "california": "CA", "colorado": "CO", "connecticut": "CT",
+        "delaware": "DE", "florida": "FL", "georgia": "GA", "hawaii": "HI",
+        "idaho": "ID", "illinois": "IL", "indiana": "IN", "iowa": "IA",
+        "kansas": "KS", "kentucky": "KY", "louisiana": "LA", "maine": "ME",
+        "maryland": "MD", "massachusetts": "MA", "michigan": "MI",
+        "minnesota": "MN", "mississippi": "MS", "missouri": "MO",
+        "montana": "MT", "nebraska": "NE", "nevada": "NV",
+        "new hampshire": "NH", "new jersey": "NJ", "new mexico": "NM",
+        "new york": "NY", "north carolina": "NC", "north dakota": "ND",
+        "ohio": "OH", "oklahoma": "OK", "oregon": "OR", "pennsylvania": "PA",
+        "rhode island": "RI", "south carolina": "SC", "south dakota": "SD",
+        "tennessee": "TN", "texas": "TX", "utah": "UT", "vermont": "VT",
+        "virginia": "VA", "washington": "WA", "west virginia": "WV",
+        "wisconsin": "WI", "wyoming": "WY", "district of columbia": "DC",
+    }
     if len(parts) >= 2:
-        return f"{parts[0]}, {parts[1]}"
-    return parts[0] if parts else loc
+        state_tok = parts[1].strip()
+        abbr = state_tok.upper() if len(state_tok) == 2 else US_STATES.get(
+            state_tok.lower(), state_tok)
+        return f"{parts[0]}, {abbr}"
+    return parts[0]
 
 
 async def _serpapi_google_jobs(client: httpx.AsyncClient, q: str,
@@ -197,7 +242,9 @@ async def _serpapi_google_jobs(client: httpx.AsyncClient, q: str,
         "api_key": key,
     }
     if location:
-        params["location"] = _sanitize_location_for_google_jobs(location)
+        sanitized = _sanitize_location_for_google_jobs(location)
+        if sanitized:
+            params["location"] = sanitized
     chips = []
     if freshness in ("24h", "3d"):
         chips.append("date_posted:today")

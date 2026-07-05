@@ -55,6 +55,137 @@ function fmtSalary(min?: number | null, max?: number | null, disp?: string) {
   return "";
 }
 
+// ---------- Profile → Deep Search normalizer -----------------------------
+// Convert profile locations/sectors into search-ready primitives, respecting
+// priority and per-location work_type_override.
+const US_STATE_TO_ABBR: Record<string, string> = {
+  alabama: "AL", alaska: "AK", arizona: "AZ", arkansas: "AR", california: "CA",
+  colorado: "CO", connecticut: "CT", delaware: "DE", florida: "FL", georgia: "GA",
+  hawaii: "HI", idaho: "ID", illinois: "IL", indiana: "IN", iowa: "IA",
+  kansas: "KS", kentucky: "KY", louisiana: "LA", maine: "ME", maryland: "MD",
+  massachusetts: "MA", michigan: "MI", minnesota: "MN", mississippi: "MS",
+  missouri: "MO", montana: "MT", nebraska: "NE", nevada: "NV", "new hampshire": "NH",
+  "new jersey": "NJ", "new mexico": "NM", "new york": "NY", "north carolina": "NC",
+  "north dakota": "ND", ohio: "OH", oklahoma: "OK", oregon: "OR", pennsylvania: "PA",
+  "rhode island": "RI", "south carolina": "SC", "south dakota": "SD",
+  tennessee: "TN", texas: "TX", utah: "UT", vermont: "VT", virginia: "VA",
+  washington: "WA", "west virginia": "WV", wisconsin: "WI", wyoming: "WY",
+  "district of columbia": "DC",
+};
+
+const PRIORITY_RANK: Record<string, number> = { high: 0, medium: 1, low: 2 };
+
+function normalizeLocationEntry(loc: any): string | null {
+  if (!loc || loc.enabled === false) return null;
+  const kind = (loc.type || "").toLowerCase();
+  // Drop pure specials — those signal work_type_filter instead of a location
+  if (kind === "special" || loc.is_special) return null;
+  // Skip region entries with no city (too vague for SerpApi)
+  if (kind === "region" && !loc.city) return null;
+
+  const city = (loc.city || "").trim();
+  const admin1 = (loc.admin1 || "").trim();
+  const cc = (loc.country_code || "US").toUpperCase();
+
+  // Non-US: prefer "City, Country" or just "Country"
+  if (cc && cc !== "US") {
+    if (city) {
+      // Try to get country full-name from label as fallback
+      const country = (loc.label || "").split(",").pop()?.trim() || cc;
+      return `${city}, ${country}`;
+    }
+    // Country-only entry
+    const country = (loc.label || "").trim();
+    return country || null;
+  }
+
+  // US: build "City, ST"
+  if (city && admin1) {
+    // Normalize state to 2-letter abbr
+    const abbr = admin1.length === 2 ? admin1.toUpperCase() :
+                 US_STATE_TO_ABBR[admin1.toLowerCase()] || admin1;
+    return `${city}, ${abbr}`;
+  }
+  // State-only entry (kind='state')
+  if (!city && admin1) {
+    const abbr = admin1.length === 2 ? admin1.toUpperCase() :
+                 US_STATE_TO_ABBR[admin1.toLowerCase()];
+    if (abbr) return abbr; // Google Jobs treats bare state code as the state
+  }
+  // Zip fallback: if label like "Stone Mountain, GA 30083" — take first two parts
+  const label = (loc.label || "").trim();
+  if (label) {
+    const parts = label.split(",").map((p: string) => p.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+      // Strip trailing " USA" / " United States" and zip codes from parts[1]
+      let p1 = parts[1].replace(/\bUSA\b|\bUnited States\b/gi, "").trim();
+      p1 = p1.replace(/\s*\d{5}(-\d{4})?\s*$/, "").trim();
+      // Convert full state name to abbr
+      const abbr = p1.length === 2 ? p1.toUpperCase() :
+                   US_STATE_TO_ABBR[p1.toLowerCase()] || p1;
+      if (parts[0] && abbr) return `${parts[0]}, ${abbr}`;
+    }
+    return parts[0];
+  }
+  return null;
+}
+
+function deriveDeepSearchParams(active: any, industriesFallback: string[]) {
+  const locsRaw: any[] = Array.isArray(active?.locations) ? active.locations : [];
+
+  // Enabled locations sorted by priority (high → low)
+  const enabled = locsRaw.filter((l) => l && l.enabled !== false);
+  enabled.sort((a, b) =>
+    (PRIORITY_RANK[a.priority] ?? 3) - (PRIORITY_RANK[b.priority] ?? 3));
+
+  const locations: string[] = [];
+  const seen = new Set<string>();
+  for (const l of enabled) {
+    const norm = normalizeLocationEntry(l);
+    if (norm && !seen.has(norm.toLowerCase())) {
+      seen.add(norm.toLowerCase());
+      locations.push(norm);
+    }
+  }
+
+  // Sectors → industries. Enabled sectors, sorted by priority.
+  const sectorsRaw: any[] = Array.isArray(active?.sectors) ? active.sectors : [];
+  const enabledSectors = sectorsRaw
+    .filter((s) => s && s.enabled !== false)
+    .sort((a, b) =>
+      (PRIORITY_RANK[a.priority] ?? 3) - (PRIORITY_RANK[b.priority] ?? 3));
+  const industries = enabledSectors.map((s) => s.name).filter(Boolean);
+  const finalIndustries = industries.length ? industries : industriesFallback;
+
+  // Determine effective work_type_filter
+  // Priority: explicit root value > majority high-priority override > "any"
+  let wtf = (active?.work_type_filter || "").toLowerCase();
+  if (!wtf) {
+    const overrides = enabled
+      .filter((l) => l.priority === "high")
+      .map((l) => (l.work_type_override || "any").toLowerCase())
+      .filter((v) => v && v !== "any");
+    // If ALL high-priority overrides agree, use it. Else fall back to "any".
+    if (overrides.length && overrides.every((v) => v === overrides[0])) {
+      wtf = overrides[0];
+    } else if (overrides.length) {
+      // Mixed: if any is remote-only + any is on_site → use hybrid_remote (widest sensible)
+      wtf = "any";
+    } else {
+      wtf = "any";
+    }
+  }
+
+  return {
+    target_roles: active?.target_roles || [],
+    excluded_keywords: active?.excluded_keywords || [],
+    industries: finalIndustries,
+    locations,
+    min_salary: active?.min_salary || 0,
+    work_type_filter: wtf,
+  };
+}
+
 export default function JobsCenterScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -96,25 +227,66 @@ export default function JobsCenterScreen() {
     try {
       // Pull active profile criteria
       const prof = await careerPrefsApi.listProfiles().catch(() => ({ profiles: [] }));
-      const active = prof.profiles?.find((p: any) => p.is_active) || prof.profiles?.[0] || {};
-      const industries = (await jobsDeepApi.listIndustries()).industries
+      const active: any = prof.profiles?.find((p: any) => p.is_active) || prof.profiles?.[0] || {};
+
+      // Guard: user must have at least ONE target role and ONE usable location
+      if (!Array.isArray(active.target_roles) || active.target_roles.length === 0) {
+        Alert.alert(
+          "No target roles",
+          "Add at least one Target Role in the Filter Center before running Deep Search.",
+        );
+        setSearching(false);
+        return;
+      }
+
+      // Industries fallback = enabled entries from the industries table
+      const industriesFallback = (await jobsDeepApi.listIndustries()).industries
         .filter((i) => i.enabled).map((i) => i.label);
-      const locations = (active.locations || []).map((l: any) => l.label || l.city || "").filter(Boolean);
+
+      const params = deriveDeepSearchParams(active, industriesFallback);
+
+      if (!params.locations.length) {
+        Alert.alert(
+          "No searchable locations",
+          "Add at least one City/State or Country location in the Filter Center. Pure 'Remote' or 'International Assignment' specials aren't searchable on their own — pair them with a real location or a work-type filter.",
+        );
+        setSearching(false);
+        return;
+      }
+
+      // Priority employers = enabled Watch List names (if available)
+      let priorityEmployers: string[] = [];
+      try {
+        const wl = await careerPrefsApi.listWatch();
+        priorityEmployers = (wl.employers || [])
+          .filter((e) => e && (e as any).priority !== "low")
+          .map((e) => e.name).filter(Boolean).slice(0, 12);
+      } catch {}
+
+      console.log("[deep-search] filter criteria in use", {
+        roles: params.target_roles,
+        locations: params.locations,
+        industries: params.industries.slice(0, 6),
+        work_type_filter: params.work_type_filter,
+        min_salary: params.min_salary,
+      });
+
       const result = await jobsDeepApi.deepSearch({
-        target_roles: active.target_roles || ["Financial Management"],
-        excluded_keywords: active.excluded_keywords || [],
-        industries,
-        locations: locations.length ? locations : ["Atlanta, GA", "Washington DC"],
-        min_salary: active.min_salary || 0,
+        target_roles: params.target_roles,
+        excluded_keywords: params.excluded_keywords,
+        industries: params.industries,
+        locations: params.locations,
+        min_salary: params.min_salary,
         freshness,
-        priority_employers: [],
-        work_type_filter: (active as any).work_type_filter || "any",
+        priority_employers: priorityEmployers,
+        work_type_filter: params.work_type_filter,
       } as any);
       setMeta(result);
       await load();
+      const sourceCount = Object.keys(result.counts || {}).filter((k) => (result.counts as any)[k] > 0).length;
       Alert.alert(
         "Search complete",
-        `Found ${result.total_verified_active} verified jobs across ${Object.keys(result.counts || {}).filter((k) => (result.counts as any)[k] > 0).length} sources`,
+        `Filter: ${params.target_roles.length} roles · ${params.locations.length} locations · ${params.industries.length} sectors\n\nFound ${result.total_verified_active} verified jobs across ${sourceCount} sources.`,
       );
     } catch (e: any) {
       Alert.alert("Search failed", String(e?.message || e));
