@@ -7,7 +7,7 @@ import {
   Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
@@ -148,6 +148,14 @@ export default function CareerLibraryScreen() {
       setLoading(false);
     })();
   }, [loadAll]);
+
+  // Refresh whenever the screen regains focus (e.g. returning from
+  // /career/tailor-result-v2 after generating a tailored package).
+  useFocusEffect(
+    useCallback(() => {
+      loadAll();
+    }, [loadAll]),
+  );
 
   async function readAsBase64(uri: string, webFile?: File | null): Promise<string> {
     // Web: DocumentPicker gives us the File in asset.file — use FileReader
