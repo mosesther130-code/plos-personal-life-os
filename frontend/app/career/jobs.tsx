@@ -29,14 +29,6 @@ const SORT_OPTIONS = [
   { k: "highest_salary", label: "Highest Salary" },
 ];
 
-const QUICK_CHIPS = [
-  { k: "all", label: "All Jobs" },
-  { k: "remote", label: "Remote", filter: "remote" as const },
-  { k: "new", label: "Posted Today", filter: "new" as const },
-  { k: "high", label: "High Match 85%+", filter: "high" as const },
-  { k: "federal", label: "USAJobs", filter: "usajobs" as const },
-];
-
 function fmtRel(iso?: string | null) {
   if (!iso) return "—";
   try {
@@ -193,7 +185,6 @@ export default function JobsCenterScreen() {
   const [feed, setFeed] = useState<any>({ jobs: [], counts_by_source: {}, new_today: 0 });
   const [freshness, setFreshness] = useState("7d");
   const [sort, setSort] = useState("best_match");
-  const [quickFilter, setQuickFilter] = useState("all");
   const [applyJob, setApplyJob] = useState<DeepSearchJob | null>(null);
   const [meta, setMeta] = useState<any>(null); // last deep-search response
   const [tailoringJobId, setTailoringJobId] = useState<string | null>(null);
@@ -201,7 +192,8 @@ export default function JobsCenterScreen() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      // Read active work_type_filter from user's active profile
+      // Read active work_type_filter from user's active profile — the profile
+      // is the single source of truth. No overlay quick filters.
       const prof = await careerPrefsApi.listProfiles().catch(() => ({ profiles: [] }));
       const active: any = prof.profiles?.find((p: any) => p.is_active) || prof.profiles?.[0] || {};
       const wtf = active.work_type_filter || "any";
@@ -209,16 +201,12 @@ export default function JobsCenterScreen() {
         freshness, sort, limit: 60,
         work_type_filter: wtf,
       } as any;
-      if (quickFilter === "new") opts.filter_new = true;
-      if (quickFilter === "remote") opts.work_type_filter = "remote";
-      if (quickFilter === "high") opts.min_score = 85;
-      if (quickFilter === "federal") opts.source = "USAJobs";
       const r = await jobsDeepApi.verifiedFeed(opts);
       setFeed(r);
     } catch (e: any) {
       Alert.alert("Load failed", String(e?.message || e));
     } finally { setLoading(false); }
-  }, [freshness, sort, quickFilter]);
+  }, [freshness, sort]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -293,10 +281,7 @@ export default function JobsCenterScreen() {
     } finally { setSearching(false); }
   }, [freshness, load]);
 
-  const displayed = (feed.jobs || []).filter((j: DeepSearchJob) => {
-    if (quickFilter === "remote") return j.location_type === "remote";
-    return true;
-  });
+  const displayed: DeepSearchJob[] = feed.jobs || [];
 
   if (loading) {
     return (
@@ -358,22 +343,6 @@ export default function JobsCenterScreen() {
             {searching ? "Searching every source…" : "Run Deep Search Now"}
           </Text>
         </TouchableOpacity>
-
-        {/* Quick filter chips */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chipsRow}>
-          {QUICK_CHIPS.map((c) => (
-            <TouchableOpacity
-              key={c.k}
-              style={[styles.chip, quickFilter === c.k && styles.chipOn]}
-              onPress={() => setQuickFilter(c.k)}
-            >
-              <Text style={[styles.chipText, quickFilter === c.k && { color: "#fff" }]}>
-                {c.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
 
         {/* Sort + Freshness row */}
         <View style={styles.controlsRow}>

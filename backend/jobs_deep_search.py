@@ -1164,21 +1164,16 @@ def make_router(db, get_current_user_id):
         payload = await _fetch_all(body, user_email=email)
         elapsed = time.time() - started
 
-        # ---- Purge stale docs -------------------------------------------
-        # Anything older than STALE_JOBS_CUTOFF_HOURS is nuked before persisting
-        # so the user's feed never shows a job that hasn't been re-verified.
-        stale_cutoff = _iso(_now() - timedelta(hours=STALE_JOBS_CUTOFF_HOURS))
+        # ---- Purge previous feed -----------------------------------------
+        # A new deep search represents a fresh Filter & Criteria snapshot.
+        # Delete the user's ENTIRE existing jobs_feed so the results only
+        # reflect the current search. This guarantees the feed always matches
+        # the exact criteria that produced it.
         try:
-            purge_res = await db.jobs_feed.delete_many({
-                "user_id": user_id,
-                "$or": [
-                    {"fetched_at": {"$lt": stale_cutoff}},
-                    {"fetched_at": {"$exists": False}},
-                ],
-            })
+            purge_res = await db.jobs_feed.delete_many({"user_id": user_id})
             purged = purge_res.deleted_count
         except Exception as e:
-            logger.warning("[jobs] stale purge failed: %s", e)
+            logger.warning("[jobs] feed purge failed: %s", e)
             purged = 0
 
         # Persist to jobs_feed (upsert by (user_id, job_id))
