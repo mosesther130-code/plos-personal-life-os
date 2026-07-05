@@ -103,7 +103,7 @@ class TestDeepSearchAuthenticity:
     def test_response_shape(self, deep_search_response: dict):
         data = deep_search_response
         assert "total_after_authenticity" in data, f"missing total_after_authenticity; keys={list(data)}"
-        assert "total_after_employer_verify" in data, f"missing total_after_employer_verify"
+        assert "total_after_employer_verify" in data, "missing total_after_employer_verify"
         assert "rejection_counts" in data
         assert "stale_purged" in data
 

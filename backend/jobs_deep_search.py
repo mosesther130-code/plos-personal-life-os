@@ -1250,14 +1250,20 @@ def make_router(db, get_current_user_id):
             {"user_id": user_id}, sort=[("fetched_at", -1)],
             projection={"_id": 0, "fetched_at": 1},
         ) or {}
-        # Aggregate counts
+        # Aggregate counts — only trusted employer-verified rows show in the header
         pipeline = [
-            {"$match": {"user_id": user_id, "is_active": True}},
+            {"$match": {"user_id": user_id, "is_active": True,
+                        "employer_verified": True}},
             {"$group": {"_id": "$source_platform", "count": {"$sum": 1}}},
         ]
-        by_source = {r_["_id"]: r_["count"] async for r_ in db.jobs_feed.aggregate(pipeline)}
+        by_source_raw = {r_["_id"]: r_["count"] async for r_ in
+                         db.jobs_feed.aggregate(pipeline)}
+        # Extra defense-in-depth: strip blocklisted names in case some slipped in
+        by_source = {k: v for k, v in by_source_raw.items()
+                     if k and not _is_blocklisted_source(k)}
         new_today = await db.jobs_feed.count_documents(
-            {"user_id": user_id, "is_active": True, "is_new": True})
+            {"user_id": user_id, "is_active": True,
+             "employer_verified": True, "is_new": True})
         return {
             "jobs": jobs, "count": len(jobs),
             "counts_by_source": by_source,
