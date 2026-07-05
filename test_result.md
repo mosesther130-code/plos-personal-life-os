@@ -319,7 +319,127 @@ frontend:
             'Cobb County Government', location '📍 Marietta, GA'. No error alerts. Generate
             was NOT pressed per instructions (backend curl already validated the pipeline).
 
+## Iteration 27 — Job authenticity + employer verification pipeline
+
+backend:
+  - task: "POST /api/jobs/deep-search — authenticity + employer verify metrics"
+    implemented: true
+    working: true
+    file: "/app/backend/jobs_deep_search.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: |
+            Iteration 27 — pytest /app/backend/tests/test_iteration_27_deep_search_auth.py::TestDeepSearchAuthenticity
+            4/4 passed. Response contains total_after_authenticity, total_after_employer_verify (55, > 20),
+            rejection_counts with all 5 keys (blocklisted_source=15, no_location=7-13, untrusted_domain=10-29,
+            inactive_url=78-91, employer_unverified=11-14), stale_purged present, top_job.employer_verified=True.
+
+  - task: "GET /api/jobs/verified-feed — trusted-domain + employer_verified enforcement"
+    implemented: true
+    working: true
+    file: "/app/backend/jobs_deep_search.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: |
+            Iteration 27 — pytest TestVerifiedFeedFiltering + TestVerifiedFeedOptOut passed. count=55 > 20, every
+            job employer_verified=True, no blocklisted source_platform, location_type mixed (not 100% remote),
+            every apply_url_final host on trusted whitelist or employer own domain (e.g., cuny.jobs = CUNY ATS).
+            require_employer_verified=false returns >= verified count (opt-out honored).
+
+  - task: "POST /api/jobs/deep-search — stale purge + idempotent second call"
+    implemented: true
+    working: true
+    file: "/app/backend/jobs_deep_search.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: |
+            Iteration 27 — pytest TestDeepSearchIdempotency passed. Second deep-search call succeeds with
+            stale_purged >= 0 integer and jobs_count > 0.
+
+frontend:
+  - task: "Career Jobs feed — VERIFIED pill + employer_address rendering"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/career/jobs.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: |
+            Iteration 27 — Playwright (390x844) on preview: login → /career/jobs → verified-feed
+            renders 55 cards. 55/55 cards show the green "VERIFIED" pill next to the employer name.
+            Emory University cards display "201 Dowman Dr" as the address line (matches spec).
+            Unique source pills across the feed: {CUNY Jobs, HigherEdJobs, LinkedIn, USAJobs} — ZERO
+            blocklisted sources (no 2.halvolink/Learn4Good/SaluteMyJob/BeBee/Jobrapido card source pills).
+            Minor UX note: the "Sources active:" aggregate header at top of the screen still surfaces
+            historical blocklisted source names (from all rows in jobs_feed including non-active),
+            though no such card is actually visible in the ranked list.
+
 agent_communication:
+    - agent: "testing"
+      message: |
+        Iteration 27 — Job Deep Search authenticity + employer verification pipeline VERIFIED
+        end-to-end. Backend 7/7 pytest cases pass (see /app/backend/tests/test_iteration_27_deep_search_auth.py).
+        Frontend renders VERIFIED pill on 55/55 cards, Emory shows "201 Dowman Dr" address, and no card
+        source pill is a blocklisted content farm. One minor UX suggestion: the "Sources active:" header
+        at top of /career/jobs still lists historical raw source counts including blocklisted names
+        (2.Halvolink, Learn4Good, SaluteMyJob, BeBee, Jobrapido, etc.) because verified-feed's
+        counts_by_source aggregation includes ALL rows in jobs_feed, not just active verified ones.
+        Recommend filtering counts_by_source to exclude BLOCKLIST_SOURCES before returning, or filter
+        in jobs.tsx before rendering that summary line. Everything else is clean. See
+        /app/test_reports/iteration_27.json.
+
+    - agent: "main"
+      message: |
+        Iteration 27 — Job authenticity + employer verification.
+
+        Backend `/app/backend/jobs_deep_search.py`:
+        - New BLOCKLIST_SOURCES (2.halvolink, Learn4Good, SaluteMyJob, BeBee,
+          Jobrapido, Jobright, Jobilize, Bandana, CazVid, Trabajo.org,
+          DailyRemote, Learnun0n.blogspot, Mediabistro, etc.)
+        - New TRUSTED_JOB_BOARDS whitelist (linkedin.com, usajobs.gov,
+          governmentjobs.com, workday, greenhouse.io, lever.co, employer
+          domain, etc.) — apply_url_final must be on this list.
+        - INVALID_LOCATION_TOKENS reject "Anywhere", "Various", "Multiple
+          locations", "N/A" unless location_type=remote.
+        - New _resolve_employer(): SerpApi google_local lookup with
+          employer_registry cache; public bodies (government, universities,
+          UN/World Bank/USAID/etc.) auto-verified without a lookup.
+        - Feed pipeline: raw → dedup → freshness → SCORE → LINK-VERIFY →
+          AUTHENTICITY FILTER → EMPLOYER VERIFY → rank.
+        - Stale docs (>7d old) purged from jobs_feed on every new deep-search.
+        - /api/jobs/verified-feed now defaults require_employer_verified=True.
+
+        Frontend `/app/frontend/app/career/jobs.tsx` + api.ts:
+        - DeepSearchJob TS type includes employer_verified/address/phone/website.
+        - JobCard shows a green "VERIFIED" pill next to the employer name and
+          a small address line under it when populated.
+
+        Verified via curl (30-day freshness, test1's profile):
+          sources: {google_jobs:140, linkedin:10, indeed:10, glassdoor:10, usajobs:55}
+          raw:225 → dedup:210 → fresh:205 → authentic:82 → employer_verified:71
+          rejections: {blocklisted:15, no_location:7, untrusted_domain:10,
+                       inactive_url:91, employer_unverified:11}
+          feed distribution: on_site:23, unknown:24, hybrid:1, remote:1, intl:1
+          sources in feed: USAJobs 29, LinkedIn 18, HigherEdJobs 2, CUNY 1
+          (NO content farms left)
+
+        Please test end-to-end (backend + frontend).
+
     - agent: "main"
       message: |
         Iteration 26 — Fixed two bugs from previous session's final user message.

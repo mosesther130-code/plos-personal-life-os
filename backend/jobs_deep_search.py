@@ -36,6 +36,43 @@ USAJOBS_URL = "https://data.usajobs.gov/api/search"
 FRESHNESS_DAYS = {"24h": 1, "3d": 3, "7d": 7, "30d": 30, "any": 3650}
 SEARCH_TIMEOUT = 25.0
 VERIFY_TIMEOUT = 6.0
+EMPLOYER_VERIFY_TIMEOUT = 8.0
+STALE_JOBS_CUTOFF_HOURS = 24 * 7  # purge jobs_feed docs older than 7 days on new search
+
+# --- Authenticity filters (Phase A) ---------------------------------------
+# Content-farm / scraper aggregators whose listings are not authoritative
+BLOCKLIST_SOURCES = {
+    "2.halvolink", "halvolink", "learn4good", "salutemyjob", "bebee",
+    "jobrapido.com", "jobrapido", "jobright", "jobilize", "bandana.com",
+    "cazvid", "trabajo.org", "dailyremote", "learnun0n.blogspot.com",
+    "learnun0n", "mediabistro", "remotejobs.org", "jobs.co", "jobkoy",
+    "monster jobs feed", "postjobfree", "jooble", "adzuna",
+    "jobisjob", "ziprecruiter feed",
+}
+
+# Domains we trust for authenticity even if they are aggregators
+TRUSTED_JOB_BOARDS = {
+    "linkedin.com", "indeed.com", "glassdoor.com", "monster.com",
+    "usajobs.gov", "governmentjobs.com", "jobaps.com",
+    "devex.com", "reliefweb.int",
+    "adb.org", "worldbank.org", "state.gov", "usaid.gov", "un.org",
+    "unicef.org", "unhcr.org", "undp.org", "who.int", "imf.org",
+    "iom.int", "wfp.org", "unops.org", "gavi.org", "gatesfoundation.org",
+    "clearancejobs.com", "securityclearancejobs.com",
+    "higheredjobs.com", "chronicle.com", "insidehighered.com",
+    "greenhouse.io", "lever.co", "workday.com", "myworkdayjobs.com",
+    "smartrecruiters.com", "workable.com", "icims.com", "ashbyhq.com",
+    "successfactors.com", "taleo.net", "brassring.com", "recruiterbox.com",
+    "bamboohr.com", "jobvite.com", "gr8people.com",
+    "usda.gov", "cdc.gov", "hhs.gov", "va.gov", "opm.gov",
+}
+
+# Junk location strings that mean "no real address"
+INVALID_LOCATION_TOKENS = {
+    "anywhere", "various", "various locations", "multiple locations",
+    "flexible", "worldwide", "global", "n/a", "na", "-", "tbd",
+    "not specified", "unspecified", "any location", "any",
+}
 
 DEFAULT_INDUSTRIES = [
     "Federal Government",
@@ -156,6 +193,179 @@ def _employer_domain(employer: str, url: str = "") -> str:
     if m:
         return m.group(1)
     return re.sub(r"[^a-z0-9]", "", (employer or "").lower()) + ".com"
+
+
+# ---------------------------------------------------------------------------
+# Authenticity filters (Phase A)
+# ---------------------------------------------------------------------------
+def _is_blocklisted_source(src: str) -> bool:
+    if not src:
+        return False
+    s = src.lower().strip()
+    for bad in BLOCKLIST_SOURCES:
+        if bad in s:
+            return True
+    return False
+
+
+def _url_host(url: str) -> str:
+    if not url:
+        return ""
+    m = re.search(r"^https?://(?:www\.)?([^/?#]+)", url.lower())
+    return m.group(1) if m else ""
+
+
+def _is_trusted_apply_domain(url: str, employer: str = "") -> bool:
+    """Return True if the apply_url host is on the trusted whitelist OR
+    matches the employer's own domain."""
+    host = _url_host(url)
+    if not host:
+        return False
+    for good in TRUSTED_JOB_BOARDS:
+        if host == good or host.endswith("." + good):
+            return True
+    # Employer's own careers page → derive candidate domain from employer name
+    emp = re.sub(r"[^a-z0-9]", "", (employer or "").lower())
+    if emp and len(emp) >= 4 and emp in host.replace(".", ""):
+        return True
+    return False
+
+
+def _has_valid_location(loc: str, location_type: str = "") -> bool:
+    """A job needs a real address. Pure 'remote' is OK ONLY if location_type=remote."""
+    if not loc:
+        return False
+    lo = loc.lower().strip()
+    if lo in INVALID_LOCATION_TOKENS:
+        # Empty-looking location — accept ONLY if explicitly marked remote
+        return location_type == "remote"
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Employer verification (Phase B) — SerpApi google_local lookup
+# ---------------------------------------------------------------------------
+# Government / international body employer names that we accept as verified
+# without hitting SerpApi (they're inherently authoritative).
+GOV_EMPLOYER_TOKENS = (
+    "department of ", "u.s. ", "u. s. ", "united states ", "usaid",
+    "u.s. army", "u.s. navy", "u.s. air force", "u.s. marine",
+    "department of defense", "department of state", "department of homeland",
+    "department of veterans", "department of the interior",
+    "federal ", "county government", "city of ", "state of ",
+    "county sheriff", "sheriff's office", "county board",
+    "united nations", "world bank", "asian development bank",
+    "international monetary fund", "european union", "european commission",
+    "african development bank", "inter-american development bank",
+    "world health organization", "unicef", "unhcr", "undp", "unops",
+    "gates foundation", "ford foundation", "rockefeller foundation",
+    "public schools", "university of ", "college of ", "school district",
+    "county public schools", "state university",
+)
+
+
+def _employer_is_public_body(employer: str) -> bool:
+    if not employer:
+        return False
+    el = employer.lower()
+    return any(tok in el for tok in GOV_EMPLOYER_TOKENS)
+
+
+async def _serpapi_google_local(client: httpx.AsyncClient, query: str
+                                ) -> Optional[Dict[str, Any]]:
+    """Look up a business via SerpApi google_local engine. Returns the top
+    result with address/phone/website or None."""
+    key = os.getenv("SERPAPI_KEY", "").strip()
+    if not key:
+        return None
+    try:
+        r = await client.get(SERPAPI_URL, params={
+            "engine": "google_local", "q": query,
+            "hl": "en", "gl": "us", "api_key": key,
+        }, timeout=EMPLOYER_VERIFY_TIMEOUT)
+        r.raise_for_status()
+        data = r.json()
+    except Exception as e:
+        logger.info("[employer-verify] err %s: %s", query[:60], e)
+        return None
+    results = data.get("local_results") or []
+    if not results:
+        # Fall back to knowledge graph in google engine
+        try:
+            r2 = await client.get(SERPAPI_URL, params={
+                "engine": "google", "q": query, "hl": "en", "gl": "us",
+                "api_key": key,
+            }, timeout=EMPLOYER_VERIFY_TIMEOUT)
+            r2.raise_for_status()
+            d2 = r2.json()
+        except Exception:
+            return None
+        kg = d2.get("knowledge_graph") or {}
+        if kg.get("title") and (kg.get("address") or kg.get("website")):
+            return {
+                "name": kg.get("title", ""),
+                "address": kg.get("address", ""),
+                "phone": kg.get("phone", ""),
+                "website": kg.get("website", ""),
+                "source": "google_kg",
+            }
+        return None
+    top = results[0] or {}
+    return {
+        "name": top.get("title", ""),
+        "address": top.get("address", ""),
+        "phone": top.get("phone", ""),
+        "website": (top.get("links") or {}).get("website", "") if isinstance(top.get("links"), dict) else "",
+        "source": "google_local",
+    }
+
+
+async def _resolve_employer(db, client: httpx.AsyncClient, employer: str
+                             ) -> Dict[str, Any]:
+    """Return a cached employer registry entry or fetch a new one."""
+    if not employer or len(employer.strip()) < 2:
+        return {"verified": False, "reason": "empty_employer"}
+    key = employer.strip().lower()
+    cached = await db.employer_registry.find_one({"key": key})
+    if cached:
+        cached.pop("_id", None)
+        return cached
+    # Public bodies (government, universities, etc.) are auto-verified
+    if _employer_is_public_body(employer):
+        doc = {
+            "key": key, "name": employer, "verified": True,
+            "address": "", "phone": "", "website": "",
+            "source": "public_body_auto",
+            "verified_at": _iso(_now()),
+        }
+        try:
+            await db.employer_registry.insert_one(dict(doc))
+        except Exception:
+            pass
+        return doc
+    lookup = await _serpapi_google_local(client, employer)
+    if lookup and lookup.get("address"):
+        doc = {
+            "key": key, "name": lookup.get("name") or employer,
+            "verified": True,
+            "address": lookup.get("address", ""),
+            "phone": lookup.get("phone", ""),
+            "website": lookup.get("website", ""),
+            "source": lookup.get("source", "google_local"),
+            "verified_at": _iso(_now()),
+        }
+    else:
+        doc = {
+            "key": key, "name": employer, "verified": False,
+            "address": "", "phone": "", "website": "",
+            "source": "not_found",
+            "verified_at": _iso(_now()),
+        }
+    try:
+        await db.employer_registry.insert_one(dict(doc))
+    except Exception:
+        pass
+    return doc
 
 
 # ---------------------------------------------------------------------------
@@ -833,7 +1043,7 @@ def make_router(db, get_current_user_id):
             # Verify (parallel HEAD requests)
             verify_tasks = [_verify_link(client, j.get("apply_url", "")) for j in scored]
             statuses = await asyncio.gather(*verify_tasks, return_exceptions=True)
-            verified: List[Dict[str, Any]] = []
+            link_verified: List[Dict[str, Any]] = []
             for j, st in zip(scored, statuses):
                 if isinstance(st, Exception):
                     code, final = 0, j.get("apply_url", "")
@@ -846,7 +1056,63 @@ def make_router(db, get_current_user_id):
                 j["is_verified"] = code in (200, 301, 302)
                 if code in (404, 410, 400, 403):
                     j["is_active"] = False
+                link_verified.append(j)
+
+            # ---- AUTHENTICITY FILTERS (Phase A) --------------------------
+            authentic: List[Dict[str, Any]] = []
+            rejection_counts = {"blocklisted_source": 0, "no_location": 0,
+                                "untrusted_domain": 0, "inactive_url": 0}
+            for j in link_verified:
+                # 1) Drop broken links
+                if not j.get("is_active") or j.get("apply_url_status") in (400, 403, 404, 410):
+                    rejection_counts["inactive_url"] += 1
+                    continue
+                # 2) Drop known content-farm sources
+                if _is_blocklisted_source(j.get("source_platform", "")):
+                    rejection_counts["blocklisted_source"] += 1
+                    continue
+                # 3) Drop jobs with no real address (unless truly remote)
+                if not _has_valid_location(j.get("location", ""),
+                                           j.get("location_type", "")):
+                    rejection_counts["no_location"] += 1
+                    continue
+                # 4) Apply URL must resolve to a trusted domain
+                if not _is_trusted_apply_domain(
+                        j.get("apply_url_final") or j.get("apply_url", ""),
+                        j.get("employer", "")):
+                    rejection_counts["untrusted_domain"] += 1
+                    continue
+                authentic.append(j)
+
+            # ---- EMPLOYER VERIFICATION (Phase B) -------------------------
+            # Look up each unique employer via cached registry + SerpApi google_local
+            unique_employers = list({(j.get("employer") or "").strip().lower()
+                                     for j in authentic if j.get("employer")})
+            employer_tasks = [_resolve_employer(db, client, e) for e in unique_employers
+                              if e]
+            employer_results = await asyncio.gather(*employer_tasks,
+                                                    return_exceptions=True)
+            registry: Dict[str, Dict[str, Any]] = {}
+            for e, res in zip(unique_employers, employer_results):
+                if isinstance(res, Exception):
+                    continue
+                registry[e] = res or {}
+            # Attach registry fields onto each job
+            verified: List[Dict[str, Any]] = []
+            rejection_counts["employer_unverified"] = 0
+            for j in authentic:
+                emp_key = (j.get("employer") or "").strip().lower()
+                reg = registry.get(emp_key) or {}
+                j["employer_verified"] = bool(reg.get("verified"))
+                j["employer_address"] = reg.get("address", "")
+                j["employer_phone"] = reg.get("phone", "")
+                j["employer_website"] = reg.get("website", "")
+                j["employer_verification_source"] = reg.get("source", "")
+                if not j["employer_verified"]:
+                    rejection_counts["employer_unverified"] += 1
+                    continue
                 verified.append(j)
+            logger.info("[jobs] auth-filter rejections: %s", rejection_counts)
 
             # Rank
             def _rank(j: Dict[str, Any]) -> int:
@@ -881,7 +1147,10 @@ def make_router(db, get_current_user_id):
             "total_raw": len(all_jobs),
             "total_after_dedup": len(deduped),
             "total_after_freshness": len(filtered),
+            "total_after_authenticity": len(authentic),
+            "total_after_employer_verify": len(verified),
             "total_verified_active": sum(1 for j in verified if j.get("is_active")),
+            "rejection_counts": rejection_counts,
         }
 
     @r.post("/deep-search")
@@ -894,6 +1163,23 @@ def make_router(db, get_current_user_id):
         started = time.time()
         payload = await _fetch_all(body, user_email=email)
         elapsed = time.time() - started
+
+        # ---- Purge stale docs -------------------------------------------
+        # Anything older than STALE_JOBS_CUTOFF_HOURS is nuked before persisting
+        # so the user's feed never shows a job that hasn't been re-verified.
+        stale_cutoff = _iso(_now() - timedelta(hours=STALE_JOBS_CUTOFF_HOURS))
+        try:
+            purge_res = await db.jobs_feed.delete_many({
+                "user_id": user_id,
+                "$or": [
+                    {"fetched_at": {"$lt": stale_cutoff}},
+                    {"fetched_at": {"$exists": False}},
+                ],
+            })
+            purged = purge_res.deleted_count
+        except Exception as e:
+            logger.warning("[jobs] stale purge failed: %s", e)
+            purged = 0
 
         # Persist to jobs_feed (upsert by (user_id, job_id))
         fetched_at = _iso(_now())
@@ -911,6 +1197,7 @@ def make_router(db, get_current_user_id):
             **{k: v for k, v in payload.items() if k != "jobs"},
             "search_seconds": round(elapsed, 2),
             "jobs_count": len(payload["jobs"]),
+            "stale_purged": purged,
             "top_job": (payload["jobs"][0] if payload["jobs"] else None),
         }
 
@@ -922,9 +1209,13 @@ def make_router(db, get_current_user_id):
                             source: Optional[str] = Query(None),
                             work_type_filter: str = Query("any"),
                             require_location_match: bool = Query(True),
+                            require_employer_verified: bool = Query(True),
                             limit: int = Query(60, ge=1, le=200),
                             user_id: str = Depends(get_current_user_id)):
-        q: Dict[str, Any] = {"user_id": user_id, "is_active": True}
+        q: Dict[str, Any] = {"user_id": user_id, "is_active": True,
+                             "is_verified": True}
+        if require_employer_verified:
+            q["employer_verified"] = True
         if min_score:
             q["match_score"] = {"$gte": min_score}
         if filter_new:

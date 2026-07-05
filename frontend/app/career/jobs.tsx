@@ -505,7 +505,21 @@ function JobCard({ job, onApply, onTailor, tailoringLoading }: {
       <View style={cardStyles.employerRow}>
         <Building2 size={12} color={colors.textSecondary} />
         <Text style={cardStyles.employer} numberOfLines={1}>{job.employer}</Text>
+        {job.employer_verified && (
+          <View style={cardStyles.employerVerifiedPill}>
+            <ShieldCheck size={9} color="#10B981" />
+            <Text style={cardStyles.employerVerifiedText}>VERIFIED</Text>
+          </View>
+        )}
       </View>
+      {!!job.employer_address && (
+        <View style={cardStyles.employerAddrRow}>
+          <MapPin size={10} color={colors.textTertiary} />
+          <Text style={cardStyles.employerAddrText} numberOfLines={2}>
+            {job.employer_address}
+          </Text>
+        </View>
+      )}
 
       <View style={cardStyles.metaRow}>
         {!!job.location && (
@@ -737,6 +751,23 @@ const cardStyles = StyleSheet.create({
   title: { color: colors.textPrimary, fontSize: 14, fontWeight: "800", lineHeight: 18 },
   employerRow: { flexDirection: "row", alignItems: "center", gap: 5 },
   employer: { color: colors.textSecondary, fontSize: 12, fontWeight: "700", flex: 1 },
+  employerVerifiedPill: {
+    flexDirection: "row", alignItems: "center", gap: 2,
+    backgroundColor: "rgba(16, 185, 129, 0.15)",
+    borderColor: "rgba(16, 185, 129, 0.5)",
+    borderWidth: 1, borderRadius: 4,
+    paddingHorizontal: 5, paddingVertical: 1,
+  },
+  employerVerifiedText: {
+    color: "#10B981", fontSize: 8, fontWeight: "800", letterSpacing: 0.4,
+  },
+  employerAddrRow: {
+    flexDirection: "row", alignItems: "flex-start", gap: 4,
+    marginTop: 3, marginLeft: 17, // aligns under employer name
+  },
+  employerAddrText: {
+    color: colors.textTertiary, fontSize: 10, flex: 1, lineHeight: 13,
+  },
 
   metaRow: { flexDirection: "row", flexWrap: "wrap", gap: 5 },
   metaChip: {

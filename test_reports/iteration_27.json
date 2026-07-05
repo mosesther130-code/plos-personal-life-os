@@ -1,43 +1,34 @@
 {
-  "summary": "PLOS Career AI Resume Tailor pipeline — BACKEND ONLY. All 27 pytest tests PASS after fixing two production bugs in career_tailor.build_pdf(). Resume Vault CRUD (paste/pdf/docx, is_default swap, delete-promotion), Claude Sonnet 4.5 tailor endpoint (JSON contract enforced), PDF gen (resume/cover/thankyou/followup), thankyou + followup letter generation, save-application, and SendGrid deferred behaviour all validated end-to-end against http://localhost:8001. ATS score=88, keyword fidelity=11/14 (79% — no fabrication), cover_wc=364, PDF resume=4763B, PDF cover=3230B. Real Claude latency ~30-50s per call.",
-  "backend_issues": {
-    "critical": [],
-    "minor": [
-      {"endpoint": "GET /api/career/applications", "issue": "404 Not Found — the test_20_save_application persistence check tries to list applications via /api/career/applications but that route doesn't exist under that path. save-application still returns app_id and updates job_applications collection; test soft-skips the list verification. Main agent: confirm which endpoint lists job_applications (possibly /api/job-applications or similar) and align."}
-    ]
-  },
+  "summary": "Iteration 27 — Job Deep Search authenticity + employer verification pipeline VERIFIED end-to-end. Backend: 7/7 pytest cases pass (deep-search response shape with total_after_authenticity/total_after_employer_verify/rejection_counts/stale_purged fields, top_job.employer_verified=True, 55 verified jobs > 20 threshold, verified-feed rejects all blocklisted content-farm sources, employer-verified-only default, opt-out via require_employer_verified=false returns >= verified count, idempotent second deep-search). Backend logs confirm auth-filter rejections {blocklisted_source:15, no_location:7-13, untrusted_domain:10, inactive_url:80-91, employer_unverified:11-14}. Frontend: 55/55 job cards render the green VERIFIED pill next to employer name, Emory University cards show '201 Dowman Dr' address line as expected, and the unique source pills across the entire feed are only trusted boards (CUNY Jobs, HigherEdJobs, LinkedIn, USAJobs) — ZERO blocklisted content-farm cards. Location-type distribution is mixed (not 100% remote). All apply_url_final hosts are on the trusted whitelist or employer-own domains.",
+  "backend_issues": {"critical": [], "minor": []},
   "frontend_issues": {
     "ui_bugs": [],
     "integration_issues": [],
-    "design_issues": [],
+    "design_issues": [
+      {"screen": "/career/jobs", "issues": [
+        "Aggregate 'Sources active' header at top of page lists ALL raw scraped sources including blocklisted names (2.Halvolink, Learn4Good, SaluteMyJob, BeBee, Jobrapido, Jobright, Jobilize, Bandana.com, CazVid, Trabajo.org, DailyRemote, Learnun0n.blogspot.com, Mediabistro). These sources are correctly filtered out of the visible job cards, but showing their raw counts in the header can confuse users into thinking those content-farm cards exist in their feed. Consider filtering the counts_by_source dict returned by /api/jobs/verified-feed to exclude BLOCKLIST_SOURCES before returning, or filter client-side in jobs.tsx before rendering the 'Sources active' summary."
+      ]}
+    ],
     "react_native_issues": []
   },
   "test_report_links": [
-    "/app/backend/tests/test_career_tailor.py",
-    "/app/test_reports/pytest/iteration_27_results.xml"
+    "/app/backend/tests/test_iteration_27_deep_search_auth.py",
+    "/app/test_reports/pytest/iteration_27_deep_search_auth.xml"
   ],
   "action_items": [
-    "Consider adding a small retry/backoff around the Claude call inside _run_tailor when _extract_json returns {} — currently returns 502 immediately (test relies on client-side retry).",
-    "SENDGRID_API_KEY is still 'placeholder'; email delivery is DEFERRED as expected. When the user supplies the real key, no code change is needed — send_via_sendgrid will activate automatically.",
-    "Optional: switch PDF font from Helvetica core (latin-1) to a Unicode TTF (e.g., DejaVuSans) if you want real bullets (•), em-dashes, and smart quotes in the exported PDF. Current impl already normalises via _ascii_safe() so latin-1 output is safe.",
-    "Verify how the frontend lists job_applications — the test tried /api/career/applications and got 404. Point the UI to the correct list endpoint.",
-    "Optional cosmetic: replace fpdf2 `pdf.output(dest='S')` call site if you copy the test fixture pattern into any prod code (deprecation warning)."
+    "OPTIONAL/LOW: Filter counts_by_source in /api/jobs/verified-feed (or in jobs.tsx SourcesActive summary rendering) to exclude BLOCKLIST_SOURCES so the header does not surface content-farm names to the user. Actual job cards are already clean."
   ],
   "critical_code_review_comments": [
-    "career_tailor.build_pdf had TWO production bugs I fixed: (1) missing new_x=XPos.LMARGIN on every multi_cell → fpdf2 v2.8 defaults to new_x=RIGHT which leaves x at the right margin, so the next multi_cell(0, ...) throws FPDFException 'Not enough horizontal space to render a single character' — this made EVERY PDF download 500 after the first line rendered. (2) hard-coded U+2022 bullet was injected AFTER _ascii_safe() sanitisation, and Helvetica core font is latin-1 → FPDFUnicodeEncodingException on any bulleted resume. Replaced with ASCII '- ' bullet. Both fixes preserve the intended visual layout.",
-    "server.py is 6100+ lines and includes routers via mid-file dynamic imports (lines 6100, 6106). Consider splitting into feature packages the way career_resumes / career_tailor are already structured.",
-    "SENDGRID email attachment code sets message.attachment = a inside a loop — only the LAST attachment survives. Not exercised in this iteration (email deferred) but worth fixing before real send: use message.add_attachment(a) or a list.",
-    "career_tailor._extract_json is regex-based; if Claude ever returns a JSON blob containing nested code fences with '}' inside a string, rfind('}') would truncate. Acceptable for now, but wrap json.loads in a retry-with-cleanup pass for robustness.",
-    "career_resumes.MAX_BYTES = 5 MB size check happens AFTER base64-decoding the whole payload — fine here, but the upstream FastAPI body-size limit is not set. Consider a middleware cap so a 100 MB base64 payload doesn't blow up memory."
+    "jobs_deep_search.py is 1274 lines — recommend splitting into modules (fetchers/, filters.py, employer.py, feed.py) when convenient; not blocking.",
+    "verified-feed aggregates counts_by_source across ALL rows in jobs_feed (including inactive/unverified), which is why blocklisted-source labels still appear in the 'Sources active' UI banner even though cards themselves are filtered."
   ],
   "updated_files": [
-    "/app/backend/career_tailor.py — fixed build_pdf(): added new_x=XPos.LMARGIN / new_y=YPos.NEXT to every multi_cell call, reset x to l_margin before each line, replaced U+2022 bullet with ASCII '-'.",
-    "/app/backend/tests/test_career_tailor.py — new focused pytest suite (27 tests covering vault CRUD + tailor + PDF + thankyou/followup/save-app + SendGrid deferred + edge cases)."
+    "/app/backend/tests/test_iteration_27_deep_search_auth.py (new)"
   ],
-  "success_rate": {"backend": "100% (27/27)", "frontend": "not tested (per request)"},
-  "seed_data_creation": "Test suite creates and cleans up its own TEST_-prefixed resumes on every run. resume_versions and one job_applications record are left behind for the created ver_ / app_ ids (test_25 deletes the version at the end; the app_id row remains — main agent may want to add cleanup or a bulk-delete hook).",
+  "success_rate": {"backend": "100% (7/7 pytest cases)", "frontend": "100% (all Iteration 27 acceptance criteria met — VERIFIED pill on 55/55 cards, address line on Emory cards, no blocklisted card source pills)"},
+  "seed_data_creation": "None. Used the existing test1@plos.app account; deep-search populated jobs_feed with fresh data (55 verified cards from LinkedIn/USAJobs/HigherEdJobs/CUNY).",
   "retest_needed": false,
-  "should_main_agent_self_test": true,
-  "context_for_next_testing_agent": "Frontend UI walkthrough is the next iteration: verify Resume Vault upload/paste/default UX, the Tailor screen (paste-JD flow + generated bundle preview), PDF download button, thank-you and follow-up modals, and Save-to-Application. Backend contract is now stable — reuse /app/backend/tests/test_career_tailor.py as regression. When SENDGRID_API_KEY is provided, re-run test_22 and expect email_status.status == 'sent'.",
-  "rca_of_issue": "Bug #1: fpdf2 v2.8's multi_cell now defaults to new_x=XPos.RIGHT — after the first line, x sits at the right margin so multi_cell(w=0) has effective width ~0 and raises FPDFException('Not enough horizontal space to render a single character'). This broke every /api/career/tailor/versions/{id}/download call the moment a body had ≥2 lines. Fix: explicit new_x=LMARGIN + set_x(l_margin) between calls. Bug #2: U+2022 bullet char was injected AFTER _ascii_safe() sanitisation, so Helvetica (latin-1 core font) rejected it with FPDFUnicodeEncodingException. Fix: use ASCII '- ' bullet. Reproduced by calling GET /api/career/tailor/versions/{ver_id}/download?kind=resume on any tailored version; after fix, PDF renders 4.7 KB with %PDF- header."
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend deep-search takes 15-25s per call (SerpApi + link-verify + employer-verify). Reuse the deep-search response as a pytest module-scoped fixture to avoid burning SerpApi quota. Devex RSS (403) and ReliefWeb v1 API (410 Gone) both fail — these are external-source outages, not regressions; the pipeline gracefully continues. Employer-verify SerpApi google_local lookups occasionally return empty (logged as '[employer-verify] err <employer>:'); this is expected and rejected employers land in rejection_counts.employer_unverified.",
+  "rca_of_issue": "N/A — no bug reproduced. Only optional UX suggestion around the 'Sources active' aggregate header."
 }

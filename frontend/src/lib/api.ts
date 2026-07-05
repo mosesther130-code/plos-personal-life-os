@@ -852,6 +852,10 @@ export type DeepSearchJob = {
   source_platform: string; source_url?: string; thumbnail?: string;
   match_score: number; match_breakdown?: any;
   rank_position?: number; rank_score?: number;
+  // Employer verification (Phase B)
+  employer_verified?: boolean; employer_address?: string;
+  employer_phone?: string; employer_website?: string;
+  employer_verification_source?: string;
 };
 export const jobsDeepApi = {
   listIndustries: () => request<{ industries: Industry[] }>("/jobs/industries"),
