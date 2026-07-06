@@ -1,0 +1,51 @@
+{
+  "summary": "PLAY-STORE PRE-SUBMISSION smoke test (6 critical modules). Backend: 20/20 pytest passed against production URL. Frontend: All 6 modules render correctly on mobile viewport (390x844) with real login (test1@plos.app / test123). No red screens, no ErrorBoundary triggers on any route. Verdict: Ship blockers: NONE.\n\nPer-module: (1) AUTH — 6/6 pass; register→token, login→token, wrong password→401, /me valid→200, /me none→401, /me invalid→401; login form renders with EMAIL/PASSWORD inputs + Sign in button; after sign-in the dashboard loads with the 5 expected bottom tabs (Home, Finance, Career, Security, More). (2) DASHBOARD — 3/3 pass; /dashboard returns income/expenses/net_worth/health_score; /ai/daily-advice returns 200 with summary+items+deep_analysis shape; /alerts returns list. UI shows the '64 HEALTH' ring, Monthly Income $8.9K, Monthly Expenses $3.4K, Monthly Surplus +$5.5K, Net Worth $530K, Emergency Fund Runway 9.2/6mo card, and AI Daily Advice card with Refresh button. (3) FINANCE — 4/4 pass; /plaid/snapshot-fusion returns nested manual+plaid+variance object; /plaid/items returns items list; /plaid/transactions?limit=20 returns transactions; /debts returns list. UI shows Financial Snapshot header + Reports button, INCOME $8,900 / OUTFLOW $3,410 / SURPLUS +$5,490 cards, 'Bank Accounts LIVE · SANDBOX' section with First Platypus Bank showing 12 accounts (Plaid Checking, Saving, CD, Credit Card, Money Market, IRA, 401k, Student Loan, Mortgage) each with masked account numbers and live balances. (4) CAREER — 2/2 pass; /career/preferences/profiles returns active profile; /jobs/verified-feed?limit=30 returns jobs with employer_verified:true on every entry. CRITICAL: NO blocklisted source strings (halvolink, learn4good, bebee, jobrapido) present in the feed or DOM. UI shows Jobs Center header ('7 verified jobs · 0 new today'), Run Deep Search Now button, Sort chips (Best Match / Most Recent / Highest Salary), Freshness chips (Today / 3 days / 7 days / 30 days / Any time), job cards with match_score % (80%, 79%…), employer, VERIFIED pill, Apply Now + Tailor Resume buttons. (5) SAFETY & LOCAL — 3/3 pass; /local/weather returns temperature+forecast, /local/nearby 200, /local/gas 200. UI shows 'Local Intelligence & Safety' header, weather card 85°F Mostly Sunny with humidity/wind/UV, 5-day forecast row (Tod/Ton/Tue/Wed/Thu/Fri/Sat with hi/lo temps), EMERGENCY SOS red button ('Hold-to-confirm · calls 911 + alerts contacts'), Share My Location + Test SOS buttons, SATELLITE & OFFLINE READINESS section (GPS 9/12, offline maps, satellite messaging, emergency contacts). (6) CHATBOT — 2/2 pass; /chatbot/conversations 200; POST /chat 200 with response text. UI shows 'AI Life Advisor' header with the 'AI-generated · Verify important info independently.' disclaimer subtitle (iteration 30 requirement CONFIRMED), 'Online · Life Advisor' status, quick-action cards (Analyze my finances today / Am I on track for retirement? …), input field at bottom with attachment + mic + send buttons.",
+  "per_module_verdict": {
+    "authentication":     {"tests_passed": 6, "tests_failed": 0, "errors_or_crashes": "none", "safe_to_ship": "yes", "comments": "Login/register/JWT flows solid; wrong password correctly rejected; /me invalid token → 401 as expected."},
+    "daily_dashboard":    {"tests_passed": 3, "tests_failed": 0, "errors_or_crashes": "none", "safe_to_ship": "yes", "comments": "All financial metrics render; AI Daily Advice returned real LLM content (no budget exhaustion at test time). No ErrorBoundary triggered."},
+    "financial_snapshot": {"tests_passed": 4, "tests_failed": 0, "errors_or_crashes": "none", "safe_to_ship": "yes", "comments": "Plaid sandbox fully wired; 12 account rows with balances render; INCOME/OUTFLOW/SURPLUS cards populated."},
+    "career_module":      {"tests_passed": 2, "tests_failed": 0, "errors_or_crashes": "none", "safe_to_ship": "yes", "comments": "Every job has employer_verified:true; no blocklisted sources in feed or DOM; sort/freshness chips and Apply/Tailor buttons all present."},
+    "safety_and_local":   {"tests_passed": 3, "tests_failed": 0, "errors_or_crashes": "none (Firestore family-locations 503 is unrelated to the 6-module core)", "safe_to_ship": "yes", "comments": "Weather, forecast, SOS, satellite/offline section all render. Firestore 'family-locations/sync' returns 503 because the Firebase project 'plos-53fbd' has no default database — reported as a non-blocking cleanup item."},
+    "ai_chatbot":         {"tests_passed": 2, "tests_failed": 0, "errors_or_crashes": "none", "safe_to_ship": "yes", "comments": "POST /chat returned 200 with real reply; iteration-30 disclaimer subtitle is present verbatim."}
+  },
+  "final_verdict": "Ship blockers: NONE",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/family-locations/sync", "issue": "Returns 503 because Firebase Firestore project 'plos-53fbd' has no default database. Non-blocking for the 6 critical modules but visible as a console warning on /safety-local and /chatbot; consider disabling the sync call OR provisioning the Firestore default database before Play Store submission for a cleaner console."},
+      {"endpoint": "spec vs implementation drift", "issue": "Review-request spec listed /api/plaid/accounts, /api/dashboard/snapshot, /api/chatbot/message — real endpoints in the codebase (and used by the frontend) are /api/plaid/items, /api/plaid/snapshot-fusion, and /api/chat. Not a bug; just noting for future spec accuracy."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "shadow* style props", "issue": "Console warning 'shadow* style props are deprecated. Use boxShadow' seen on every route. Cosmetic only; RN Web deprecation. Reference: RN 0.76+ web export."},
+      {"component": "props.pointerEvents", "issue": "Console warning 'props.pointerEvents is deprecated. Use style.pointerEvents' on several routes. Cosmetic only."},
+      {"component": "useNativeDriver", "issue": "Console warning 'Animated: useNativeDriver is not supported because the native animated module is missing. Falling back to JS-based animation.' on /safety-local and /chatbot. Expected on Expo web preview; will resolve on native build."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_35_playstore.py",
+    "/app/test_reports/pytest/iteration_35_results.xml"
+  ],
+  "action_items": [
+    "OPTIONAL (non-blocking): Provision the Firestore default database for project plos-53fbd OR guard the /api/family-locations/sync + Firestore listeners behind a feature flag so the console is clean on submission-day builds.",
+    "OPTIONAL (non-blocking): Sweep 'shadow*' → 'boxShadow' and 'props.pointerEvents' → 'style.pointerEvents' migrations across affected StyleSheet definitions to silence deprecation warnings.",
+    "OPTIONAL: Align internal spec docs to the actual endpoint names (/plaid/items, /plaid/snapshot-fusion, /chat) so future test agents don't hit 404s from the spec."
+  ],
+  "critical_code_review_comments": [
+    "Endpoint route surface is consistent with the frontend api.ts client — no orphan endpoints observed for the 6 critical modules.",
+    "Auth returns 401 for invalid tokens as expected (not 403) — good for Play Store review."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_35_playstore.py (new — 20 tests, covers 6 critical modules)"
+  ],
+  "success_rate": {"backend": "100% (20/20)", "frontend": "100% render (6/6 modules)"},
+  "seed_data_creation": "Only ephemeral TEST_ps_<uuid>@plos.app registration used for register test (no cleanup needed — isolated user).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "For Play-Store pre-submission smoke tests: use /app/backend/tests/test_iteration_35_playstore.py — it covers all 6 critical modules and takes ~6s. Real endpoint names to use (spec-drift): bank accounts = /api/plaid/items; financial snapshot = /api/plaid/snapshot-fusion (returns nested manual+plaid+variance shape); chatbot message = POST /api/chat (not /api/chatbot/message). Daily-advice response shape is {summary, items[], deep_analysis, generated_at, date} — not {advice}. LLM endpoints (daily-advice, chat) were both healthy at test time (no budget exhaustion). Frontend login flow works with test1@plos.app / test123 via the visible EMAIL/PASSWORD inputs and 'Sign in' text button.",
+  "rca_of_issue": "N/A — no ship blockers found."
+}
