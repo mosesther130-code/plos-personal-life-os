@@ -1,0 +1,54 @@
+===============================================================
+PLOS — Google Play Store Descriptions
+===============================================================
+
+[SHORT DESCRIPTION — max 80 chars]
+Your AI-powered personal life command center.
+
+Character count: 46 (limit 80) ✓
+
+
+[FULL DESCRIPTION — max 4000 chars]
+
+PLOS — Personal Life Operating System
+
+PLOS is your AI-powered personal life command center. From bank balances to career moves, breach alerts to emergency SOS, PLOS gives you one intelligent dashboard for every important part of your life.
+
+Financial Command Center
+See income, expenses, debt, and net worth in one glance. Connect your bank accounts securely through Plaid for real-time balance and transaction tracking. Your AI financial coach reviews your cash flow daily and gives you specific, personalized advice.
+
+Debt Management
+List every debt with its balance and interest rate. Toggle between Avalanche and Snowball strategies to see which pays off faster. Get a month-by-month payoff plan and track your progress against it.
+
+Career Development with AI Job Search
+Aggregate live jobs from Google Jobs, USAJobs, LinkedIn, Indeed, Glassdoor, and specialized boards. Every job is verified — the employer must have a real physical address before it shows up in your feed. Tap Tailor Resume on any job to have Claude rewrite your resume around that exact job description, generate a cover letter, and score your ATS match.
+
+Investment and Retirement Optimizer
+See your 401(k), IRA, and brokerage balances alongside a retirement readiness score. Get educational insights on asset allocation, contribution limits, and market conditions.
+
+Identity and Security Protection
+Monitor your email against every known data breach via HaveIBeenPwned. Track your credit score alongside real broker-scan style alerts. Get notified within minutes if your information appears in a new breach.
+
+Safety and Emergency Features
+One-tap Emergency SOS shares your GPS location with family and trusted contacts. Live weather alerts, nearby hospitals, police contacts, gas stations, and restaurants at your current location. Family location sharing when you turn it on — never in the background otherwise.
+
+Global Tools
+Translate 12 languages in real time. Convert 13 currencies with live exchange rates from ExchangeRate-API. See time zones for every city that matters to you.
+
+Travel Advisor
+Plan trips with live flight and hotel pricing from Google Flights and Google Hotels via SerpApi. Smart airport search finds the nearest IATA code automatically. Compare prices across Kayak, Skyscanner, Booking.com, and Expedia in one place.
+
+AI Life Advisor Chatbot
+Ask anything about your finances, career, health, or safety. Your AI advisor knows your actual data — balances, debts, goals — and gives specific answers, not generic advice. Powered by Claude Sonnet 4.5 with optional OpenAI and Perplexity backups.
+
+Built for Privacy
+Your data is encrypted at rest in MongoDB. Your Plaid credentials never touch our servers — they go directly to Plaid. Biometric unlock is handled by your phone's secure enclave. We never sell your data. We never use it for ads.
+
+One app. Every part of your life. Intelligently connected.
+
+---
+Contact: plos.support@gmail.com
+Privacy: https://mosesther130-code.github.io/plos-personal-life-os/privacy-policy.html
+Terms: https://mosesther130-code.github.io/plos-personal-life-os/terms-of-service.html
+
+Character count (excluding this footer note): 2921 (limit 4000) ✓

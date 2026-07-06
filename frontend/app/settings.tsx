@@ -11,9 +11,11 @@ import {
   Modal,
   Platform,
   Alert,
+  Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import Constants from "expo-constants";
 import {
   ArrowLeft,
   LogOut,
@@ -27,6 +29,9 @@ import {
   Fingerprint,
   ScanFace,
   Sparkles,
+  HelpCircle,
+  FileText,
+  ShieldCheck,
 } from "lucide-react-native";
 
 import { useAuth } from "@/src/lib/auth-context";
@@ -452,6 +457,65 @@ export default function Settings() {
         </TouchableOpacity>
 
         <Text style={styles.footer}>PLOS v1.0 · Personal Life OS</Text>
+
+        {/* About & Support (Item 10) ================================== */}
+        <Text style={styles.section}>About & Support</Text>
+
+        <TouchableOpacity
+          onPress={() => Linking.openURL("mailto:plos.support@gmail.com?subject=PLOS%20Support%20Request")}
+          testID="contact-support"
+        >
+          <Card>
+            <View style={styles.actionRow}>
+              <HelpCircle color={colors.primaryGlow} size={20} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.actionTitle}>Contact Support</Text>
+                <Text style={styles.actionSub}>plos.support@gmail.com</Text>
+              </View>
+            </View>
+          </Card>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={() => Linking.openURL(
+            (Constants.expoConfig?.extra as any)?.privacyPolicyUrl
+              || "https://mosesther130-code.github.io/plos-personal-life-os/privacy-policy.html"
+          )}
+          testID="open-privacy-policy"
+        >
+          <Card>
+            <View style={styles.actionRow}>
+              <ShieldCheck color={colors.primaryGlow} size={20} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.actionTitle}>Privacy Policy</Text>
+                <Text style={styles.actionSub}>How PLOS handles your data</Text>
+              </View>
+            </View>
+          </Card>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={() => Linking.openURL(
+            (Constants.expoConfig?.extra as any)?.termsOfServiceUrl
+              || "https://mosesther130-code.github.io/plos-personal-life-os/terms-of-service.html"
+          )}
+          testID="open-terms"
+        >
+          <Card>
+            <View style={styles.actionRow}>
+              <FileText color={colors.primaryGlow} size={20} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.actionTitle}>Terms of Service</Text>
+                <Text style={styles.actionSub}>Legal agreement for using PLOS</Text>
+              </View>
+            </View>
+          </Card>
+        </TouchableOpacity>
+
+        <Text style={styles.footer}>
+          {`Version ${Constants.expoConfig?.version || "1.0.0"} · Build ${(Constants.expoConfig?.android?.versionCode ?? Constants.expoConfig?.ios?.buildNumber ?? "1")}
+Developer: Moses Ndifon · LifeOS AI`}
+        </Text>
       </ScrollView>
 
       {/* Profile Edit Modal */}

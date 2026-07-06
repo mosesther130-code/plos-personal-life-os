@@ -7,6 +7,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { AuthProvider } from "@/src/lib/auth-context";
 import { colors } from "@/src/lib/theme";
+import PLOSErrorBoundary from "@/src/components/PLOSErrorBoundary";
 
 LogBox.ignoreAllLogs(true);
 
@@ -95,15 +96,20 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <View style={{ flex: 1, backgroundColor: colors.bg }}>
         <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
-        <AuthProvider>
-          <Stack
-            screenOptions={{
-              headerShown: false,
-              contentStyle: { backgroundColor: colors.bg },
-              animation: "slide_from_right",
-            }}
-          />
-        </AuthProvider>
+        <PLOSErrorBoundary
+          scope="global"
+          onGoDashboard={() => router.replace("/(tabs)" as any)}
+        >
+          <AuthProvider>
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                contentStyle: { backgroundColor: colors.bg },
+                animation: "slide_from_right",
+              }}
+            />
+          </AuthProvider>
+        </PLOSErrorBoundary>
       </View>
     </SafeAreaProvider>
   );

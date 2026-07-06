@@ -390,6 +390,9 @@ export default function Chatbot() {
               <View style={styles.dot} />
               <Text style={styles.statusText}>Online · {MODE_META[mode].label}</Text>
             </View>
+            <Text style={{ color: "#6B7280", fontSize: 10, marginTop: 2, maxWidth: 220 }}>
+              AI-generated · Verify important info independently.
+            </Text>
           </View>
         </View>
         <View style={{ flexDirection: "row", gap: 6 }}>

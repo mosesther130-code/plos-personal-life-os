@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PLOS — Privacy Policy</title>
+<style>
+  body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#111;background:#fff;margin:0;padding:24px 16px;line-height:1.55}
+  main{max-width:800px;margin:0 auto}
+  h1{font-size:28px;margin:0 0 4px}
+  h2{font-size:19px;margin:28px 0 6px;color:#1E3A5F}
+  h3{font-size:15px;margin:16px 0 4px}
+  p,ul,ol{margin:6px 0}
+  ul{padding-left:22px}
+  li{margin:3px 0}
+  a{color:#2563EB;word-break:break-all}
+  .meta{color:#555;font-size:14px;margin:0 0 20px}
+  .box{border:1px solid #E5E7EB;background:#F9FAFB;padding:12px 16px;border-radius:8px;margin:14px 0;font-size:14px}
+  footer{margin:32px 0 12px;color:#555;font-size:13px;border-top:1px solid #E5E7EB;padding-top:16px}
+</style>
+</head>
+<body>
+<main>
+  <h1>PLOS Privacy Policy</h1>
+  <p class="meta">Last Updated: July 6, 2026 &middot; Support: <a href="mailto:plos.support@gmail.com">plos.support@gmail.com</a></p>
+
+  <h2>1. Introduction and Who We Are</h2>
+  <p>PLOS (Personal Life Operating System) is a personal productivity and life management application developed by Moses Ndifon (LifeOS AI). This policy explains what data we collect, how we use it, and your rights regarding your personal information. Contact email: <a href="mailto:plos.support@gmail.com">plos.support@gmail.com</a>.</p>
+
+  <h2>2. Data We Collect</h2>
+  <ul>
+    <li><strong>Financial data:</strong> income sources, expenses, debt balances, investment account information, bank account connections via Plaid (account numbers are never stored — only masked last-4 digits and transaction data).</li>
+    <li><strong>Location data:</strong> GPS coordinates for nearby services, weather, emergency SOS, and family location sharing. Precise location is used only when the Safety module is active.</li>
+    <li><strong>Personal identifiers:</strong> name, email address, home address, date of birth — collected during account setup.</li>
+    <li><strong>Career data:</strong> resume text, job application history, job descriptions uploaded by the user.</li>
+    <li><strong>Health data:</strong> wellness check-in scores, medication reminders, medical notes entered by the user.</li>
+    <li><strong>Identity data:</strong> email addresses entered for breach monitoring via HaveIBeenPwned API.</li>
+    <li><strong>Device data:</strong> device type, operating system version, push notification token for Firebase Cloud Messaging.</li>
+    <li><strong>Usage data:</strong> which modules are accessed and how frequently — collected anonymously to improve the app.</li>
+  </ul>
+
+  <h2>3. How We Use Your Data</h2>
+  <ul>
+    <li>To provide personalized AI-powered financial advice, career guidance, and life management recommendations.</li>
+    <li>To sync financial account data via Plaid for real-time balance and transaction tracking.</li>
+    <li>To send push notifications for bill reminders, job matches, weather alerts, and security alerts.</li>
+    <li>To monitor your email address for data breaches via HaveIBeenPwned.</li>
+    <li>To provide GPS-based nearby services, weather, and emergency features.</li>
+    <li>We <strong>never sell</strong> your personal data to any third party.</li>
+    <li>We <strong>never use</strong> your data for advertising purposes.</li>
+    <li>We <strong>never share</strong> your financial data with employers, insurers, or credit bureaus.</li>
+  </ul>
+
+  <h2>4. Third Party Services</h2>
+  <p>PLOS connects to the following third-party services strictly to provide app functionality. Their own privacy policies govern how they handle any data we transmit:</p>
+  <ul>
+    <li>Anthropic Claude API (AI processing) — <a href="https://www.anthropic.com/legal/privacy">anthropic.com/privacy</a></li>
+    <li>Plaid (bank account connectivity) — <a href="https://plaid.com/legal/#end-user-privacy-policy">plaid.com/legal/privacy-notice</a></li>
+    <li>Firebase by Google (push notifications and real-time data) — <a href="https://firebase.google.com/support/privacy">firebase.google.com/support/privacy</a></li>
+    <li>Google Maps Platform (location services) — <a href="https://policies.google.com/privacy">policies.google.com/privacy</a></li>
+    <li>HaveIBeenPwned (breach monitoring) — <a href="https://haveibeenpwned.com/Privacy">haveibeenpwned.com/Privacy</a></li>
+    <li>OpenWeatherMap (weather data) — <a href="https://openweathermap.org/privacy-policy">openweathermap.org/privacy-policy</a></li>
+    <li>SerpApi (job and travel search) — <a href="https://serpapi.com/legal/privacy-policy">serpapi.com/privacy</a></li>
+    <li>ExchangeRate-API (currency rates) — <a href="https://www.exchangerate-api.com/terms">exchangerate-api.com/privacy</a></li>
+    <li>ElevenLabs (text to speech) — <a href="https://elevenlabs.io/privacy">elevenlabs.io/privacy</a></li>
+    <li>OpenAI (GPT for financial calculations) — <a href="https://openai.com/policies/row-privacy-policy/">openai.com/privacy</a></li>
+    <li>Perplexity AI (real-time research) — <a href="https://www.perplexity.ai/hub/legal/privacy-policy">perplexity.ai/privacy</a></li>
+    <li>EIA (fuel prices) — <a href="https://www.eia.gov/about/privacy_security_policy.php">eia.gov/privacy</a></li>
+  </ul>
+
+  <h2>5. Data Storage and Security</h2>
+  <ul>
+    <li>All user data is stored in MongoDB with encryption at rest.</li>
+    <li>All API communications use HTTPS/TLS encryption in transit.</li>
+    <li>Plaid access tokens are encrypted using AES-256 before storage.</li>
+    <li>API keys are stored as server-side environment variables — never in client-side code.</li>
+    <li>Biometric authentication (Face ID, fingerprint) is handled entirely by your device's secure enclave — PLOS never has access to biometric data.</li>
+    <li>We retain your data for as long as your account is active. You can request deletion at any time.</li>
+  </ul>
+
+  <h2>6. Your Rights</h2>
+  <ul>
+    <li><strong>Right to access:</strong> request a copy of all data we hold about you.</li>
+    <li><strong>Right to deletion:</strong> request complete deletion of your account and all associated data.</li>
+    <li><strong>Right to correction:</strong> update any incorrect information through the app settings.</li>
+    <li><strong>Right to portability:</strong> export your financial data as CSV or PDF at any time.</li>
+  </ul>
+  <p>To exercise any of these rights, email <a href="mailto:plos.support@gmail.com">plos.support@gmail.com</a>.</p>
+
+  <h2>7. Children's Privacy</h2>
+  <p>PLOS is not intended for users under 17 years of age. We do not knowingly collect personal information from children under 17. If you believe a child under 17 has provided personal information through PLOS, contact us immediately at <a href="mailto:plos.support@gmail.com">plos.support@gmail.com</a>.</p>
+
+  <h2>8. Location Data Specifics</h2>
+  <p>PLOS requests location permission for: showing nearby hospitals, police contacts, gas stations, and restaurants in the Safety module; providing weather alerts for your current location; enabling the Emergency SOS feature to share your GPS coordinates with emergency services and family contacts. Location data is not shared with any third party except when you actively use the Share My Location feature which sends your coordinates to people you explicitly choose. Background location is only used when family location sharing is actively enabled by you.</p>
+
+  <h2>9. Financial Data Specifics</h2>
+  <p>PLOS connects to your bank accounts through Plaid, a regulated financial data aggregator. Your banking credentials (username and password) are entered directly on Plaid's secure interface — PLOS never sees or stores your banking credentials. Plaid provides PLOS with read-only access to your account balances and transaction history. PLOS does not initiate transfers, payments, or any transactions on your behalf.</p>
+
+  <h2>10. Changes to This Policy</h2>
+  <p>We may update this Privacy Policy from time to time. We will notify you of significant changes via push notification and by updating the Last Updated date at the top of this page.</p>
+
+  <h2>11. Contact Us</h2>
+  <div class="box">
+    <div>Email: <a href="mailto:plos.support@gmail.com">plos.support@gmail.com</a></div>
+    <div>Developer: Moses Ndifon, LifeOS AI</div>
+    <div>Location: Stone Mountain, Georgia, USA</div>
+  </div>
+
+  <footer>
+    Canonical URL: <a href="https://mosesther130-code.github.io/plos-personal-life-os/privacy-policy.html">https://mosesther130-code.github.io/plos-personal-life-os/privacy-policy.html</a><br>
+    See also: <a href="terms-of-service.html">Terms of Service</a>
+  </footer>
+</main>
+</body>
+</html>
