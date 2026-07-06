@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PLOS &mdash; Delete My Account</title>
+<style>
+  body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#111;background:#fff;margin:0;padding:24px 16px;line-height:1.55}
+  main{max-width:640px;margin:0 auto}
+  h1{font-size:28px;margin:0 0 4px;color:#1E3A5F}
+  h2{font-size:18px;margin:24px 0 8px;color:#1E3A5F}
+  p{margin:8px 0}
+  a{color:#2563EB}
+  .brand{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+  .brand-badge{width:36px;height:36px;border-radius:8px;background:linear-gradient(180deg,#1E3A5F 0%,#0F172A 100%);color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:14px;letter-spacing:1px}
+  .meta{color:#555;font-size:14px;margin:0 0 20px}
+  .card{border:1px solid #E5E7EB;background:#F9FAFB;padding:20px;border-radius:10px;margin:20px 0}
+  label{display:block;font-weight:700;font-size:13px;color:#1E3A5F;margin:14px 0 6px;letter-spacing:0.2px}
+  input, select, textarea{width:100%;padding:10px 12px;border:1px solid #D1D5DB;border-radius:8px;font-size:15px;font-family:inherit;background:#fff;box-sizing:border-box}
+  input:focus, select:focus, textarea:focus{border-color:#2563EB;outline:2px solid #DBEAFE}
+  textarea{resize:vertical;min-height:80px}
+  .row{margin:0 0 8px}
+  button{margin-top:20px;background:#DC2626;color:#fff;border:none;font-weight:800;font-size:15px;padding:12px 20px;border-radius:10px;cursor:pointer;width:100%;letter-spacing:0.3px}
+  button:hover{background:#B91C1C}
+  button:focus{outline:3px solid #FCA5A5;outline-offset:2px}
+  .warn{background:#FEF3C7;border:1px solid #FCD34D;color:#92400E;padding:12px 14px;border-radius:8px;font-size:13px;margin:16px 0}
+  .foot{margin:32px 0 8px;color:#555;font-size:12px;border-top:1px solid #E5E7EB;padding-top:14px}
+  ul{padding-left:20px}
+  li{margin:4px 0}
+</style>
+</head>
+<body>
+<main>
+  <div class="brand">
+    <div class="brand-badge">PL</div>
+    <h1>PLOS</h1>
+  </div>
+  <p class="meta">Account &amp; Data Deletion Request</p>
+
+  <p>You can request permanent deletion of your PLOS account and all data
+  associated with it at any time. Fill out the short form below and tap
+  <strong>Submit Request</strong>. Your email app will open with a pre-filled
+  message addressed to our support team.</p>
+
+  <h2>What will be deleted</h2>
+  <ul>
+    <li>Your account credentials (email, hashed password)</li>
+    <li>Your profile (name, address, date of birth)</li>
+    <li>All financial data \u2014 income, expenses, debts, investments, transactions</li>
+    <li>All connected bank accounts and Plaid access tokens</li>
+    <li>All career data \u2014 resumes, job applications, tailored packages</li>
+    <li>All health, safety, and family data</li>
+    <li>All AI conversation history</li>
+    <li>Push notification tokens and device identifiers</li>
+  </ul>
+
+  <div class="warn">
+    <strong>This action is permanent.</strong> Once processed, your data
+    cannot be recovered. Requests are typically completed within 7 business days.
+  </div>
+
+  <div class="card">
+    <form id="delete-form" onsubmit="return submitRequest(event)">
+      <div class="row">
+        <label for="email">Account email address</label>
+        <input type="email" id="email" name="email" required
+               placeholder="you@example.com" autocomplete="email">
+      </div>
+
+      <div class="row">
+        <label for="reason">Reason for deletion</label>
+        <select id="reason" name="reason" required>
+          <option value="">Select a reason&hellip;</option>
+          <option value="No longer needed">No longer needed</option>
+          <option value="Privacy concerns">Privacy concerns</option>
+          <option value="Switching to another app">Switching to another app</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <label for="notes">Additional notes (optional)</label>
+        <textarea id="notes" name="notes" placeholder="Anything you want the team to know&hellip;"></textarea>
+      </div>
+
+      <button type="submit">Submit Deletion Request</button>
+    </form>
+  </div>
+
+  <h2>Prefer to email directly?</h2>
+  <p>Send a message to <a href="mailto:plos.support@gmail.com?subject=PLOS%20Account%20Deletion%20Request">plos.support@gmail.com</a> with the subject <em>PLOS Account Deletion Request</em> and include your account email address and reason. We will process the deletion within 7 business days and email you when it is complete.</p>
+
+  <div class="foot">
+    Canonical URL: <a href="https://mosesther130-code.github.io/plos-personal-life-os/delete-account.html">https://mosesther130-code.github.io/plos-personal-life-os/delete-account.html</a><br>
+    See also: <a href="privacy-policy.html">Privacy Policy</a> &middot; <a href="terms-of-service.html">Terms of Service</a>
+  </div>
+</main>
+
+<script>
+function submitRequest(e){
+  e.preventDefault();
+  var email = document.getElementById("email").value.trim();
+  var reason = document.getElementById("reason").value.trim();
+  var notes = document.getElementById("notes").value.trim();
+  if(!email || !reason){
+    alert("Please enter your account email and select a reason.");
+    return false;
+  }
+  var subject = "PLOS Account Deletion Request";
+  var lines = [
+    "Please delete my PLOS account and all associated data.",
+    "",
+    "Account email: " + email,
+    "Reason: " + reason
+  ];
+  if(notes){ lines.push("", "Additional notes:", notes); }
+  lines.push("", "Submitted from: https://mosesther130-code.github.io/plos-personal-life-os/delete-account.html");
+  var body = lines.join("\n");
+  var url = "mailto:plos.support@gmail.com?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body);
+  window.location.href = url;
+  return false;
+}
+</script>
+</body>
+</html>
