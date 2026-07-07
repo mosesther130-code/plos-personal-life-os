@@ -3,13 +3,22 @@
     "version": ">= 5.0.0"
   },
   "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      }
+    },
     "production": {
       "android": {
         "buildType": "app-bundle"
       },
-      "node": "18.0.0",
       "env": {
-        "NPM_FLAGS": "--legacy-peer-deps"
+        "NPM_CONFIG_LEGACY_PEER_DEPS": "true"
       }
     }
   }
