@@ -33,6 +33,12 @@ CAPTIONS = {
         "Translate 12 languages & convert 13 currencies in real time",
     "screenshot_06_chatbot.png":
         "Your personal AI advisor \u2014 answers every question about your life",
+    "screenshot_07_travel.png":
+        "Plan trips with live flight & hotel prices \u2014 built-in travel advisories",
+    "screenshot_08_shopping.png":
+        "AI Deal Finder \u2014 scan 15+ retailers for the best price",
+    "screenshot_09_business.png":
+        "AI-generated business ideas tailored to your skills",
 }
 
 
