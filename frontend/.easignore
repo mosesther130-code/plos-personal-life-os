@@ -1,0 +1,35 @@
+# Frontend-scoped .easignore (in case EAS uses /app/frontend as project root).
+# Duplicates key rules from /app/.easignore so exclusions apply regardless of
+# which directory EAS treats as the upload root.
+
+# Non-mobile artifacts (defensive — these shouldn't be here anyway)
+../backend/
+../docs/
+../scripts/
+../memory/
+../test_reports/
+../store-assets/
+../.pytest_cache/
+
+# Local caches / build outputs
+.expo/
+.metro-cache/
+dist/
+web-build/
+coverage/
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+*.log
+
+# Test files
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+
+# Env / secrets — EAS should use its own secrets store
+.env.local
+.env*.local

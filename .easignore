@@ -1,0 +1,54 @@
+# .easignore — exclude non-frontend files from EAS build uploads.
+# EAS build only needs /app/frontend for the Android/iOS build. Everything
+# else adds upload time and bloats the tarball. The Expo build service reads
+# this file when the project has no .gitignore or wants extra exclusions.
+
+# --- Python / backend (not needed for mobile build) ---
+backend/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+.pytest_cache/
+**/.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+
+# --- Documentation & scripts (not needed for mobile build) ---
+docs/
+scripts/
+memory/
+test_reports/
+store-assets/
+tests/
+*.md
+!frontend/**/*.md
+
+# --- OS / editor cruft ---
+.DS_Store
+Thumbs.db
+*.swp
+*.log
+
+# --- Git (already excluded by EAS but be explicit) ---
+.git/
+.gitignore
+.dockerignore
+
+# --- Node caches / build outputs (frontend still needs node_modules, DO NOT ignore that here) ---
+**/.expo/
+**/.metro-cache/
+**/dist/
+**/web-build/
+**/coverage/
+
+# --- Env files with secrets (EAS should use its own secret store) ---
+backend/.env
+.env.local
+.env*.local
+
+# --- Test artifacts ---
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
