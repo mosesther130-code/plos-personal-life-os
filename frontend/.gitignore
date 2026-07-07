@@ -39,6 +39,8 @@ yarn-error.*
 
 app-example
 
-# Firebase credentials (DO NOT COMMIT)
-google-services.json
-GoogleService-Info.plist
+# Firebase credentials
+# NOTE: Kept in-repo so EAS Build bundles them into the APK/AAB.
+# For higher security, move these to EAS Secrets (Secure Files) and remove.
+# google-services.json
+# GoogleService-Info.plist

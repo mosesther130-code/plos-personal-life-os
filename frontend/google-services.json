@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_number": "830884975737",
+    "firebase_url": "https://plos-53fbd-default-rtdb.firebaseio.com",
+    "project_id": "plos-53fbd",
+    "storage_bucket": "plos-53fbd.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:830884975737:android:fecf978f9b7b51afc7f0a8",
+        "android_client_info": {
+          "package_name": "app.emergent.lifeoshub32dc2e94bd"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDM9lIqNe7f9x8_BYICPoE3OYfCquBPj0Y"
+        },
+        {
+          "current_key": "AIzaSyBDCUd3vPBCdY_QM4vglW8AxzlVtsaYNEo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:830884975737:android:39ec61ac04c0cc68c7f0a8",
+        "android_client_info": {
+          "package_name": "com.mosesndifon.plos"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDM9lIqNe7f9x8_BYICPoE3OYfCquBPj0Y"
+        },
+        {
+          "current_key": "AIzaSyBDCUd3vPBCdY_QM4vglW8AxzlVtsaYNEo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
