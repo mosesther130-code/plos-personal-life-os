@@ -1,0 +1,16 @@
+{
+  "cli": {
+    "version": ">= 5.0.0"
+  },
+  "build": {
+    "production": {
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "node": "18.0.0",
+      "env": {
+        "NPM_FLAGS": "--legacy-peer-deps"
+      }
+    }
+  }
+}
