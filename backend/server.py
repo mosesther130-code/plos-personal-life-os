@@ -6188,6 +6188,14 @@ async def root():
 # Include router
 app.include_router(api_router)
 
+# Static store assets — icons/screenshots/etc. for Play Store download
+# Served at /api/store-assets/* so preview URL can hand them out directly.
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+import os as _os  # noqa: E402
+_STORE_DIR = "/app/frontend/assets/store"
+if _os.path.isdir(_STORE_DIR):
+    app.mount("/api/store-assets", StaticFiles(directory=_STORE_DIR), name="store-assets")
+
 # Mount Student Loans sub-router (Enhancement 2)
 from student_loans import make_router as make_student_loans_router  # noqa: E402
 
