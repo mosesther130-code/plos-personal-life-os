@@ -72,6 +72,5 @@
     "postcss": "8.5.10",
     "uuid": "11.1.1"
   },
-  "private": true,
-  "packageManager": "npm@10.8.2"
+  "private": true
 }
