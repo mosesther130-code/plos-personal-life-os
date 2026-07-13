@@ -1544,6 +1544,20 @@ export const careerPrefsApi = {
 
 
 // ----------------- Navigation Module -----------------
+export const personalityApi = {
+  frameworks: () => request<{ frameworks: any[] }>("/personality/frameworks"),
+  questions: (assessment_type: string) => request<{ questions: any[]; framework: any; total: number }>(`/personality/questions/${assessment_type}`),
+  status: () => request<{ completed: any[]; in_progress: any[]; summary: Record<string, any> }>("/personality/status"),
+  start: (assessment_type: string) => request<{ session_id: string; resumed: boolean; responses: Record<string, any> }>("/personality/session/start", { method: "POST", body: { assessment_type } }),
+  save: (session_id: string, assessment_type: string, responses: Record<string, any>) =>
+    request<any>("/personality/session/save", { method: "POST", body: { session_id, assessment_type, responses } }),
+  submit: (session_id: string, assessment_type: string, responses: Record<string, any>, time_taken_seconds?: number) =>
+    request<any>("/personality/session/submit", { method: "POST", body: { session_id, assessment_type, responses, time_taken_seconds } }),
+  results: (assessment_type: string) => request<{ result: any; framework: any }>(`/personality/results/${assessment_type}`),
+  dna: () => request<{ dna: any; cached: boolean; message?: string }>("/personality/dna"),
+  refreshDna: () => request<{ dna: any }>("/personality/dna/refresh", { method: "POST" }),
+};
+
 export const navigationApi = {
   places: () => request<{ presets: any[]; user_places: any[]; total: number }>("/navigation/places"),
   addPlace: (data: any) => request<any>("/navigation/places", { method: "POST", body: data }),

@@ -27,7 +27,7 @@ import {
 } from "lucide-react-native";
 
 import { useAuth } from "@/src/lib/auth-context";
-import { dashboardApi, aiApi, alertsApi, seedDemo } from "@/src/lib/api";
+import { dashboardApi, aiApi, alertsApi, seedDemo, personalityApi } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
 import { ScoreRing } from "@/src/components/ScoreRing";
 import { AlertRow } from "@/src/components/AlertRow";
@@ -49,6 +49,7 @@ const MODULES = [
   { key: "deals", title: "Deals", icon: Tag, color: "#EC4899", route: "/shopping" },
   { key: "travel", title: "Travel", icon: Plane, color: "#A855F7", route: "/travel" },
   { key: "legal", title: "Legal", icon: Scale, color: "#F59E0B", route: "/legal" },
+  { key: "personality", title: "Personality", icon: Brain, color: "#3B82F6", route: "/personality" },
   { key: "health", title: "Health", icon: HeartPulse, color: colors.danger, route: "/health" },
 ];
 
@@ -74,6 +75,8 @@ export default function Home() {
   const [dashboard, setDashboard] = useState<any>(null);
   const [advice, setAdvice] = useState<any>(null);
   const [alerts, setAlerts] = useState<any[]>([]);
+  const [personalityDna, setPersonalityDna] = useState<any>(null);
+  const [personalityStatus, setPersonalityStatus] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [adviceLoading, setAdviceLoading] = useState(false);
@@ -87,6 +90,14 @@ export default function Home() {
     ]);
     setDashboard(d);
     setAlerts(a.alerts);
+  }, []);
+
+  const loadPersonality = useCallback(async () => {
+    try {
+      const [dna, status] = await Promise.all([personalityApi.dna(), personalityApi.status()]);
+      setPersonalityDna(dna?.dna || null);
+      setPersonalityStatus(status || null);
+    } catch (_e) {}
   }, []);
 
   const loadAdvice = useCallback(async (force = false) => {
@@ -104,15 +115,15 @@ export default function Home() {
     (async () => {
       setLoading(true);
       try {
-        await Promise.all([loadDashboard(), loadAdvice(false)]);
+        await Promise.all([loadDashboard(), loadAdvice(false), loadPersonality()]);
       } catch (_e) {}
       setLoading(false);
     })();
-  }, [loadDashboard, loadAdvice]);
+  }, [loadDashboard, loadAdvice, loadPersonality]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([loadDashboard(), loadAdvice(true)]);
+    await Promise.all([loadDashboard(), loadAdvice(true), loadPersonality()]);
     setRefreshing(false);
   };
 
@@ -345,6 +356,32 @@ export default function Home() {
             </>
           )}
         </View>
+
+        {/* Know Yourself — Personality DNA card */}
+        <TouchableOpacity
+          style={styles.knowYourselfCard}
+          onPress={() => router.push("/personality")}
+          testID="know-yourself-card"
+        >
+          <View style={styles.knowLeft}>
+            <Brain color="#3B82F6" size={22} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.knowLabel}>KNOW YOURSELF</Text>
+            {personalityDna?.headline_summary ? (
+              <>
+                <Text style={styles.knowTitle} numberOfLines={2}>{personalityDna.headline_summary}</Text>
+                <Text style={styles.knowSub}>{(personalityStatus?.completed?.length || 0)} / 6 assessments · Tap to view your Personality DNA</Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.knowTitle}>Discover your Personality DNA</Text>
+                <Text style={styles.knowSub}>6 scientifically validated assessments — Big Five, MBTI, Enneagram, EQ, VIA, DISC.</Text>
+              </>
+            )}
+          </View>
+          <ChevronRight color={colors.textSecondary} size={16} />
+        </TouchableOpacity>
 
         {/* 5. Alerts */}
         <View style={styles.alertsCard}>
@@ -647,6 +684,28 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 13,
   },
+
+
+  // Know Yourself (Personality DNA card)
+  knowYourselfCard: {
+    marginTop: spacing.lg,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: spacing.md,
+    backgroundColor: "rgba(59,130,246,0.06)",
+    borderColor: "rgba(59,130,246,0.35)",
+    borderWidth: 1,
+    borderRadius: radius.lg,
+  },
+  knowLeft: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: "rgba(59,130,246,0.15)",
+    alignItems: "center", justifyContent: "center",
+  },
+  knowLabel: { color: "#3B82F6", fontSize: 10, fontWeight: "800", letterSpacing: 0.6 },
+  knowTitle: { color: colors.textPrimary, fontSize: 14, fontWeight: "700", marginTop: 3, lineHeight: 19 },
+  knowSub: { color: colors.textSecondary, fontSize: 11, marginTop: 4, lineHeight: 15 },
 
   // Alerts
   alertsCard: {

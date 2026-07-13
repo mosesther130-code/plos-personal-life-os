@@ -6516,6 +6516,11 @@ from navigation_service import make_navigation_router  # noqa: E402
 
 app.include_router(make_navigation_router(db, get_current_user_id))
 
+# ---------------------------- Personality Assessment Module ---------------------------
+from personality_service import make_personality_router  # noqa: E402
+
+app.include_router(make_personality_router(db, get_current_user_id))
+
 # ---------------------------------------------------------------------------
 # AI Router — multi-model dispatch layer
 # ---------------------------------------------------------------------------

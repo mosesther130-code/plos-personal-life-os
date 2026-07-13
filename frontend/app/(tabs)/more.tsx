@@ -16,6 +16,7 @@ import {
   Scale,
   ShoppingBag,
   HeartPulse,
+  Brain,
   MessageCircle,
   Settings as SettingsIcon,
   ChevronRight,
@@ -98,6 +99,14 @@ const MODULES: ModuleItem[] = [
     icon: ShoppingBag,
     color: "#EC4899",
     route: "/shopping",
+  },
+  {
+    key: "personality",
+    title: "Personality",
+    subtitle: "Know yourself · 6 assessments",
+    icon: Brain,
+    color: "#3B82F6",
+    route: "/personality",
   },
   {
     key: "health",
