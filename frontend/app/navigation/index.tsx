@@ -8,10 +8,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Image, ActivityIndicator, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { ArrowLeft, Search, MapPin, Compass, Navigation, Home as HomeIcon, Briefcase, Building, Leaf, Shield, Landmark, Star, Trash2, Loader2, X } from "lucide-react-native";
+import { ArrowLeft, Search, MapPin, Compass, Navigation, Home as HomeIcon, Briefcase, Building, Leaf, Shield, Landmark, Star, Trash2, X } from "lucide-react-native";
 import { colors, spacing, radius } from "@/src/lib/theme";
 import { navigationApi } from "@/src/lib/api";
-import { useCountry } from "@/src/lib/country-context";
 
 type ModeKey = "driving" | "truck" | "transit" | "taxi" | "cycling" | "walking" | "hiking" | "trail_run" | "mountain" | "boat" | "train" | "motorcycle";
 
@@ -35,21 +34,19 @@ const DEFAULT_HOME = { lat: 33.8073, lng: -84.1700 };
 export default function NavigationHome() {
   const router = useRouter();
   const params = useLocalSearchParams<{ destination?: string; mode?: string; query?: string }>();
-  const { countryCode } = useCountry();
   const [places, setPlaces] = useState<{ presets: any[]; user_places: any[] }>({ presets: [], user_places: [] });
   const [analytics, setAnalytics] = useState<any>(null);
   const [mode, setMode] = useState<ModeKey>((params.mode as ModeKey) || "driving");
   const [query, setQuery] = useState<string>(String(params.query || ""));
   const [loading, setLoading] = useState(true);
 
-  // Address autocomplete state
+  // Address autocomplete state (GLOBAL — no country restriction)
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [autoLoading, setAutoLoading] = useState(false);
   const [resolveLoading, setResolveLoading] = useState(false);
   const [provider, setProvider] = useState<string>("");
   const debounceRef = useRef<any>(null);
-  const abortRef = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -106,7 +103,7 @@ export default function NavigationHome() {
     setSuggestionsOpen(true);
   };
 
-  // ------- Address autocomplete (debounced) -------
+  // ------- Address autocomplete (debounced, GLOBAL search) -------
   const runAutocomplete = useCallback(async (q: string) => {
     if (!q || q.trim().length < 2) {
       setSuggestions([]);
@@ -115,10 +112,11 @@ export default function NavigationHome() {
     }
     setAutoLoading(true);
     try {
+      // Global search — no country restriction. Location bias is still applied
+      // so nearby results are ranked higher, but any address worldwide is returned.
       const r = await navigationApi.autocomplete(q.trim(), {
         near_lat: DEFAULT_HOME.lat,
         near_lng: DEFAULT_HOME.lng,
-        country: countryCode,
       });
       setSuggestions(r.predictions || []);
       setProvider(r.provider || "");
@@ -128,7 +126,7 @@ export default function NavigationHome() {
     } finally {
       setAutoLoading(false);
     }
-  }, [countryCode]);
+  }, []);
 
   const onQueryChange = (v: string) => {
     setQuery(v);
@@ -266,7 +264,7 @@ export default function NavigationHome() {
                   ))}
                   <View style={styles.suggestionFooter}>
                     <Text style={styles.suggestionFooterText}>
-                      Powered by {provider === "google" ? "Google Places" : provider === "osm" ? "OpenStreetMap" : "PLOS Search"} · Country filter: {countryCode}
+                      🌍 Global search · Powered by {provider === "google" ? "Google Places" : provider === "osm" ? "OpenStreetMap" : "PLOS Search"}
                     </Text>
                   </View>
                 </>
