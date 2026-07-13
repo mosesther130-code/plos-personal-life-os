@@ -1548,6 +1548,15 @@ export const navigationApi = {
   places: () => request<{ presets: any[]; user_places: any[]; total: number }>("/navigation/places"),
   addPlace: (data: any) => request<any>("/navigation/places", { method: "POST", body: data }),
   deletePlace: (id: string) => request<any>(`/navigation/places/${id}`, { method: "DELETE" }),
+  autocomplete: (q: string, opts?: { near_lat?: number; near_lng?: number; country?: string }) => {
+    const params = new URLSearchParams({ q });
+    if (opts?.near_lat != null) params.set("near_lat", String(opts.near_lat));
+    if (opts?.near_lng != null) params.set("near_lng", String(opts.near_lng));
+    if (opts?.country) params.set("country", opts.country);
+    return request<{ predictions: any[]; provider: string }>(`/navigation/autocomplete?${params.toString()}`);
+  },
+  placeDetails: (place_id: string) =>
+    request<{ lat: number; lng: number; address: string; provider: string }>(`/navigation/place-details?place_id=${encodeURIComponent(place_id)}`),
   route: (data: { origin: { lat: number; lng: number }; destination: { lat: number; lng: number }; mode: string; waypoints?: any[]; avoid_tolls?: boolean; avoid_highways?: boolean }) =>
     request<any>("/navigation/route", { method: "POST", body: data }),
   compare: (data: { origin: { lat: number; lng: number }; destination: { lat: number; lng: number } }) =>

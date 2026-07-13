@@ -2,9 +2,16 @@
 PLOS — Country context helper for locale-aware AI responses.
 Mirror of frontend `country-context.ts`. Used by Legal Advisor and
 Shopping & Deals endpoints to produce country-specific advice.
+
+Structure:
+- COUNTRY_MAP (below): hand-curated detailed info for the 8 primary markets.
+- iso_countries.ISO_COUNTRIES: full ISO 3166-1 list (~195 countries) used as
+  a fallback and for the searchable typeahead in the frontend.
 """
 from __future__ import annotations
 from typing import Dict, Optional
+
+from iso_countries import ISO_COUNTRIES, iso_country
 
 COUNTRY_MAP: Dict[str, Dict[str, str]] = {
     "US": {
@@ -100,12 +107,40 @@ COUNTRY_MAP: Dict[str, Dict[str, str]] = {
 DEFAULT_COUNTRY = "US"
 
 
+def _generic_country_info(code: str) -> Dict[str, str]:
+    """Fallback for any ISO country not in COUNTRY_MAP (still gets solid AI localisation)."""
+    iso = iso_country(code)
+    name = iso["name"]
+    return {
+        "name": name,
+        "flag": iso["flag"],
+        "jurisdiction": f"the national laws and regulations of {name}",
+        "currency": iso["currency"],
+        "currency_symbol": iso["symbol"],
+        "retailers": f"the leading national and online retailers operating in {name}",
+        "regulator": f"the primary consumer-protection and financial regulators of {name}",
+        "consumer_law_ref": f"the consumer-protection statutes and civil code of {name}",
+        "notes": (
+            f"Prices in {iso['currency']} ({iso['symbol']}). Cite retailers, banks, telcos, "
+            f"government agencies, and courts that actually operate in {name}. "
+            f"If a specific statute is uncertain, describe the *type* of law that applies "
+            f"in {name} (e.g. its consumer-protection code, labour code, family code) rather "
+            f"than inventing article numbers."
+        ),
+    }
+
+
 def get_country(code: Optional[str]) -> Dict[str, str]:
-    """Return the country info block. Falls back to US if unknown."""
+    """Return the country info block. Uses hand-curated map when available,
+    otherwise generates a solid generic profile from the ISO list."""
     if not code:
         return COUNTRY_MAP[DEFAULT_COUNTRY]
     c = code.strip().upper()
-    return COUNTRY_MAP.get(c, COUNTRY_MAP[DEFAULT_COUNTRY])
+    if c in COUNTRY_MAP:
+        return COUNTRY_MAP[c]
+    if c in ISO_COUNTRIES:
+        return _generic_country_info(c)
+    return COUNTRY_MAP[DEFAULT_COUNTRY]
 
 
 def country_prompt_block(code: Optional[str]) -> str:

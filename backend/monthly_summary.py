@@ -2,7 +2,7 @@
 
 Called monthly (via scheduler) or on-demand from the frontend. Uses the
 response_cache manager so repeated views on the same month don't re-hit
-Claude.
+PLOS AI.
 """
 from __future__ import annotations
 
@@ -105,7 +105,7 @@ async def generate_monthly_summary(user_id: str, db, month_iso: Optional[str] = 
     prev_txs = await _fetch_month_transactions(user_id, db, prev_start_iso, prev_end_iso)
     prev_agg = _aggregate(prev_txs)
 
-    # Call Claude for narrative
+    # Call PLOS AI for narrative
     narrative = await _claude_narrative(label, current_agg, prev_agg)
 
     doc = {
@@ -126,7 +126,7 @@ async def generate_monthly_summary(user_id: str, db, month_iso: Optional[str] = 
 
 
 async def _claude_narrative(month_label: str, cur: Dict[str, Any], prev: Dict[str, Any]) -> str:
-    """Ask Claude for a 3-4 paragraph conversational financial summary."""
+    """Ask PLOS AI for a 3-4 paragraph conversational financial summary."""
     try:
         from emergentintegrations.llm.chat import LlmChat, UserMessage
         api_key = os.getenv("EMERGENT_LLM_KEY")
@@ -162,7 +162,7 @@ async def _claude_narrative(month_label: str, cur: Dict[str, Any], prev: Dict[st
         resp = await chat.send_message(UserMessage(text=prompt))
         return resp if isinstance(resp, str) else str(resp)
     except Exception as e:
-        logger.warning("Monthly narrative Claude call failed: %s", e)
+        logger.warning("Monthly narrative PLOS AI call failed: %s", e)
         return _fallback_narrative(month_label, cur, prev)
 
 

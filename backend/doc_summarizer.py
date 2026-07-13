@@ -1,6 +1,6 @@
 """
 PLOS — Enhancement 12: AI Document Summarizer
-Global utility that ingests a PDF / image / DOCX / TXT and returns a Claude
+Global utility that ingests a PDF / image / DOCX / TXT and returns a PLOS AI
 summary tailored to a focus (financial, medical, legal, technical, etc.).
 """
 from __future__ import annotations

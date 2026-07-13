@@ -87,11 +87,11 @@ def test_02_post_search_returns_valid_structure(headers):
     start = time.time()
     trip_id = STATE["trip_id"]
     url = f"{BASE_URL}/api/travel/trips/{trip_id}/search"
-    # generous 90s timeout for Claude
+    # generous 90s timeout for PLOS AI
     try:
         r = requests.post(url, headers=headers, json={"force": True}, timeout=100)
     except requests.exceptions.Timeout:
-        pytest.fail("Claude search exceeded 100s timeout")
+        pytest.fail("PLOS AI search exceeded 100s timeout")
     elapsed = time.time() - start
     STATE["elapsed_s"] = round(elapsed, 2)
 

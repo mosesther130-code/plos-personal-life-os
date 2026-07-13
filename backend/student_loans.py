@@ -176,7 +176,7 @@ def make_router(db, get_current_user_id, emergent_llm_key: str, llm_chat_cls, us
         )
         return {"ok": True}
 
-    # --------------------------- Repayment Plans (Claude) -----------------
+    # --------------------------- Repayment Plans (PLOS AI) -----------------
     @router.post("/repayment-plans")
     async def repayment_plans(body: Dict[str, Any], user_id: str = Depends(get_current_user_id)):
         debt_id = body.get("debt_id")
@@ -241,7 +241,7 @@ def make_router(db, get_current_user_id, emergent_llm_key: str, llm_chat_cls, us
         )
         return {"plans": plans, "cached": False, "generated_at": generated_at}
 
-    # --------------------------- Forgiveness Opportunities (Claude) -------
+    # --------------------------- Forgiveness Opportunities (PLOS AI) -------
     @router.post("/forgiveness")
     async def forgiveness(body: Dict[str, Any], user_id: str = Depends(get_current_user_id)):
         debt_id = body.get("debt_id")

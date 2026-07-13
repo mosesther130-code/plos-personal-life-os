@@ -7,7 +7,7 @@ Covers new/updated endpoints:
 - PUT  /api/travel/trips/{id}      (edit: destination_name, dates, purpose, status)
 - DELETE /api/travel/trips/{id}    (delete)
 - PUT  /api/travel/trips/{id}/pin  (toggle pinned; persists)
-- POST /api/travel/trips/{id}/scan (AI Router real_time_research -> Claude fallback)
+- POST /api/travel/trips/{id}/scan (AI Router real_time_research -> PLOS AI fallback)
 
 Existing endpoints (regression):
 - POST /api/travel/insights

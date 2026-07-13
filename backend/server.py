@@ -1,6 +1,6 @@
 """
 PLOS — Personal Life Operating System Backend
-FastAPI + MongoDB + JWT Auth + Claude Sonnet 4.5 AI integration
+FastAPI + MongoDB + JWT Auth + PLOS AI Sonnet 4.5 AI integration
 """
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -908,7 +908,7 @@ class DebtStrategyRequest(BaseModel):
 async def ai_debt_strategy(
     payload: DebtStrategyRequest, user_id: str = Depends(get_current_user_id)
 ):
-    """Claude generates a debt strategy recommendation with payment order + extra
+    """PLOS AI generates a debt strategy recommendation with payment order + extra
     payment suggestion."""
     debts = await db.debts.find({"user_id": user_id}, {"_id": 0, "user_id": 0}).to_list(50)
     if not debts:
@@ -1839,7 +1839,7 @@ async def resume_analyze(
     payload: ResumeAnalyzeRequest = ResumeAnalyzeRequest(),
     user_id: str = Depends(get_current_user_id),
 ):
-    """Claude analyzes resume → returns ats_score, strengths[], gaps[], improvements[]."""
+    """PLOS AI analyzes resume → returns ats_score, strengths[], gaps[], improvements[]."""
     career = await db.career_profile.find_one(
         {"user_id": user_id}, {"_id": 0, "user_id": 0}
     )
@@ -1986,7 +1986,7 @@ Return JSON ONLY (no markdown):
 
 @api_router.post("/career/path-advisor")
 async def path_advisor(user_id: str = Depends(get_current_user_id)):
-    """Claude proposes 3 career paths with cert/courses/timeline/salary."""
+    """PLOS AI proposes 3 career paths with cert/courses/timeline/salary."""
     career = await db.career_profile.find_one(
         {"user_id": user_id}, {"_id": 0, "user_id": 0}
     )
@@ -3938,7 +3938,7 @@ async def translate(
         user_id=user_id,
     )
     translated = (routed.get("content") or "").strip()
-    # Strip surrounding quotes if Claude wrapped output
+    # Strip surrounding quotes if PLOS AI wrapped output
     if translated.startswith(("'", '"')) and translated.endswith(("'", '"')):
         translated = translated[1:-1]
 
@@ -5404,7 +5404,7 @@ async def scan_trip(trip_id: str, user_id: str = Depends(get_current_user_id)):
     """Full-refresh: fetch fresh flight/hotel prices, weather, advisory,
     and AI recommendations for a trip.  Routes AI calls via the AI Router
     with task_type=real_time_research (Perplexity when configured,
-    otherwise Claude fallback).
+    otherwise PLOS AI fallback).
 
     Returns AI-estimated one-way + round-trip flight prices and a mid-range
     hotel/night estimate PLUS `booking_links` — deterministic deep links to
@@ -5548,7 +5548,7 @@ async def get_destination_insights(body: InsightsRequest, user_id: str = Depends
             except Exception:
                 # Fallback minimal scaffold
                 insights = {
-                    "best_time_to_visit": "Information unavailable — Claude returned malformed JSON.",
+                    "best_time_to_visit": "Information unavailable — PLOS AI returned malformed JSON.",
                     "visa_requirement": {"required": False, "type": "check official sources", "processing_days": 0, "cost_usd": None, "apply_url": None, "notes": text[:400]},
                     "vaccinations": [], "packing_list": {"documents": [], "clothing": [], "electronics": [], "health": [], "other": []},
                     "dos": [], "donts": [],
@@ -6340,7 +6340,7 @@ from career_filters import make_router as make_career_filters_router  # noqa: E4
 
 app.include_router(make_career_filters_router(db, get_current_user_id))
 
-# Travel Search — AI Flight + Hotel search via Claude Sonnet 4.5
+# Travel Search — AI Flight + Hotel search via PLOS AI Sonnet 4.5
 from travel_search import make_router as make_travel_search_router  # noqa: E402
 
 app.include_router(
@@ -6506,7 +6506,7 @@ from insurance_deals import make_insurance_router  # noqa: E402
 
 app.include_router(make_insurance_router(db, get_current_user_id))
 
-# Insurance Quote Generation Engine (Claude Sonnet 4.5)
+# Insurance Quote Generation Engine (PLOS AI Sonnet 4.5)
 from insurance_quotes import make_quotes_router  # noqa: E402
 
 app.include_router(make_quotes_router(db, get_current_user_id))

@@ -1,6 +1,6 @@
 """
 Iteration 36 — Country Context integration tests for Legal Advisor
-and Shopping & Deals modules, plus Claude → PLOS rebrand check.
+and Shopping & Deals modules, plus PLOS AI → PLOS rebrand check.
 """
 import os
 import re
@@ -376,13 +376,13 @@ class TestRegression:
 
 
 # ============================================================
-# Claude → PLOS rebrand
+# PLOS AI → PLOS rebrand
 # ============================================================
 class TestClaudeToPlosRebrand:
 
     def test_helper_error_message_uses_plos(self, auth_headers):
         """Trigger a career-files resume-generate with invalid data to see
-        whether the error string says PLOS AI (not Claude)."""
+        whether the error string says PLOS AI (not PLOS AI)."""
         # Send obviously invalid payload; expect 4xx/5xx with 'PLOS' in detail
         r = requests.post(
             f"{API}/career/files/resume-generate",
@@ -391,7 +391,7 @@ class TestClaudeToPlosRebrand:
             timeout=30,
         )
         # We don't strictly enforce a specific code — we just want to see if
-        # any 'Claude error' string leaked. Skip if endpoint doesn't exist.
+        # any 'PLOS AI error' string leaked. Skip if endpoint doesn't exist.
         if r.status_code == 404:
             pytest.skip("resume-generate endpoint not present in this build")
         detail = ""
@@ -399,9 +399,9 @@ class TestClaudeToPlosRebrand:
             detail = r.json().get("detail", "")
         except Exception:
             detail = r.text
-        # Assertion: 'Claude error' string must NOT be in the response
-        assert "Claude error" not in str(detail), (
-            f"Found unpatched 'Claude error' in response: {detail}"
+        # Assertion: 'PLOS AI error' string must NOT be in the response
+        assert "PLOS AI error" not in str(detail), (
+            f"Found unpatched 'PLOS AI error' in response: {detail}"
         )
 
     def test_grep_no_claude_error_strings_in_code(self):
@@ -433,3 +433,69 @@ class TestClaudeToPlosRebrand:
             "Found lingering 'Claude error' strings that should be 'PLOS AI error':\n"
             + "\n".join(offenders)
         )
+
+
+# =============================================================================
+# Navigation Address Autocomplete (iteration 37)
+# =============================================================================
+class TestNavigationAutocomplete:
+    def test_autocomplete_us(self, auth_headers):
+        r = requests.get(
+            f"{API}/navigation/autocomplete",
+            params={"q": "Central Park", "country": "US"},
+            headers=auth_headers,
+            timeout=15,
+        )
+        assert r.status_code == 200
+        j = r.json()
+        assert j["provider"] in ("google", "osm"), j
+        assert len(j["predictions"]) > 0
+        first = j["predictions"][0]
+        assert first["description"], "prediction must have description"
+
+    def test_autocomplete_ph_country_filter(self, auth_headers):
+        r = requests.get(
+            f"{API}/navigation/autocomplete",
+            params={"q": "SM Mall", "country": "PH"},
+            headers=auth_headers,
+            timeout=15,
+        )
+        assert r.status_code == 200
+        j = r.json()
+        assert len(j["predictions"]) > 0
+        joined = " | ".join(p.get("description", "") for p in j["predictions"])
+        assert "Philippines" in joined or "PH" in joined.upper(), (
+            f"PH filter should return PH-based results: {joined}"
+        )
+
+    def test_autocomplete_min_length_validation(self, auth_headers):
+        r = requests.get(
+            f"{API}/navigation/autocomplete",
+            params={"q": "a"},
+            headers=auth_headers,
+            timeout=15,
+        )
+        assert r.status_code == 422
+
+    def test_place_details_google(self, auth_headers):
+        r = requests.get(
+            f"{API}/navigation/autocomplete",
+            params={"q": "Empire State Building"},
+            headers=auth_headers,
+            timeout=15,
+        )
+        assert r.status_code == 200
+        preds = r.json().get("predictions") or []
+        assert preds, "should have at least one prediction"
+        place_id = preds[0]["place_id"]
+        r2 = requests.get(
+            f"{API}/navigation/place-details",
+            params={"place_id": place_id},
+            headers=auth_headers,
+            timeout=15,
+        )
+        assert r2.status_code == 200, r2.text
+        d = r2.json()
+        assert d.get("lat") and d.get("lng"), d
+        assert 30 < d["lat"] < 45
+        assert -80 < d["lng"] < -70

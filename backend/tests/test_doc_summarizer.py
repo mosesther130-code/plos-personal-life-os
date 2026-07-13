@@ -57,7 +57,7 @@ FIN_TXT = (
 
 @pytest.fixture(scope="module")
 def saved_summary_id(headers):
-    """Run a real Claude summarize with save=true; returns summary_id or None if budget exhausted."""
+    """Run a real PLOS AI summarize with save=true; returns summary_id or None if budget exhausted."""
     files = {"file": ("acme_statement.txt", FIN_TXT, "text/plain")}
     data = {"focus": "financial", "save": "true"}
     r = requests.post(f"{API}/doc-summarizer/summarize", headers=headers, files=files, data=data, timeout=60)

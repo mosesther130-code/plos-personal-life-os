@@ -5,7 +5,7 @@ breach (list/resolve, HIBP key), identity-theft-guide (get/check).
 
 Notes:
 - Reseeds canonical demo data before this module so values are deterministic.
-- Real Claude call in test_refresh_tip — sleeps up to ~120s.
+- Real PLOS AI call in test_refresh_tip — sleeps up to ~120s.
 """
 import os
 import time
@@ -209,7 +209,7 @@ class TestCredit:
 
     @pytest.mark.timeout(180)
     def test_refresh_tip_and_cache(self, auth):
-        """Real Claude call — ~60-90s. Verifies cache via GET /security/credit."""
+        """Real PLOS AI call — ~60-90s. Verifies cache via GET /security/credit."""
         r = requests.post(
             f"{BASE_URL}/api/security/credit/refresh-tip",
             headers=auth, timeout=180,

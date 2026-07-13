@@ -1,5 +1,5 @@
 """Regression tests for iteration 11 fixes:
-1. Cloudflare 60s timeout on Claude calls (business plan + utility find-better)
+1. Cloudflare 60s timeout on PLOS AI calls (business plan + utility find-better)
 2. Verified via public preview URL.
 """
 import os

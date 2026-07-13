@@ -320,7 +320,7 @@ def make_router(db, get_current_user_id):
         if not top_slots:
             top_slots = slots[:6]
 
-        # Build Claude prompt
+        # Build PLOS AI prompt
         prompt_data = {
             "duration_minutes": payload.duration_minutes,
             "earliest_local_hour": payload.earliest_local_hour,

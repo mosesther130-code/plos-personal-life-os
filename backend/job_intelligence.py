@@ -1,6 +1,6 @@
 """PLOS Career — Job Intelligence Engine (v1, Phase 1).
 
-Multi-source aggregation + fake filter + Claude match scoring +
+Multi-source aggregation + fake filter + PLOS AI match scoring +
 apply-link verification + Career Insights.
 
 Working sources (Phase 1 — all free, no key required):
@@ -436,7 +436,7 @@ def make_router(db, get_current_user_id, emergent_llm_key, llm_chat_cls, user_ms
         return resp if isinstance(resp, str) else str(resp)
 
     async def score_job_match(job: Dict[str, Any], resume_text: str) -> Dict[str, Any]:
-        """Claude 6-dimension match scoring."""
+        """PLOS AI 6-dimension match scoring."""
         prompt = f"""CANDIDATE RESUME:
 {resume_text[:6000]}
 

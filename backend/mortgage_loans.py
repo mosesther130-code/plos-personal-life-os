@@ -1,6 +1,6 @@
 """
 PLOS — Mortgage Loan endpoints
-Servicer CRUD with 16 pre-populated US servicers, 4 Claude advisory cards
+Servicer CRUD with 16 pre-populated US servicers, 4 PLOS AI advisory cards
 (Refinance / Sell-Hold / Home Equity Loan / Home Equity Investment),
 and a daily AI mortgage tip + news + resource.
 """
@@ -143,7 +143,7 @@ def make_router(db, get_current_user_id, emergent_llm_key: str, llm_chat_cls, us
 
     # ------- Mortgage Context -------
     async def _get_mortgage_context(user_id: str) -> Dict[str, Any]:
-        """Aggregate the user's mortgage data + home equity context for Claude."""
+        """Aggregate the user's mortgage data + home equity context for PLOS AI."""
         mortgage = await db.debts.find_one({"user_id": user_id, "debt_type": "mortgage"})
         home = await db.assets.find_one({"user_id": user_id, "asset_type": "real_estate"})
         income = [d async for d in db.income_sources.find({"user_id": user_id, "is_active": True})]
@@ -168,7 +168,7 @@ def make_router(db, get_current_user_id, emergent_llm_key: str, llm_chat_cls, us
     # ------- 4 Advisor Cards -------
     @router.post("/intelligence")
     async def mortgage_intelligence(user_id: str = Depends(get_current_user_id)):
-        """Returns all 4 Claude advisor cards in one call. Cached 24h."""
+        """Returns all 4 PLOS AI advisor cards in one call. Cached 24h."""
         cache_key = "intelligence::v1"
         cached = await db.mortgage_cache.find_one({"user_id": user_id, "key": cache_key})
         if cached:

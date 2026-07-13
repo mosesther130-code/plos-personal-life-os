@@ -2,7 +2,7 @@
 
 Two-layer approach:
   Layer 1: rule-based instant categorization (merchant → PLOS category).
-  Layer 2: Claude batch categorization for unmatched transactions.
+  Layer 2: PLOS AI batch categorization for unmatched transactions.
 
 Learning: user corrections priority over defaults; corrections propagate to
 all other transactions from the same merchant in the same user's history.
@@ -127,7 +127,7 @@ async def _load_user_rules(user_id: str, db) -> Dict[str, str]:
 
 
 async def _claude_batch_categorize(txs: List[Dict[str, Any]]) -> Dict[str, str]:
-    """Send a batch of transactions to Claude and return a {tx_id: category} map."""
+    """Send a batch of transactions to PLOS AI and return a {tx_id: category} map."""
     if not txs:
         return {}
     try:
@@ -174,12 +174,12 @@ async def _claude_batch_categorize(txs: List[Dict[str, Any]]) -> Dict[str, str]:
                 out[tid] = cat
         return out
     except Exception as e:
-        logger.warning("Claude batch categorize failed: %s", e)
+        logger.warning("PLOS AI batch categorize failed: %s", e)
         return {}
 
 
 async def categorize_user_transactions(user_id: str, db, only_uncategorized: bool = True) -> Dict[str, Any]:
-    """Run rule → Claude categorization over the user's transactions."""
+    """Run rule → PLOS AI categorization over the user's transactions."""
     query: Dict[str, Any] = {"user_id": user_id, "removed": {"$ne": True}}
     if only_uncategorized:
         query["category_plos"] = None

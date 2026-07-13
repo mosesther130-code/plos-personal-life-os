@@ -8,7 +8,7 @@ Design decisions
 ----------------
 * **Env-only key storage** — no key is ever persisted to Mongo or returned to
   the client.  The AI Router only reads keys from `os.environ`.  Missing keys
-  → automatic Claude fallback (spec).
+  → automatic PLOS AI fallback (spec).
 * **24 h response cache** in `ai_router_cache` keyed by
   `sha256(task_type + canonical_json(payload))`.  Financial calculations
   with identical inputs are served from cache instantly.
@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 # Task-type → platform map (per spec)
 # ---------------------------------------------------------------------------
 TASK_ROUTES: Dict[str, str] = {
-    # Claude (Emergent LLM key)
+    # PLOS AI (Emergent LLM key)
     "financial_advice": "claude",
     "debt_analysis": "claude",
     "legal_guidance": "claude",
@@ -78,7 +78,7 @@ TASK_ROUTES: Dict[str, str] = {
 # Platform metadata for the "AI Platform Connections" screen.
 # ---------------------------------------------------------------------------
 PLATFORMS: List[Dict[str, str]] = [
-    {"key": "claude", "label": "Claude (Emergent LLM key)",
+    {"key": "claude", "label": "PLOS AI (Emergent LLM key)",
      "env_var": "EMERGENT_LLM_KEY", "model": "claude-sonnet-4-5",
      "provider": "Anthropic", "always_connected": True},
     {"key": "openai", "label": "OpenAI GPT-4o",
@@ -173,10 +173,10 @@ def _key_for(platform: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Init — wire Mongo handle and Claude callable (from server.py bootstrap)
+# Init — wire Mongo handle and PLOS AI callable (from server.py bootstrap)
 # ---------------------------------------------------------------------------
 def init(db, call_claude_async):  # noqa: ANN001
-    """Bind Mongo + Claude helper. Must be called once at boot."""
+    """Bind Mongo + PLOS AI helper. Must be called once at boot."""
     global _db, _call_claude
     _db = db
     _call_claude = call_claude_async
@@ -257,7 +257,7 @@ def _extract_prompt(payload: Dict[str, Any]) -> Tuple[str, str]:
 # ---------------------------------------------------------------------------
 async def _call_claude_fallback(system: str, prompt: str, session_id: str) -> Tuple[str, int, str]:
     if _call_claude is None:
-        raise RuntimeError("Claude helper not initialised — call ai_router.init() at boot")
+        raise RuntimeError("PLOS AI helper not initialised — call ai_router.init() at boot")
     text = await _call_claude(session_id, system, prompt)
     # Approx token count = chars/4
     approx = max(1, (len(system) + len(prompt) + len(text)) // 4)
@@ -443,14 +443,14 @@ async def route_ai_task(
     platform = requested_platform
     fallback_used = False
     if platform != "claude" and not _key_for(platform):
-        # Fallback → Claude, log the reason
+        # Fallback → PLOS AI, log the reason
         await _log_usage({
             "log_id": f"log_{uuid.uuid4().hex[:12]}",
             "user_id": user_id, "task_type": task_type,
             "platform": requested_platform, "model": "n/a",
             "tokens_used": 0, "est_cost_usd": 0.0,
             "latency_ms": 0, "cached": False,
-            "fallback_reason": f"No API key for {requested_platform} — used Claude fallback",
+            "fallback_reason": f"No API key for {requested_platform} — used PLOS AI fallback",
             "created_at": _now_iso(),
         })
         platform = "claude"
@@ -498,14 +498,14 @@ async def route_ai_task(
             text, tokens, model_used = await _call_claude_fallback(system, prompt, session_id)
             platform = "claude"
     except Exception as _e:
-        # Any provider-side failure (invalid key, quota, timeout) → Claude fallback
+        # Any provider-side failure (invalid key, quota, timeout) → PLOS AI fallback
         await _log_usage({
             "log_id": f"log_{uuid.uuid4().hex[:12]}",
             "user_id": user_id, "task_type": task_type,
             "platform": platform, "model": "n/a",
             "tokens_used": 0, "est_cost_usd": 0.0,
             "latency_ms": int((time.time() - started) * 1000), "cached": False,
-            "fallback_reason": f"{platform} failed ({type(_e).__name__}) — used Claude fallback",
+            "fallback_reason": f"{platform} failed ({type(_e).__name__}) — used PLOS AI fallback",
             "created_at": _now_iso(),
         })
         text, tokens, model_used = await _call_claude_fallback(system, prompt, session_id)

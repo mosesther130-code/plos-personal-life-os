@@ -3,7 +3,7 @@
 Full rebuild spec:
 - Resume Library: multiple resumes, labels, default flag, file extraction.
 - Job Description Library: uploaded or manually pasted JDs.
-- Tailoring engine: ATS-first Claude call with full JSON contract
+- Tailoring engine: ATS-first PLOS AI call with full JSON contract
   (ats_score_before/after, keyword analysis, tailored resume, cover letter,
   10 interview questions, ATS tips, insider connection templates).
 - Tailoring History: every run cached in `resume_versions` for re-open.
@@ -898,7 +898,7 @@ Return ONLY valid JSON with no preamble, no explanation, no markdown code fences
     @r.post("/library/tailor/history/{version_id}/generate-letter")
     async def generate_letter(version_id: str, body: LetterGenBody,
                               user_id: str = Depends(get_current_user_id)):
-        """(Re)generate a specific letter for a tailored version using Claude."""
+        """(Re)generate a specific letter for a tailored version using PLOS AI."""
         ver = await db.resume_versions.find_one(
             {"user_id": user_id, "version_id": version_id}, {"_id": 0}
         )

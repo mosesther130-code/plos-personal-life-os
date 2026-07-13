@@ -405,7 +405,7 @@ def make_router(db, get_current_user_id, emergent_llm_key, llm_chat_cls, user_ms
         )
         return {"ok": True}
 
-    # ----------- Polish via Claude -----------
+    # ----------- Polish via PLOS AI -----------
     @router.post("/resume-draft/polish")
     async def polish_resume(user_id: str = Depends(get_current_user_id)):
         d = await db.career_resume_drafts.find_one({"user_id": user_id})

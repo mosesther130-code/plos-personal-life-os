@@ -4,13 +4,14 @@
 // Phase 1 web/Expo Go: shows static-map placeholder + all 12 transport chips +
 // saved places + quick actions + route comparison launch. Real interactive
 // react-native-maps view renders only in a production dev build (Phase 2).
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Image, ActivityIndicator, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { ArrowLeft, Search, MapPin, Compass, Navigation, Home as HomeIcon, Briefcase, Building, Leaf, Shield, Landmark, Star, Trash2 } from "lucide-react-native";
+import { ArrowLeft, Search, MapPin, Compass, Navigation, Home as HomeIcon, Briefcase, Building, Leaf, Shield, Landmark, Star, Trash2, Loader2, X } from "lucide-react-native";
 import { colors, spacing, radius } from "@/src/lib/theme";
 import { navigationApi } from "@/src/lib/api";
+import { useCountry } from "@/src/lib/country-context";
 
 type ModeKey = "driving" | "truck" | "transit" | "taxi" | "cycling" | "walking" | "hiking" | "trail_run" | "mountain" | "boat" | "train" | "motorcycle";
 
@@ -34,11 +35,21 @@ const DEFAULT_HOME = { lat: 33.8073, lng: -84.1700 };
 export default function NavigationHome() {
   const router = useRouter();
   const params = useLocalSearchParams<{ destination?: string; mode?: string; query?: string }>();
+  const { countryCode } = useCountry();
   const [places, setPlaces] = useState<{ presets: any[]; user_places: any[] }>({ presets: [], user_places: [] });
   const [analytics, setAnalytics] = useState<any>(null);
   const [mode, setMode] = useState<ModeKey>((params.mode as ModeKey) || "driving");
   const [query, setQuery] = useState<string>(String(params.query || ""));
   const [loading, setLoading] = useState(true);
+
+  // Address autocomplete state
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [autoLoading, setAutoLoading] = useState(false);
+  const [resolveLoading, setResolveLoading] = useState(false);
+  const [provider, setProvider] = useState<string>("");
+  const debounceRef = useRef<any>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -84,13 +95,82 @@ export default function NavigationHome() {
 
   const onSearch = () => {
     if (!query.trim()) return;
-    // Phase 1: no Places autocomplete wired yet — tell user
-    Alert.alert("Search", `Address search is coming in Phase 2. For now tap a saved place below to route to it, or paste coordinates as \"lat,lng\".`);
-    // Accept raw lat,lng input
+    // Accept raw lat,lng input as a shortcut
     const parts = query.split(",").map((s) => parseFloat(s.trim()));
     if (parts.length === 2 && parts.every((n) => isFinite(n))) {
       goToDest({ lat: parts[0], lng: parts[1], name: query });
+      return;
     }
+    // Trigger a fresh autocomplete search & keep list open
+    runAutocomplete(query);
+    setSuggestionsOpen(true);
+  };
+
+  // ------- Address autocomplete (debounced) -------
+  const runAutocomplete = useCallback(async (q: string) => {
+    if (!q || q.trim().length < 2) {
+      setSuggestions([]);
+      setProvider("");
+      return;
+    }
+    setAutoLoading(true);
+    try {
+      const r = await navigationApi.autocomplete(q.trim(), {
+        near_lat: DEFAULT_HOME.lat,
+        near_lng: DEFAULT_HOME.lng,
+        country: countryCode,
+      });
+      setSuggestions(r.predictions || []);
+      setProvider(r.provider || "");
+    } catch (e: any) {
+      console.warn("[nav] autocomplete", e?.message);
+      setSuggestions([]);
+    } finally {
+      setAutoLoading(false);
+    }
+  }, [countryCode]);
+
+  const onQueryChange = (v: string) => {
+    setQuery(v);
+    setSuggestionsOpen(true);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!v.trim()) {
+      setSuggestions([]);
+      return;
+    }
+    debounceRef.current = setTimeout(() => { runAutocomplete(v); }, 280);
+  };
+
+  const pickSuggestion = async (s: any) => {
+    setSuggestionsOpen(false);
+    setQuery(s.description || s.main_text || "");
+    // OSM predictions already carry lat/lng
+    if (typeof s.lat === "number" && typeof s.lng === "number") {
+      goToDest({ lat: s.lat, lng: s.lng, name: s.main_text || s.description });
+      return;
+    }
+    // Google predictions need details lookup
+    if (s.place_id) {
+      setResolveLoading(true);
+      try {
+        const d = await navigationApi.placeDetails(s.place_id);
+        if (d && d.lat != null && d.lng != null) {
+          goToDest({ lat: d.lat, lng: d.lng, name: d.address || s.description });
+        } else {
+          Alert.alert("Search", "Could not resolve that place.");
+        }
+      } catch (e: any) {
+        Alert.alert("Search", e?.message || "Could not resolve that place.");
+      } finally {
+        setResolveLoading(false);
+      }
+    }
+  };
+
+  const clearQuery = () => {
+    setQuery("");
+    setSuggestions([]);
+    setSuggestionsOpen(false);
   };
 
   const allPlaces = useMemo(() => [...places.presets, ...places.user_places], [places]);
@@ -133,18 +213,66 @@ export default function NavigationHome() {
         </View>
 
         {/* Search */}
-        <View style={styles.searchBar} testID="search-bar">
-          <Search color={colors.textSecondary} size={16} />
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Where do you want to go?"
-            placeholderTextColor={colors.textTertiary}
-            style={styles.searchInput}
-            onSubmitEditing={onSearch}
-            returnKeyType="search"
-          />
-          <TouchableOpacity onPress={onSearch} testID="search-btn"><Text style={styles.searchBtn}>Go</Text></TouchableOpacity>
+        <View>
+          <View style={styles.searchBar} testID="search-bar">
+            <Search color={colors.textSecondary} size={16} />
+            <TextInput
+              value={query}
+              onChangeText={onQueryChange}
+              onFocus={() => query.length >= 2 && setSuggestionsOpen(true)}
+              placeholder="Search any address, place, or lat,lng…"
+              placeholderTextColor={colors.textTertiary}
+              style={styles.searchInput}
+              onSubmitEditing={onSearch}
+              returnKeyType="search"
+              autoCorrect={false}
+              autoCapitalize="none"
+              testID="search-input"
+            />
+            {autoLoading || resolveLoading ? (
+              <ActivityIndicator size="small" color={colors.primaryGlow} />
+            ) : query.length > 0 ? (
+              <TouchableOpacity onPress={clearQuery} testID="search-clear">
+                <X color={colors.textTertiary} size={14} />
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity onPress={onSearch} testID="search-btn"><Text style={styles.searchBtn}>Go</Text></TouchableOpacity>
+          </View>
+
+          {suggestionsOpen && (suggestions.length > 0 || autoLoading) && (
+            <View style={styles.suggestionsBox} testID="suggestions">
+              {autoLoading && suggestions.length === 0 ? (
+                <View style={styles.suggestionEmpty}>
+                  <ActivityIndicator size="small" color={colors.primaryGlow} />
+                  <Text style={styles.suggestionEmptyText}>Searching…</Text>
+                </View>
+              ) : (
+                <>
+                  {suggestions.map((s, idx) => (
+                    <TouchableOpacity
+                      key={s.place_id || `${idx}-${s.description}`}
+                      style={styles.suggestionRow}
+                      onPress={() => pickSuggestion(s)}
+                      testID={`suggestion-${idx}`}
+                    >
+                      <MapPin color={colors.primaryGlow} size={14} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.suggestionMain} numberOfLines={1}>{s.main_text || s.description}</Text>
+                        {s.secondary_text ? (
+                          <Text style={styles.suggestionSub} numberOfLines={1}>{s.secondary_text}</Text>
+                        ) : null}
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                  <View style={styles.suggestionFooter}>
+                    <Text style={styles.suggestionFooterText}>
+                      Powered by {provider === "google" ? "Google Places" : provider === "osm" ? "OpenStreetMap" : "PLOS Search"} · Country filter: {countryCode}
+                    </Text>
+                  </View>
+                </>
+              )}
+            </View>
+          )}
         </View>
 
         {/* Transport modes */}
@@ -271,6 +399,14 @@ const styles = StyleSheet.create({
   searchBar: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderSubtle, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
   searchInput: { flex: 1, color: colors.textPrimary, fontSize: 14 },
   searchBtn: { color: colors.primaryGlow, fontWeight: "700", fontSize: 13, paddingHorizontal: 6 },
+  suggestionsBox: { marginTop: 6, backgroundColor: colors.surfaceElevated, borderWidth: 1, borderColor: colors.borderSubtle, borderRadius: 10, overflow: "hidden" },
+  suggestionRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle },
+  suggestionMain: { color: colors.textPrimary, fontSize: 13, fontWeight: "600" },
+  suggestionSub: { color: colors.textSecondary, fontSize: 11, marginTop: 2 },
+  suggestionEmpty: { flexDirection: "row", alignItems: "center", gap: 8, padding: 14, justifyContent: "center" },
+  suggestionEmptyText: { color: colors.textSecondary, fontSize: 12 },
+  suggestionFooter: { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: colors.surface },
+  suggestionFooterText: { color: colors.textTertiary, fontSize: 10 },
   h2: { color: colors.textPrimary, fontSize: 13, fontWeight: "700", marginTop: 8, letterSpacing: 0.4, textTransform: "uppercase" },
   h2Row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 8 },
   h2Meta: { color: colors.textTertiary, fontSize: 11 },

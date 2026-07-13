@@ -106,7 +106,7 @@ class TestUpdateApplication:
         assert r.status_code == 404
 
 
-# ----- Resume Analyze (Claude) -----
+# ----- Resume Analyze (PLOS AI) -----
 class TestResumeAnalyze:
     def test_resume_analyze_real_claude(self, auth):
         r = requests.post(f"{BASE_URL}/api/career/resume-analyze", headers=auth, json={}, timeout=120)
@@ -125,7 +125,7 @@ class TestResumeAnalyze:
         assert rc.json()["ats_score"] == data["ats_score"]
 
 
-# ----- Generate (Claude) -----
+# ----- Generate (PLOS AI) -----
 class TestGenerate:
     def test_generate_resume_and_cover(self, auth):
         payload = {
@@ -162,7 +162,7 @@ class TestGenerate:
         assert v.get("generated_cover_letter") == result["cover_letter"]
 
 
-# ----- Path Advisor (Claude) -----
+# ----- Path Advisor (PLOS AI) -----
 class TestPathAdvisor:
     def test_path_advisor_returns_3_paths(self, auth):
         r = requests.post(f"{BASE_URL}/api/career/path-advisor", headers=auth, json={}, timeout=180)

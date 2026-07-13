@@ -108,7 +108,7 @@ async def stats(db) -> Dict[str, Any]:
     agg = await db.response_cache.aggregate(pipeline).to_list(1)
     hits = agg[0]["hits"] if agg else 0
     tokens_saved = agg[0]["tokens_saved"] if agg else 0
-    # Rough cost estimate: $3/M input tokens (Claude Sonnet blended)
+    # Rough cost estimate: $3/M input tokens (PLOS AI Sonnet blended)
     cost_saved_usd = round(tokens_saved * 3.0 / 1_000_000, 4)
     # By task type
     by_type_agg = await db.response_cache.aggregate([

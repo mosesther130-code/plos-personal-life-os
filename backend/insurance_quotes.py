@@ -6,7 +6,7 @@ Endpoints:
     GET    /api/insurance/quote-profile           — fetch (with pre-fill fallback)
     PUT    /api/insurance/quote-profile           — save/update
     DELETE /api/insurance/quote-profile           — deletes profile + all history
-  Quote Generation (Claude Sonnet 4.5)
+  Quote Generation (PLOS AI Sonnet 4.5)
     POST   /api/insurance/quote                   — generate a single-insurer estimate
     POST   /api/insurance/quote/compare           — parallel quotes for all insurers
   Quote History
@@ -308,7 +308,7 @@ def _prefill_flags(profile: Dict[str, Any]) -> Dict[str, bool]:
     return flags
 
 
-# --------------------------- Claude quote engine ----------------------
+# --------------------------- PLOS AI quote engine ----------------------
 _SYSTEM_QUOTE = (
     "You are an expert insurance analyst with deep knowledge of Georgia insurance markets, "
     "state regulations, rating factors, and pricing algorithms used by major US insurers. "
@@ -340,7 +340,7 @@ _QUOTE_JSON_SCHEMA = """{
 
 
 def _fallback_quote(profile: Dict[str, Any], insurer: str, insurance_type: str, base_rate: float) -> Dict[str, Any]:
-    """Deterministic fallback when Claude is unavailable — approximate ±15%."""
+    """Deterministic fallback when PLOS AI is unavailable — approximate ±15%."""
     pd = profile.get("personal_details") or {}
     credit = (pd.get("credit_score_range") or "").lower()
     accidents = (profile.get("drivers", [{}])[0] or {}).get("accidents_3yr", "None")
@@ -427,7 +427,7 @@ async def _call_claude_quote(session_id: str, profile: Dict[str, Any],
         # Try extracting first JSON block
         m = re.search(r"\{.*\}", text, re.DOTALL)
         if not m:
-            raise ValueError(f"Claude returned non-JSON: {text[:180]}")
+            raise ValueError(f"PLOS AI returned non-JSON: {text[:180]}")
         parsed = json.loads(m.group(0))
     return parsed
 
@@ -527,7 +527,7 @@ def make_quotes_router(db, get_current_user_id):
             parsed = await _call_claude_quote(session_id, profile, insurer, insurance_type, deal)
             asyncio.create_task(_log_usage(user_id, insurer, insurance_type, True))
         except Exception as e:
-            logger.warning(f"[quotes] Claude quote failed for {insurer}: {e}")
+            logger.warning(f"[quotes] PLOS AI quote failed for {insurer}: {e}")
             parsed = _fallback_quote(profile, insurer, insurance_type, base_rate)
             asyncio.create_task(_log_usage(user_id, insurer, insurance_type, False, str(e)[:180]))
 

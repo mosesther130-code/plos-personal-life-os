@@ -1,6 +1,6 @@
 """PLOS Career — AI Resume Tailor + Cover Letter + Interview Prep.
 
-Uses Claude Sonnet 4.5 via emergentintegrations. Generates:
+Uses PLOS AI Sonnet 4.5 via emergentintegrations. Generates:
 - ATS-tailored resume (markdown)
 - Cover letter (markdown, 350-450 words, business format)
 - Interview questions (10 tailored questions)
@@ -83,9 +83,9 @@ class SaveApplicationBody(BaseModel):
     version_id: str
 
 
-# ---------- Claude JSON generation ----------------------------------------
+# ---------- PLOS AI JSON generation ----------------------------------------
 def _extract_json(raw: str) -> Dict[str, Any]:
-    """Extract the first {...} JSON blob from Claude's response."""
+    """Extract the first {...} JSON blob from PLOS AI's response."""
     if not raw:
         return {}
     # Strip markdown fences if present
@@ -115,7 +115,7 @@ async def _run_tailor(
     do_cover: bool,
     do_interview: bool,
 ) -> Dict[str, Any]:
-    """Ask Claude for the full tailoring bundle in a single call.
+    """Ask PLOS AI for the full tailoring bundle in a single call.
 
     Returns a dict with keys: tailored_resume_md, cover_letter_md,
     interview_questions[], ats_score (0-100), keywords_matched[],
@@ -427,7 +427,7 @@ def make_router(db, get_current_user_id, emergent_llm_key, llm_chat_cls, user_ms
                 "or pasting the content directly.",
             )
 
-        # 2. Ask Claude for the full bundle
+        # 2. Ask PLOS AI for the full bundle
         result = await _run_tailor(
             call_claude,
             user_id,

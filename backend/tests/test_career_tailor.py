@@ -1,6 +1,6 @@
 """PLOS Career — AI Resume Tailor pipeline tests (iteration 27).
 
-Tests the resume vault CRUD + Claude Sonnet 4.5 tailor endpoint + PDF gen +
+Tests the resume vault CRUD + PLOS AI Sonnet 4.5 tailor endpoint + PDF gen +
 thankyou/followup/save-application + SendGrid deferred behaviour.
 """
 import base64
@@ -271,7 +271,7 @@ class TestTailor:
         t0 = time.time()
         r = requests.post(f"{BASE_URL}/api/career/tailor", headers=auth,
                           json=payload, timeout=120)
-        # Retry ONCE on 502 (Claude parseable JSON)
+        # Retry ONCE on 502 (PLOS AI parseable JSON)
         if r.status_code == 502:
             time.sleep(2)
             r = requests.post(f"{BASE_URL}/api/career/tailor", headers=auth,

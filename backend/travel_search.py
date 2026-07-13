@@ -1,11 +1,11 @@
-"""PLOS Travel — AI Flight + Hotel search via Claude Sonnet 4.5.
+"""PLOS Travel — AI Flight + Hotel search via PLOS AI Sonnet 4.5.
 
 Endpoints (all under /api/travel):
-- POST /trips/{trip_id}/search         → run Claude search + cache
+- POST /trips/{trip_id}/search         → run PLOS AI search + cache
 - GET  /trips/{trip_id}/search         → return cached search + freshness
 - POST /trips/{trip_id}/save-to-budget → creates an expense in Financial
 
-The Claude call returns a single JSON with `flights[3]` + `hotels[3]` + a
+The PLOS AI call returns a single JSON with `flights[3]` + `hotels[3]` + a
 `trip_cost_summary`. Cached under trips.search_results with searched_at.
 """
 from __future__ import annotations

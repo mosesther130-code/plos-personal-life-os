@@ -397,10 +397,10 @@ SEED_SOURCES: List[Dict[str, Any]] = [
     {"source_id": "devex", "label": "Devex Jobs RSS", "kind": "rss",
      "operational": False, "update_frequency_min": 120, "paused": False,
      "note": "RSS returns 403 from cloud container. Enable via HTTPS proxy in Phase 2."},
-    # Web-search based (Phase 2 — Claude web search integration required)
+    # Web-search based (Phase 2 — PLOS AI web search integration required)
     {"source_id": "un_careers", "label": "UN Careers", "kind": "web_search",
      "operational": False, "update_frequency_min": 240, "paused": False,
-     "note": "Requires Claude web-search tool integration — Phase 2."},
+     "note": "Requires PLOS AI web-search tool integration — Phase 2."},
     {"source_id": "world_bank", "label": "World Bank Jobs", "kind": "web_search",
      "operational": False, "update_frequency_min": 240, "paused": False,
      "note": "Requires web-search integration — Phase 2."},

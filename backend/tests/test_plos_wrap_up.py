@@ -2,7 +2,7 @@
 
 Covers:
   1. GET /api/plaid/snapshot-fusion            — manual + Plaid data fusion
-  2. GET /api/plaid/monthly-summary            — Claude / fallback narrative
+  2. GET /api/plaid/monthly-summary            — PLOS AI / fallback narrative
   3. GET /api/plaid/monthly-summaries          — list of summaries
   4. GET /api/plaid/alert-settings             — default doc & persistence
   5. PUT /api/plaid/alert-settings             — patch + allow-list filtering

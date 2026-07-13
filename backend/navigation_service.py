@@ -328,6 +328,157 @@ def make_navigation_router(db, get_current_user_id):
         res = await db.navigation_places.delete_one({"id": place_id, "user_id": user_id, "is_preset": {"$ne": True}})
         return {"ok": True, "removed": res.deleted_count}
 
+    # ---------- Address Autocomplete (Google Places → Nominatim fallback) ----------
+    @router.get("/autocomplete")
+    async def autocomplete(
+        q: str = Query(..., min_length=2, max_length=200),
+        near_lat: Optional[float] = None,
+        near_lng: Optional[float] = None,
+        country: Optional[str] = None,  # ISO 3166-1 alpha-2 (e.g. "US", "PH")
+        _user_id: str = Depends(get_current_user_id),
+    ):
+        """
+        Typeahead address search.
+        - Tries Google Places Autocomplete first (if GOOGLE_MAPS_API_KEY is set).
+        - Falls back to OpenStreetMap Nominatim (free, no key).
+        Returns: [{ description, place_id, provider, lat?, lng?, main_text?, secondary_text? }, ...]
+        """
+        q = q.strip()
+        if len(q) < 2:
+            return {"predictions": [], "provider": "none"}
+
+        # ------------- Google Places Autocomplete -------------
+        if GOOGLE_MAPS_KEY:
+            try:
+                params: Dict[str, Any] = {"input": q, "key": GOOGLE_MAPS_KEY}
+                if country and len(country) == 2:
+                    params["components"] = f"country:{country.lower()}"
+                if isinstance(near_lat, float) and isinstance(near_lng, float):
+                    params["location"] = f"{near_lat},{near_lng}"
+                    params["radius"] = 50000
+                async with httpx.AsyncClient(timeout=6.0) as c:
+                    r = await c.get("https://maps.googleapis.com/maps/api/place/autocomplete/json", params=params)
+                    j = r.json() or {}
+                status = j.get("status")
+                if status == "OK":
+                    predictions = []
+                    for p in (j.get("predictions") or [])[:8]:
+                        predictions.append({
+                            "description": p.get("description", ""),
+                            "place_id": p.get("place_id"),
+                            "main_text": (p.get("structured_formatting") or {}).get("main_text"),
+                            "secondary_text": (p.get("structured_formatting") or {}).get("secondary_text"),
+                            "provider": "google",
+                        })
+                    if predictions:
+                        return {"predictions": predictions, "provider": "google"}
+                # if REQUEST_DENIED / OVER_QUERY_LIMIT / ZERO_RESULTS → fall through
+                logging.info(f"[autocomplete] Google status={status}, falling back to Nominatim")
+            except Exception as e:
+                logging.warning(f"[autocomplete] Google error: {e}, falling back to Nominatim")
+
+        # ------------- OSM Nominatim fallback -------------
+        try:
+            params2: Dict[str, Any] = {
+                "q": q,
+                "format": "json",
+                "addressdetails": 1,
+                "limit": 8,
+            }
+            if country and len(country) == 2:
+                params2["countrycodes"] = country.lower()
+            headers = {"User-Agent": "PLOS-App/1.0 (life-os-hub)"}
+            async with httpx.AsyncClient(timeout=6.0) as c:
+                r = await c.get("https://nominatim.openstreetmap.org/search", params=params2, headers=headers)
+                j = r.json() or []
+            predictions = []
+            for it in j:
+                display = it.get("display_name", "")
+                parts = display.split(", ", 1)
+                main = parts[0]
+                secondary = parts[1] if len(parts) > 1 else ""
+                try:
+                    lat = float(it.get("lat"))
+                    lng = float(it.get("lon"))
+                except Exception:
+                    lat, lng = None, None
+                predictions.append({
+                    "description": display,
+                    "place_id": f"osm:{it.get('osm_type','')}/{it.get('osm_id','')}",
+                    "main_text": main,
+                    "secondary_text": secondary,
+                    "lat": lat,
+                    "lng": lng,
+                    "provider": "osm",
+                })
+            return {"predictions": predictions, "provider": "osm"}
+        except Exception as e:
+            logging.warning(f"[autocomplete] Nominatim error: {e}")
+            return {"predictions": [], "provider": "none", "error": str(e)}
+
+    @router.get("/place-details")
+    async def place_details(
+        place_id: str,
+        _user_id: str = Depends(get_current_user_id),
+    ):
+        """
+        Resolves an autocomplete `place_id` to {lat, lng, address}.
+        Handles both Google place_id and 'osm:<type>/<id>' variants.
+        """
+        if not place_id:
+            raise HTTPException(400, "place_id required")
+
+        # OSM variant: extract lat/lng via Nominatim lookup
+        if place_id.startswith("osm:"):
+            try:
+                spec = place_id.split(":", 1)[1]
+                osm_type, osm_id = spec.split("/", 1)
+                params = {"osm_ids": f"{osm_type[0].upper()}{osm_id}", "format": "json", "addressdetails": 1}
+                headers = {"User-Agent": "PLOS-App/1.0 (life-os-hub)"}
+                async with httpx.AsyncClient(timeout=6.0) as c:
+                    r = await c.get("https://nominatim.openstreetmap.org/lookup", params=params, headers=headers)
+                    j = r.json() or []
+                if j:
+                    it = j[0]
+                    return {
+                        "lat": float(it.get("lat")),
+                        "lng": float(it.get("lon")),
+                        "address": it.get("display_name", ""),
+                        "provider": "osm",
+                    }
+                raise HTTPException(404, "Place not found")
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(500, f"OSM lookup failed: {e}")
+
+        # Google place_id → Places Details API
+        if not GOOGLE_MAPS_KEY:
+            raise HTTPException(400, "Google Places key not configured — pass an osm:* place_id instead")
+        try:
+            params = {
+                "place_id": place_id,
+                "key": GOOGLE_MAPS_KEY,
+                "fields": "geometry/location,formatted_address,name",
+            }
+            async with httpx.AsyncClient(timeout=6.0) as c:
+                r = await c.get("https://maps.googleapis.com/maps/api/place/details/json", params=params)
+                j = r.json() or {}
+            if j.get("status") != "OK":
+                raise HTTPException(502, f"Google details error: {j.get('status')}")
+            res = j.get("result") or {}
+            loc = ((res.get("geometry") or {}).get("location") or {})
+            return {
+                "lat": loc.get("lat"),
+                "lng": loc.get("lng"),
+                "address": res.get("formatted_address") or res.get("name") or "",
+                "provider": "google",
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(500, f"Google Places details failed: {e}")
+
     # ---------- Routing ----------
     @router.post("/route")
     async def route(body: RouteRequest, user_id: str = Depends(get_current_user_id)):

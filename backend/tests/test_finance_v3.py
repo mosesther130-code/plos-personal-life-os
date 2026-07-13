@@ -150,7 +150,7 @@ def test_payoff_plan_snowball_orders_by_balance(client, auth_headers):
     assert "Chase Sapphire" in early_focus
 
 
-# ---- AI debt strategy (real Claude) ----
+# ---- AI debt strategy (real PLOS AI) ----
 def test_ai_debt_strategy(client, auth_headers):
     r = client.post(f"{API}/ai/debt-strategy",
                     json={"strategy": "avalanche", "extra_monthly": 500},
