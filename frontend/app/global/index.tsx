@@ -45,7 +45,7 @@ export default function GlobalHub() {
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.tileTitle}>Language Translator</Text>
-            <Text style={styles.tileSub}>12 languages · Claude 4.5 · Phrase book</Text>
+            <Text style={styles.tileSub}>12 languages · PLOS AI · Phrase book</Text>
           </View>
           <ChevronRight size={16} color={colors.textTertiary} />
         </TouchableOpacity>

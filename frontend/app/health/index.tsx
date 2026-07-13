@@ -377,7 +377,7 @@ export default function HealthHub() {
               <Text style={styles.body}>{insights}</Text>
             ) : (
               <>
-                <Text style={styles.body}>Claude 4.5 analyzes your last 7 check-ins and offers 3 evidence-based strategies.</Text>
+                <Text style={styles.body}>PLOS AI analyzes your last 7 check-ins and offers 3 evidence-based strategies.</Text>
                 <TouchableOpacity style={styles.secondaryBtn} onPress={fetchInsights} disabled={insightsLoading} testID="generate-insights">
                   {insightsLoading ? <ActivityIndicator color={colors.primaryGlow} /> : <><Sparkles size={14} color={colors.primaryGlow} /><Text style={styles.secondaryBtnText}>Generate Insights</Text></>}
                 </TouchableOpacity>

@@ -110,7 +110,7 @@ export default function BusinessIdeas() {
         const r = await businessApi.generateIdeas();
         if (r?.ideas) setIdeas(r.ideas);
       } catch (_e) {
-        if (Platform.OS !== "web") Alert.alert("Generation failed", "Could not reach Claude. Please retry.");
+        if (Platform.OS !== "web") Alert.alert("Generation failed", "Could not reach PLOS AI. Please retry.");
       }
       setGenerating(false);
     };
@@ -215,7 +215,7 @@ export default function BusinessIdeas() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primaryGlow} />}
       >
         <Text style={styles.intro}>
-          Tap a card to edit or delete. Add your own via the + button. Generate Fresh Ideas replaces the list with 5 personalized picks from Claude 4.5.
+          Tap a card to edit or delete. Add your own via the + button. Generate Fresh Ideas replaces the list with 5 personalized picks from PLOS AI.
         </Text>
 
         <TouchableOpacity
@@ -226,7 +226,7 @@ export default function BusinessIdeas() {
           activeOpacity={0.85}
         >
           {generating ? <ActivityIndicator color="#fff" /> : <RefreshCw color="#fff" size={16} />}
-          <Text style={styles.generateText}>{generating ? "Generating with Claude 4.5…" : "Generate Fresh Ideas"}</Text>
+          <Text style={styles.generateText}>{generating ? "Generating with PLOS AI…" : "Generate Fresh Ideas"}</Text>
         </TouchableOpacity>
 
         {loading ? (
@@ -363,7 +363,7 @@ export default function BusinessIdeas() {
             {planLoading ? (
               <View style={styles.modalLoading}>
                 <ActivityIndicator color={colors.primaryGlow} size="large" />
-                <Text style={styles.modalLoadingText}>Drafting plan with Claude 4.5…</Text>
+                <Text style={styles.modalLoadingText}>Drafting plan with PLOS AI…</Text>
               </View>
             ) : (
               <Text style={styles.planText}>{planText}</Text>

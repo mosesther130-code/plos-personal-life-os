@@ -185,7 +185,7 @@ Requirements:
     raw = await call_claude(session_id, SYSTEM_PROMPT, prompt)
     data = _extract_json(raw)
     if not data:
-        raise HTTPException(502, "Claude returned no parseable JSON — try again")
+        raise HTTPException(502, "PLOS AI returned no parseable JSON — try again")
     # Guarantee schema keys
     data.setdefault("tailored_resume_md", "")
     data.setdefault("cover_letter_md", "")

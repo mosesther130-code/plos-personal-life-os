@@ -299,7 +299,7 @@ export default function TailorModal() {
             <View style={styles.overlayCard} testID="tailor-loading">
               <ActivityIndicator size="large" color={colors.primaryGlow} />
               <Text style={styles.overlayTitle}>{LOADING_MESSAGES[step]}</Text>
-              <Text style={styles.overlayMeta}>Claude Sonnet 4.5 · 20–45s typical</Text>
+              <Text style={styles.overlayMeta}>PLOS AI · 20–45s typical</Text>
               <View style={styles.overlayDots}>
                 {LOADING_MESSAGES.map((_, i) => (
                   <View

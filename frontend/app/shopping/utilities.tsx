@@ -1,4 +1,4 @@
-// Utilities Review — Find better rates via Claude 4.5.
+// Utilities Review — Find better rates via PLOS AI.
 import React, { useCallback, useEffect, useState } from "react";
 import {
   View,
@@ -14,6 +14,8 @@ import { useRouter } from "expo-router";
 import { ArrowLeft, Zap, Wifi, Droplet, Smartphone, Sparkles, X } from "lucide-react-native";
 import { shoppingApi } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
+import { CountrySelectorChip } from "@/src/components/CountrySelector";
+import { useCountry } from "@/src/lib/country-context";
 
 const categoryIcon = (c: string) => {
   switch (c) {
@@ -27,7 +29,9 @@ const categoryIcon = (c: string) => {
 
 export default function Utilities() {
   const router = useRouter();
+  const { country, countryCode } = useCountry();
   const [utilities, setUtilities] = useState<any[]>([]);
+  const [notice, setNotice] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState<string | null>(null);
   const [reco, setReco] = useState<string | null>(null);
@@ -37,11 +41,12 @@ export default function Utilities() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await shoppingApi.utilities();
+      const r = await shoppingApi.utilities(countryCode);
       setUtilities(r?.utilities || []);
+      setNotice(r?.notice || "");
     } catch (_e) {}
     setLoading(false);
-  }, []);
+  }, [countryCode]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -51,7 +56,7 @@ export default function Utilities() {
     setVisible(true);
     setWorking(u.id);
     try {
-      const r = await shoppingApi.findBetterRate(u.id);
+      const r = await shoppingApi.findBetterRate(u.id, countryCode);
       setReco(r?.recommendation || "No recommendation returned.");
     } catch (_e) {
       setReco("Could not generate recommendation. Please retry.");
@@ -66,13 +71,20 @@ export default function Utilities() {
           <ArrowLeft color={colors.textPrimary} size={20} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Utilities Review</Text>
-        <View style={{ width: 36 }} />
+        <CountrySelectorChip />
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
         <Text style={styles.intro}>
-          Claude 4.5 compares your current providers against market alternatives in your area and surfaces concrete annual savings.
+          PLOS AI compares your current providers against market alternatives in {country.flag} {country.name} and surfaces concrete annual savings in {country.currency}.
         </Text>
+
+        {notice ? (
+          <View style={styles.noticeCard}>
+            <Sparkles size={12} color={colors.primaryGlow} />
+            <Text style={styles.noticeText}>{notice}</Text>
+          </View>
+        ) : null}
 
         {loading ? (
           <ActivityIndicator color={colors.primaryGlow} style={{ marginTop: 40 }} />
@@ -113,7 +125,7 @@ export default function Utilities() {
                   ) : (
                     <>
                       <Sparkles size={14} color={colors.primaryGlow} />
-                      <Text style={styles.actionBtnText}>Find Better Rate (Claude 4.5)</Text>
+                      <Text style={styles.actionBtnText}>Find Better Rate (PLOS AI)</Text>
                     </>
                   )}
                 </TouchableOpacity>
@@ -128,7 +140,7 @@ export default function Utilities() {
         <SafeAreaView style={styles.container} edges={["top"]}>
           <View style={styles.modalHeader}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.cardLabel}>RECOMMENDATION · CLAUDE 4.5</Text>
+              <Text style={styles.cardLabel}>RECOMMENDATION · PLOS AI</Text>
               <Text style={styles.modalTitle} numberOfLines={2}>{recoTitle}</Text>
             </View>
             <TouchableOpacity style={styles.backBtn} onPress={() => setVisible(false)} testID="reco-close">
@@ -139,7 +151,7 @@ export default function Utilities() {
             {!reco ? (
               <View style={{ alignItems: "center", paddingTop: 60, gap: spacing.md }}>
                 <ActivityIndicator color={colors.primaryGlow} size="large" />
-                <Text style={styles.intro}>Comparing local plans with Claude 4.5…</Text>
+                <Text style={styles.intro}>Comparing local {country.name} plans with PLOS AI…</Text>
               </View>
             ) : (
               <Text style={styles.recoText}>{reco}</Text>
@@ -173,4 +185,6 @@ const styles = StyleSheet.create({
   cardLabel: { color: colors.textTertiary, fontSize: 10, fontWeight: "700", letterSpacing: 1.2 },
   modalTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: "700", marginTop: 2 },
   recoText: { color: colors.textPrimary, fontSize: 14, lineHeight: 22 },
+  noticeCard: { flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: "rgba(59,130,246,0.08)", borderColor: "rgba(59,130,246,0.3)", borderWidth: 1, borderRadius: radius.md, padding: spacing.md },
+  noticeText: { flex: 1, color: colors.textPrimary, fontSize: 12, lineHeight: 17 },
 });

@@ -1,5 +1,5 @@
 // PLOS — Mortgage Advisor (Enhancement 3)
-// Servicer CRUD with 16 pre-populated templates, 4 Claude advisor cards,
+// Servicer CRUD with 16 pre-populated templates, 4 PLOS AI advisor cards,
 // and a daily mortgage tip + news + resource.
 import React, { useCallback, useEffect, useState } from "react";
 import {
@@ -269,7 +269,7 @@ export default function MortgageAdvisor() {
           {/* Mortgage Intelligence */}
           <Text style={styles.sectionTitle}>Mortgage Intelligence</Text>
           <Text style={styles.sectionDesc}>
-            Four Claude-powered advisor cards: refinance analysis, sell-or-hold signal, home equity loan review, and home equity investment products.
+            Four PLOS AI advisor cards: refinance analysis, sell-or-hold signal, home equity loan review, and home equity investment products.
           </Text>
           <TouchableOpacity
             style={[styles.aiBtn, intelLoading && { opacity: 0.6 }]}

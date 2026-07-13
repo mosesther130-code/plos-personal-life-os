@@ -351,7 +351,7 @@ export default function WorldClockScreen() {
         </View>
         <View style={styles.aiCard}>
           <Text style={styles.aiHelp}>
-            Pick participant timezones below. Claude will find the best slot tomorrow.
+            Pick participant timezones below. PLOS AI will find the best slot tomorrow.
           </Text>
           <View style={styles.pillRow}>
             {clocks.map((c) => {

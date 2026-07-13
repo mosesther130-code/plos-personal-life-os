@@ -28,6 +28,8 @@ import {
 
 import { dealFinderApi } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
+import { CountrySelectorChip } from "@/src/components/CountrySelector";
+import { useCountry } from "@/src/lib/country-context";
 
 const URGENCY = [
   { label: "Today", value: "today" },
@@ -41,13 +43,15 @@ const QUALITY = [
   { label: "Premium", value: "premium" },
 ];
 
-const fmtUSD = (n?: number) =>
-  n == null ? "—" : `$${Math.round(n).toLocaleString("en-US")}`;
+const fmtMoney = (n: number | undefined, symbol: string) =>
+  n == null ? "—" : `${symbol}${Math.round(n).toLocaleString("en-US")}`;
 const confColor = (c?: string) =>
   c === "high" ? colors.success : c === "low" ? colors.warning : colors.primaryGlow;
 
 export default function DealFinder() {
   const router = useRouter();
+  const { country, countryCode } = useCountry();
+  const currencySymbol = country.currency === "USD" ? "$" : country.currency === "EUR" ? "€" : country.currency === "GBP" ? "£" : country.currency === "PHP" ? "₱" : country.currency === "CAD" ? "C$" : country.currency === "AUD" ? "A$" : "$";
 
   // Form state
   const [product, setProduct] = useState("");
@@ -63,6 +67,8 @@ export default function DealFinder() {
   const [running, setRunning] = useState(false);
   const [resultDeals, setResultDeals] = useState<any[]>([]);
   const [resultSummary, setResultSummary] = useState<string>("");
+  const [resultCurrencySymbol, setResultCurrencySymbol] = useState<string>(currencySymbol);
+  const [resultCurrency, setResultCurrency] = useState<string>(country.currency);
 
   // Saved searches
   const [searches, setSearches] = useState<any[]>([]);
@@ -102,6 +108,7 @@ export default function DealFinder() {
     urgency,
     quality_preference: quality,
     notes: notes.trim() || undefined,
+    country: countryCode,
   });
 
   const runFind = async () => {
@@ -116,6 +123,8 @@ export default function DealFinder() {
       const r = await dealFinderApi.find(buildBody());
       setResultDeals(r.deals || []);
       setResultSummary(r.summary || "");
+      setResultCurrency(r.currency || country.currency);
+      setResultCurrencySymbol(r.currency_symbol || currencySymbol);
     } catch (e: any) {
       Alert.alert("Search failed", e?.message || "Try again.");
     } finally {
@@ -153,6 +162,8 @@ export default function DealFinder() {
       // also surface results inline
       setResultDeals(r.deals || []);
       setResultSummary(r.summary || "");
+      setResultCurrency(r.currency || country.currency);
+      setResultCurrencySymbol(r.currency_symbol || currencySymbol);
     } catch (e: any) {
       Alert.alert("Refresh failed", e?.message || "Try again.");
     } finally {
@@ -208,7 +219,7 @@ export default function DealFinder() {
           <ArrowLeft color={colors.textPrimary} size={20} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Deal Finder · AI</Text>
-        <View style={{ width: 36 }} />
+        <CountrySelectorChip />
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
@@ -226,7 +237,7 @@ export default function DealFinder() {
 
           <View style={styles.row2}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.fieldLabel}>MAX PRICE (USD)</Text>
+              <Text style={styles.fieldLabel}>MAX PRICE ({country.currency})</Text>
               <TextInput
                 value={maxPrice}
                 onChangeText={setMaxPrice}
@@ -238,7 +249,7 @@ export default function DealFinder() {
               />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.fieldLabel}>TARGET PRICE (USD)</Text>
+              <Text style={styles.fieldLabel}>TARGET PRICE ({country.currency})</Text>
               <TextInput
                 value={targetPrice}
                 onChangeText={setTargetPrice}
@@ -359,9 +370,9 @@ export default function DealFinder() {
                     </Text>
                   </View>
                   <View style={{ alignItems: "flex-end" }}>
-                    <Text style={styles.dealPrice}>{fmtUSD(d.est_price_usd)}</Text>
+                    <Text style={styles.dealPrice}>{fmtMoney(d.est_price_usd, resultCurrencySymbol)}</Text>
                     {d.original_price_usd && d.original_price_usd > (d.est_price_usd || 0) && (
-                      <Text style={styles.dealOrig}>{fmtUSD(d.original_price_usd)}</Text>
+                      <Text style={styles.dealOrig}>{fmtMoney(d.original_price_usd, resultCurrencySymbol)}</Text>
                     )}
                   </View>
                 </View>
@@ -401,7 +412,7 @@ export default function DealFinder() {
                 <Text style={styles.savedTitle} numberOfLines={2}>{s.product}</Text>
                 <Text style={styles.savedSub}>
                   {s.urgency} · {s.quality_preference}
-                  {s.max_price_usd ? ` · max ${fmtUSD(s.max_price_usd)}` : ""}
+                  {s.max_price_usd ? ` · max ${fmtMoney(s.max_price_usd, currencySymbol)}` : ""}
                 </Text>
                 {s.last_run_at && (
                   <Text style={styles.savedLast}>

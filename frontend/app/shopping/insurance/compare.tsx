@@ -63,7 +63,7 @@ export default function CompareAllScreen() {
       {loading ? (
         <View style={styles.loadingBox}>
           <ActivityIndicator color={colors.primaryGlow} size="large" />
-          <Text style={styles.loadingText}>Running Claude 4.5 quotes for all insurers...</Text>
+          <Text style={styles.loadingText}>Running PLOS AI quotes for all insurers...</Text>
           <Text style={styles.loadingSub}>This may take 30-60 seconds</Text>
         </View>
       ) : (

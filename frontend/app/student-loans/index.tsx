@@ -1,5 +1,5 @@
 // PLOS — Student Loans Center
-// Servicer CRUD, deferment toggles, Claude repayment plans + forgiveness + daily tip.
+// Servicer CRUD, deferment toggles, PLOS AI repayment plans + forgiveness + daily tip.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
@@ -387,7 +387,7 @@ export default function StudentLoansHub() {
           {/* Repayment Plans */}
           <Text style={styles.sectionTitle}>Federal Repayment Plans</Text>
           <Text style={styles.sectionDesc}>
-            Claude compares 6 federal repayment plans for {activeLoan ? activeLoan.lender : "your loan"}.
+            PLOS AI compares 6 federal repayment plans for {activeLoan ? activeLoan.lender : "your loan"}.
           </Text>
           <TouchableOpacity
             style={[styles.aiBtn, plansLoading && { opacity: 0.6 }]}
@@ -434,7 +434,7 @@ export default function StudentLoansHub() {
           {/* Forgiveness Opportunities */}
           <Text style={styles.sectionTitle}>Loan Forgiveness Opportunities</Text>
           <Text style={styles.sectionDesc}>
-            Claude analyzes PSLF, Teacher Loan Forgiveness, IDR forgiveness, and Georgia state programs based on your career profile.
+            PLOS AI analyzes PSLF, Teacher Loan Forgiveness, IDR forgiveness, and Georgia state programs based on your career profile.
           </Text>
           <TouchableOpacity
             style={[styles.aiBtn, programsLoading && { opacity: 0.6 }]}

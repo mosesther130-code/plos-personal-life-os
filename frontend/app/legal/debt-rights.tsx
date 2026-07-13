@@ -6,23 +6,28 @@ import { useRouter } from "expo-router";
 import { ArrowLeft, ShieldAlert, ExternalLink, Phone } from "lucide-react-native";
 import { legalApi } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
+import { CountrySelectorChip } from "@/src/components/CountrySelector";
+import { useCountry } from "@/src/lib/country-context";
 
 export default function DebtRights() {
   const router = useRouter();
+  const { country, countryCode } = useCountry();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    try { setData(await legalApi.debtRights()); }
+    try { setData(await legalApi.debtRights(countryCode)); }
     catch (_e) {}
     setLoading(false);
-  }, []);
+  }, [countryCode]);
   useEffect(() => { load(); }, [load]);
 
   if (loading || !data) {
     return <SafeAreaView style={styles.container} edges={["top"]}><ActivityIndicator color={colors.primaryGlow} style={{ marginTop: 60 }} /></SafeAreaView>;
   }
+
+  const isLocalised = data.localised === true;
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -31,7 +36,7 @@ export default function DebtRights() {
           <ArrowLeft color={colors.textPrimary} size={20} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Debt & Credit Rights</Text>
-        <View style={{ width: 36 }} />
+        <CountrySelectorChip onChange={() => load()} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
@@ -40,65 +45,86 @@ export default function DebtRights() {
           <Text style={styles.disclaimerText}>{data.disclaimer}</Text>
         </View>
 
-        {/* FDCPA */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>{data.fdcpa.title}</Text>
-          {data.fdcpa.rights.map((r: string, i: number) => (
-            <View key={i} style={styles.bullet}><Text style={styles.dot}>•</Text><Text style={styles.bulletText}>{r}</Text></View>
-          ))}
-        </View>
-
-        {/* Credit disputes */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>{data.credit_disputes.title}</Text>
-          {data.credit_disputes.steps.map((s: string, i: number) => (
-            <View key={i} style={styles.bullet}><Text style={[styles.dot, { color: colors.primaryGlow }]}>{i + 1}.</Text><Text style={styles.bulletText}>{s}</Text></View>
-          ))}
-        </View>
-
-        {/* Student loans */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>{data.student_loans.title}</Text>
-          {data.student_loans.programs.map((p: any, i: number) => (
-            <View key={i} style={styles.program}>
-              <Text style={styles.programName}>{p.name}</Text>
-              <Text style={styles.programCriteria}>{p.criteria}</Text>
+        {isLocalised ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>{country.flag} {country.name} — Debt & Credit Rights</Text>
+            <Text style={styles.bulletText}>{data.notice}</Text>
+            <View style={{ height: 8 }} />
+            <Text style={styles.programName}>Jurisdiction</Text>
+            <Text style={styles.programCriteria}>{data.jurisdiction}</Text>
+            <View style={{ height: 8 }} />
+            <Text style={styles.programName}>Regulator(s)</Text>
+            <Text style={styles.programCriteria}>{data.regulator}</Text>
+            <View style={{ height: 8 }} />
+            <Text style={styles.programName}>Consumer Law Reference</Text>
+            <Text style={styles.programCriteria}>{data.consumer_law_ref}</Text>
+            <TouchableOpacity style={[styles.aidBtn, { alignSelf: "flex-start", marginTop: 12, paddingHorizontal: 14, width: undefined, height: undefined, paddingVertical: 8, borderRadius: 8 }]} onPress={() => router.push("/legal")}>
+              <Text style={{ color: colors.primaryGlow, fontWeight: "700", fontSize: 12 }}>← Back to Legal Topics</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <>
+            {/* FDCPA */}
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>{data.fdcpa.title}</Text>
+              {data.fdcpa.rights.map((r: string, i: number) => (
+                <View key={i} style={styles.bullet}><Text style={styles.dot}>•</Text><Text style={styles.bulletText}>{r}</Text></View>
+              ))}
             </View>
-          ))}
-        </View>
 
-        {/* Statute of Limitations */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>{data.statute_of_limitations_ga.title}</Text>
-          {data.statute_of_limitations_ga.items.map((it: any, i: number) => (
-            <View key={i} style={styles.solRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.solType}>{it.debt_type}</Text>
-                <Text style={styles.solNote}>{it.note}</Text>
-              </View>
-              <View style={styles.solYears}><Text style={styles.solYearsText}>{it.years} yrs</Text></View>
+            {/* Credit disputes */}
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>{data.credit_disputes.title}</Text>
+              {data.credit_disputes.steps.map((s: string, i: number) => (
+                <View key={i} style={styles.bullet}><Text style={[styles.dot, { color: colors.primaryGlow }]}>{i + 1}.</Text><Text style={styles.bulletText}>{s}</Text></View>
+              ))}
             </View>
-          ))}
-        </View>
 
-        {/* Free Legal Aid */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Free Legal Aid (Georgia)</Text>
-          {data.free_legal_aid_ga.map((a: any, i: number) => (
-            <View key={i} style={styles.aidRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.aidName}>{a.name}</Text>
-                <Text style={styles.aidPhone}>{a.phone}</Text>
-              </View>
-              <TouchableOpacity style={styles.aidBtn} onPress={() => Linking.openURL(`tel:${a.phone.replace(/[^\d+]/g, "")}`).catch(() => {})}>
-                <Phone size={14} color={colors.primaryGlow} />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.aidBtn} onPress={() => Linking.openURL(a.url).catch(() => {})}>
-                <ExternalLink size={14} color={colors.primaryGlow} />
-              </TouchableOpacity>
+            {/* Student loans */}
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>{data.student_loans.title}</Text>
+              {data.student_loans.programs.map((p: any, i: number) => (
+                <View key={i} style={styles.program}>
+                  <Text style={styles.programName}>{p.name}</Text>
+                  <Text style={styles.programCriteria}>{p.criteria}</Text>
+                </View>
+              ))}
             </View>
-          ))}
-        </View>
+
+            {/* Statute of Limitations */}
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>{data.statute_of_limitations_ga.title}</Text>
+              {data.statute_of_limitations_ga.items.map((it: any, i: number) => (
+                <View key={i} style={styles.solRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.solType}>{it.debt_type}</Text>
+                    <Text style={styles.solNote}>{it.note}</Text>
+                  </View>
+                  <View style={styles.solYears}><Text style={styles.solYearsText}>{it.years} yrs</Text></View>
+                </View>
+              ))}
+            </View>
+
+            {/* Free Legal Aid */}
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Free Legal Aid (Georgia)</Text>
+              {data.free_legal_aid_ga.map((a: any, i: number) => (
+                <View key={i} style={styles.aidRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.aidName}>{a.name}</Text>
+                    <Text style={styles.aidPhone}>{a.phone}</Text>
+                  </View>
+                  <TouchableOpacity style={styles.aidBtn} onPress={() => Linking.openURL(`tel:${a.phone.replace(/[^\d+]/g, "")}`).catch(() => {})}>
+                    <Phone size={14} color={colors.primaryGlow} />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.aidBtn} onPress={() => Linking.openURL(a.url).catch(() => {})}>
+                    <ExternalLink size={14} color={colors.primaryGlow} />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          </>
+        )}
 
         <View style={{ height: 40 }} />
       </ScrollView>

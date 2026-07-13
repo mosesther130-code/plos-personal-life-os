@@ -1,5 +1,5 @@
 // PLOS Travel — LIVE search results powered by SerpApi Google Flights & Hotels.
-// Falls back to Claude engine ONLY if SerpApi returns zero results or errors.
+// Falls back to PLOS AI engine ONLY if SerpApi returns zero results or errors.
 // Deep-links to 20+ platforms always render.
 import React, { useCallback, useEffect, useState } from "react";
 import {
@@ -95,7 +95,7 @@ export function LiveTripSearchResults({ tripId, destination, onSavedToBudget }: 
         setData(fresh);
         setRefreshing(false);
       }
-      // Fall back to legacy Claude engine if SerpApi returned nothing
+      // Fall back to legacy PLOS AI engine if SerpApi returned nothing
       const noFlights = !(res?.flights_data?.flights?.length);
       const noHotels = !(res?.hotels_data?.hotels?.length);
       if (noFlights && noHotels) {

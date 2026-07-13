@@ -416,7 +416,7 @@ export default function InvestmentOverview() {
             </View>
           ) : (
             <Text style={styles.optEmpty}>
-              Tap Analyze for Claude&apos;s personalized contribution plan.
+              Tap Analyze for PLOS AI&apos;s personalized contribution plan.
             </Text>
           )}
         </View>

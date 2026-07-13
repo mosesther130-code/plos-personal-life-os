@@ -605,7 +605,7 @@ def make_router(db, get_current_user_id, emergent_llm_key, llm_chat_cls, user_ms
         raw = await call_claude(session, prompt)
         parsed = _extract_json(raw)
         if not parsed or "flights" not in parsed:
-            raise HTTPException(502, "Search failed — Claude returned no parseable JSON")
+            raise HTTPException(502, "Search failed — PLOS AI returned no parseable JSON")
         enriched = _enrich(parsed, trip)
         now = datetime.now(timezone.utc).isoformat()
         await db.trips.update_one(

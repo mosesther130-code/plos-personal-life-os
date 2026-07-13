@@ -227,7 +227,7 @@ export default function Finance() {
         {/* 90-day Cash Flow Forecast */}
         <CashFlowForecast />
 
-        {/* Monthly Spending Summary (previous month, Claude-generated) */}
+        {/* Monthly Spending Summary (previous month, PLOS AI-generated) */}
         <MonthlySummaryCard />
 
         {/* Alert Settings entry */}

@@ -423,17 +423,17 @@ def make_router(db, get_current_user_id, emergent_llm_key, llm_chat_cls, user_ms
         try:
             text = await call_claude(f"resume-polish-{user_id}", system, prompt)
         except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Claude error: {e}")
+            raise HTTPException(status_code=502, detail=f"PLOS AI error: {e}")
         # naive JSON extraction
         import json
         import re
         m = re.search(r"\{.*\}", text, re.DOTALL)
         if not m:
-            raise HTTPException(status_code=502, detail="Unable to parse Claude response")
+            raise HTTPException(status_code=502, detail="Unable to parse PLOS AI response")
         try:
             data = json.loads(m.group(0))
         except Exception:
-            raise HTTPException(status_code=502, detail="Invalid JSON from Claude")
+            raise HTTPException(status_code=502, detail="Invalid JSON from PLOS AI")
 
         # merge improvements back into draft
         new_draft = {**draft}

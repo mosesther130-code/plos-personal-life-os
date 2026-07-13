@@ -6,24 +6,31 @@ import { useRouter, useFocusEffect } from "expo-router";
 import { ArrowLeft, Tag, Zap, Package, ChevronRight, Wallet, Sparkles, ShieldCheck } from "lucide-react-native";
 import { colors, spacing, radius } from "@/src/lib/theme";
 import { shoppingApi } from "@/src/lib/api";
+import { CountrySelectorChip, CountryContextBanner } from "@/src/components/CountrySelector";
+import { useCountry } from "@/src/lib/country-context";
 
-const fmtUSD = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
+const fmt = (n: number, currency: string, symbol: string) =>
+  `${symbol}${Math.round(n).toLocaleString("en-US")}`;
 
 export default function ShoppingHub() {
   const router = useRouter();
-  const [summary, setSummary] = useState<{ deals: number; savings: number; products: number }>({ deals: 0, savings: 0, products: 0 });
+  const { country, countryCode } = useCountry();
+  const [summary, setSummary] = useState<{ deals: number; savings: number; products: number; currency: string; symbol: string; notice?: string }>({ deals: 0, savings: 0, products: 0, currency: "USD", symbol: "$" });
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [d, p] = await Promise.all([shoppingApi.deals(), shoppingApi.registered()]);
+      const [d, p] = await Promise.all([shoppingApi.deals(countryCode), shoppingApi.registered()]);
       setSummary({
         deals: d?.deals?.length || 0,
         savings: d?.total_savings_this_month || 0,
         products: p?.products?.length || 0,
+        currency: d?.currency || country.currency,
+        symbol: country.currency === "USD" ? "$" : country.currency === "EUR" ? "€" : country.currency === "GBP" ? "£" : country.currency === "PHP" ? "₱" : country.currency === "CAD" ? "C$" : country.currency === "AUD" ? "A$" : "$",
+        notice: d?.notice,
       });
     } catch (_e) {}
-  }, []);
+  }, [countryCode, country.currency]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
   useEffect(() => { load(); }, [load]);
@@ -37,18 +44,25 @@ export default function ShoppingHub() {
           <ArrowLeft color={colors.textPrimary} size={20} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Shopping & Deals</Text>
-        <View style={{ width: 36 }} />
+        <CountrySelectorChip />
       </View>
       <ScrollView
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primaryGlow} />}
       >
+        <CountryContextBanner />
+        {summary.notice ? (
+          <View style={styles.noticeCard} testID="shopping-country-notice">
+            <Sparkles color={colors.primaryGlow} size={14} />
+            <Text style={styles.noticeText}>{summary.notice}</Text>
+          </View>
+        ) : null}
         <View style={styles.savingsCard} testID="shopping-savings-card">
           <View style={styles.savingsIcon}><Wallet color={colors.success} size={22} /></View>
           <View style={{ flex: 1 }}>
             <Text style={styles.savingsLabel}>POTENTIAL SAVINGS THIS MONTH</Text>
-            <Text style={styles.savingsValue}>{fmtUSD(summary.savings)}</Text>
-            <Text style={styles.savingsSub}>Across {summary.deals} active deal{summary.deals === 1 ? "" : "s"}</Text>
+            <Text style={styles.savingsValue}>{fmt(summary.savings, summary.currency, summary.symbol)}</Text>
+            <Text style={styles.savingsSub}>Across {summary.deals} active deal{summary.deals === 1 ? "" : "s"} · {summary.currency}</Text>
           </View>
         </View>
 
@@ -56,7 +70,7 @@ export default function ShoppingHub() {
           <View style={[styles.tileIcon, { backgroundColor: "rgba(59,130,246,0.15)" }]}><Sparkles color={colors.primaryGlow} size={22} /></View>
           <View style={{ flex: 1 }}>
             <Text style={styles.tileTitle}>AI Deal Finder</Text>
-            <Text style={styles.tileSub}>Find the best price across retailers · Claude 4.5</Text>
+            <Text style={styles.tileSub}>Find the best price across retailers · PLOS AI</Text>
           </View>
           <ChevronRight size={16} color={colors.textTertiary} />
         </TouchableOpacity>
@@ -100,7 +114,7 @@ export default function ShoppingHub() {
           <View style={[styles.tileIcon, { backgroundColor: "rgba(59,130,246,0.15)" }]}><Zap color={colors.primaryGlow} size={22} /></View>
           <View style={{ flex: 1 }}>
             <Text style={styles.tileTitle}>Utilities Review</Text>
-            <Text style={styles.tileSub}>Power · wireless · internet · water · Claude 4.5</Text>
+            <Text style={styles.tileSub}>Power · wireless · internet · water · PLOS AI</Text>
           </View>
           <ChevronRight size={16} color={colors.textTertiary} />
         </TouchableOpacity>
@@ -139,4 +153,6 @@ const styles = StyleSheet.create({
   chipsRow: { flexDirection: "row", gap: 6, marginTop: 8 },
   miniChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: "rgba(16,185,129,0.3)", backgroundColor: "rgba(16,185,129,0.08)" },
   miniChipText: { color: colors.success, fontSize: 11, fontWeight: "700" },
+  noticeCard: { flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: "rgba(59,130,246,0.08)", borderColor: "rgba(59,130,246,0.3)", borderWidth: 1, borderRadius: radius.md, padding: spacing.md },
+  noticeText: { flex: 1, color: colors.textPrimary, fontSize: 12, lineHeight: 17 },
 });

@@ -127,7 +127,7 @@ def make_router(db, get_current_user_id, emergent_llm_key, llm_chat_cls, user_ms
         try:
             text = await call_claude(f"interview-{user_id}", system, prompt)
         except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Claude error: {e}")
+            raise HTTPException(status_code=502, detail=f"PLOS AI error: {e}")
         parsed = _extract_json(text) or {}
         if not parsed.get("questions"):
             raise HTTPException(status_code=502, detail="Unable to parse interview prep")
@@ -183,7 +183,7 @@ def make_router(db, get_current_user_id, emergent_llm_key, llm_chat_cls, user_ms
         try:
             text = await call_claude(f"letter-{body.letter_type}-{user_id}", system, prompt)
         except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Claude error: {e}")
+            raise HTTPException(status_code=502, detail=f"PLOS AI error: {e}")
         parsed = _extract_json(text) or {}
         if not parsed.get("body"):
             raise HTTPException(status_code=502, detail="Unable to parse letter")
@@ -313,7 +313,7 @@ def make_router(db, get_current_user_id, emergent_llm_key, llm_chat_cls, user_ms
         try:
             text = await call_claude(f"jobsearch-{user_id}", system, prompt)
         except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Claude error: {e}")
+            raise HTTPException(status_code=502, detail=f"PLOS AI error: {e}")
         parsed = _extract_json(text) or {}
         results = parsed.get("results") or []
         if not results:

@@ -103,7 +103,7 @@ export default function AIPlatformsScreen() {
 
   async function clearKey(p: Platform) {
     if (p.always_connected) return;
-    Alert.alert("Disconnect?", `Remove the ${p.label} key? Tasks routed here will fall back to Claude.`,
+    Alert.alert("Disconnect?", `Remove the ${p.label} key? Tasks routed here will fall back to PLOS AI.`,
       [
         { text: "Cancel", style: "cancel" },
         {

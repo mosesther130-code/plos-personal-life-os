@@ -183,7 +183,7 @@ export default function DocSummarizer() {
             <Text style={styles.uploadDropSub}>
               {pickedFile
                 ? `${fmtBytes(pickedFile.size)} · tap to change`
-                : "Up to 12 MB. Images use Claude vision."}
+                : "Up to 12 MB. Images use PLOS AI vision."}
             </Text>
           </TouchableOpacity>
 

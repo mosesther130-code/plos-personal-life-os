@@ -33,7 +33,7 @@ export default function BusinessHub() {
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.tileTitle}>Business Ideas Advisor</Text>
-            <Text style={styles.tileSub}>Claude 4.5 · 5 personalized ventures · full plans</Text>
+            <Text style={styles.tileSub}>PLOS AI · 5 personalized ventures · full plans</Text>
           </View>
           <ChevronRight size={16} color={colors.textTertiary} />
         </TouchableOpacity>

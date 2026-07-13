@@ -1,4 +1,4 @@
-// Trip Planner detail — destination overview + Claude insights + flights/hotels + checklist + cost.
+// Trip Planner detail — destination overview + PLOS AI insights + flights/hotels + checklist + cost.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
@@ -89,7 +89,7 @@ export default function TripPlanner() {
       setChecklist(ck?.items || []);
       setCost(ce?.estimate || cost);
 
-      // Insights — load cached or trigger Claude
+      // Insights — load cached or trigger PLOS AI
       if (t?.cached_insights) {
         setInsights(t.cached_insights);
       } else {
@@ -452,7 +452,7 @@ export default function TripPlanner() {
           </View>
         )}
 
-        {/* LIVE Flights + Hotels via SerpApi (with Claude fallback) */}
+        {/* LIVE Flights + Hotels via SerpApi (with PLOS AI fallback) */}
         <LiveTripSearchResults
           tripId={String(id)}
           destination={trip?.city || trip?.destination}
@@ -474,11 +474,11 @@ export default function TripPlanner() {
           </View>
         )}
 
-        {/* Claude Insights */}
+        {/* PLOS AI Insights */}
         {insightsLoading ? (
           <View style={[styles.card, { alignItems: "center", paddingVertical: spacing.xl }]}>
             <ActivityIndicator color={colors.primaryGlow} size="large" />
-            <Text style={styles.loadingText}>Asking Claude 4.5 about {trip.country}…</Text>
+            <Text style={styles.loadingText}>Asking PLOS AI about {trip.country}…</Text>
           </View>
         ) : insights ? (
           <>
@@ -612,7 +612,7 @@ export default function TripPlanner() {
         ) : (
           <View style={styles.card}>
             <Text style={styles.cardLabel}>DESTINATION INSIGHTS</Text>
-            <Text style={styles.body}>Generate Claude 4.5 insights for {trip.country}: visa, vaccinations, packing list, cultural do&apos;s & don&apos;ts, emergency contacts.</Text>
+            <Text style={styles.body}>Generate PLOS AI insights for {trip.country}: visa, vaccinations, packing list, cultural do&apos;s & don&apos;ts, emergency contacts.</Text>
             <TouchableOpacity style={styles.genBtn} onPress={refreshInsights} testID="generate-insights" activeOpacity={0.85}>
               <Sparkles size={14} color="#fff" />
               <Text style={styles.genBtnText}>Generate Insights</Text>

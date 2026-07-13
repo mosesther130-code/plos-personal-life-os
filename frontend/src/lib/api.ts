@@ -364,12 +364,12 @@ export const businessApi = {
 };
 
 export const shoppingApi = {
-  deals: () => request<any>("/shopping/deals"),
+  deals: (country?: string) => request<any>(`/shopping/deals${country ? `?country=${country}` : ""}`),
   dismissDeal: (id: string) => request<any>(`/shopping/deals/${id}/dismiss`, { method: "POST" }),
   preferences: () => request<any>("/shopping/preferences"),
   updatePreferences: (d: any) => request<any>("/shopping/preferences", { method: "PUT", body: d }),
-  utilities: () => request<any>("/shopping/utilities"),
-  findBetterRate: (id: string) => request<any>(`/shopping/utilities/${id}/find-better`, { method: "POST" }),
+  utilities: (country?: string) => request<any>(`/shopping/utilities${country ? `?country=${country}` : ""}`),
+  findBetterRate: (id: string, country?: string) => request<any>(`/shopping/utilities/${id}/find-better${country ? `?country=${country}` : ""}`, { method: "POST" }),
   registered: () => request<any>("/shopping/registered-products"),
   registerProduct: (d: any) => request<any>("/shopping/registered-products", { method: "POST", body: d }),
   unregisterProduct: (id: string) => request<any>(`/shopping/registered-products/${id}`, { method: "DELETE" }),
@@ -751,7 +751,7 @@ export const travelApi = {
   pinTrip: (id: string, pinned: boolean) =>
     request<any>(`/travel/trips/${id}/pin`, { method: "PUT", body: { pinned } }),
   scanTrip: (id: string) => request<any>(`/travel/trips/${id}/scan`, { method: "POST", body: {} }),
-  // Insights (Claude consolidated)
+  // Insights (PLOS AI consolidated)
   insights: (d: any) => request<any>("/travel/insights", { method: "POST", body: d }),
   // Reference data
   advisories: () => request<any>("/travel/advisories"),
@@ -797,16 +797,21 @@ export const healthApi = {
 // ----------------- Legal Advisor -----------------
 export const legalApi = {
   categories: () => request<any>("/legal/categories"),
-  topic: (slug: string, force_refresh = false) =>
-    request<any>(`/legal/topic/${slug}${force_refresh ? "?force_refresh=true" : ""}`, { method: "POST" }),
+  topic: (slug: string, force_refresh = false, country?: string) => {
+    const qs = [
+      force_refresh ? "force_refresh=true" : "",
+      country ? `country=${country}` : "",
+    ].filter(Boolean).join("&");
+    return request<any>(`/legal/topic/${slug}${qs ? `?${qs}` : ""}`, { method: "POST" });
+  },
   documents: () => request<any>("/legal/documents"),
   createDoc: (d: any) => request<any>("/legal/documents", { method: "POST", body: d }),
   updateDoc: (id: string, d: any) => request<any>(`/legal/documents/${id}`, { method: "PUT", body: d }),
   deleteDoc: (id: string) => request<any>(`/legal/documents/${id}`, { method: "DELETE" }),
-  debtRights: () => request<any>("/legal/debt-rights"),
+  debtRights: (country?: string) => request<any>(`/legal/debt-rights${country ? `?country=${country}` : ""}`),
 };
 
-// ----------------- Travel AI Search (Claude flights+hotels) --------------
+// ----------------- Travel AI Search (PLOS AI flights+hotels) --------------
 export const travelSearchApi = {
   get: (trip_id: string) =>
     request<{ results: any; searched_at: string | null; stale: boolean; has_results: boolean }>(

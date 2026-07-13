@@ -174,7 +174,7 @@ export function ResumeVaultPanel() {
   return (
     <View style={{ gap: spacing.md }}>
       <Text style={styles.helper}>
-        Files here feed the AI Tailor. Pick one as your <Text style={{ color: colors.primaryGlow, fontWeight: "700" }}>base</Text> — Claude tailors it for each job you apply to.
+        Files here feed the AI Tailor. Pick one as your <Text style={{ color: colors.primaryGlow, fontWeight: "700" }}>base</Text> — PLOS AI tailors it for each job you apply to.
       </Text>
 
       <View style={{ flexDirection: "row", gap: spacing.sm }}>

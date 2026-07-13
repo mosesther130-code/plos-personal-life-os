@@ -248,7 +248,7 @@ export default function Credit() {
         <View style={styles.tipCard} testID="credit-tip-card">
           <View style={styles.tipHead}>
             <Sparkles size={14} color={colors.primaryGlow} />
-            <Text style={styles.tipHeadText}>Powered by Claude</Text>
+            <Text style={styles.tipHeadText}>Powered by PLOS AI</Text>
             <TouchableOpacity onPress={refreshTip} disabled={tipBusy} style={styles.tipBtn} testID="refresh-tip">
               {tipBusy ? <ActivityIndicator size="small" color={colors.primaryGlow} /> : <Text style={styles.tipBtnText}>{tip ? "Refresh" : "Generate"}</Text>}
             </TouchableOpacity>

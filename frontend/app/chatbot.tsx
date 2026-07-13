@@ -261,7 +261,7 @@ export default function Chatbot() {
     } catch (_e) {
       setMessages((m) => [
         ...m,
-        { id: `e-${Date.now()}`, role: "assistant", content: "I couldn't reach Claude. Please try again." },
+        { id: `e-${Date.now()}`, role: "assistant", content: "I couldn't reach PLOS AI. Please try again." },
       ]);
     }
     setLoading(false);

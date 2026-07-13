@@ -62,7 +62,7 @@ export default function PathAdvisor() {
         <View style={styles.loader}>
           <ActivityIndicator color={colors.primaryGlow} />
           <Text style={styles.loadingText}>
-            Claude is mapping your paths…
+            PLOS AI is mapping your paths…
           </Text>
         </View>
       ) : (

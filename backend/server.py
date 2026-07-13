@@ -20,6 +20,7 @@ import bcrypt
 import jwt as pyjwt
 from emergentintegrations.llm.chat import LlmChat, UserMessage
 import httpx
+from country_context import get_country, country_prompt_block
 
 # Load env
 ROOT_DIR = Path(__file__).parent
@@ -4536,12 +4537,37 @@ DEFAULT_SHOPPING_PREFS = {
 
 
 @api_router.get("/shopping/deals")
-async def list_deals(user_id: str = Depends(get_current_user_id)):
+async def list_deals(country: str = "US", user_id: str = Depends(get_current_user_id)):
+    country_code = (country or "US").upper()
+    c_info = get_country(country_code)
+    if country_code != "US":
+        # SEED_DEALS are Georgia/US-specific curated promotions.
+        # For non-US users, return an empty curated list with a clear localised note
+        # and point them to the AI Deal Finder for country-specific deals.
+        return {
+            "deals": [],
+            "total_savings_this_month": 0,
+            "dismissed_count": 0,
+            "country": country_code,
+            "country_name": c_info["name"],
+            "currency": c_info["currency"],
+            "notice": (
+                f"Pre-curated deals are US-only. For real-time deals in {c_info['flag']} {c_info['name']}, "
+                f"tap AI Deal Finder — PLOS AI will search {c_info['retailers'].split(',')[0].strip()} and other local retailers using {c_info['currency']} pricing."
+            ),
+        }
     dismissed = await db.dismissed_deals.find({"user_id": user_id}, {"_id": 0}).to_list(50)
     dismissed_ids = {d["deal_id"] for d in dismissed}
     active = [d for d in SEED_DEALS if d["deal_id"] not in dismissed_ids]
     total_savings = sum(float(d.get("savings_usd") or 0) for d in active)
-    return {"deals": active, "total_savings_this_month": round(total_savings, 2), "dismissed_count": len(dismissed_ids)}
+    return {
+        "deals": active,
+        "total_savings_this_month": round(total_savings, 2),
+        "dismissed_count": len(dismissed_ids),
+        "country": country_code,
+        "country_name": c_info["name"],
+        "currency": c_info["currency"],
+    }
 
 
 @api_router.post("/shopping/deals/{deal_id}/dismiss")
@@ -4567,23 +4593,58 @@ async def update_shopping_prefs(body: Dict[str, Any], user_id: str = Depends(get
 
 
 @api_router.get("/shopping/utilities")
-async def list_utilities(user_id: str = Depends(get_current_user_id)):
-    return {"utilities": SEED_UTILITIES}
+async def list_utilities(country: str = "US", user_id: str = Depends(get_current_user_id)):
+    country_code = (country or "US").upper()
+    c_info = get_country(country_code)
+    if country_code != "US":
+        return {
+            "utilities": [],
+            "country": country_code,
+            "country_name": c_info["name"],
+            "currency": c_info["currency"],
+            "notice": (
+                f"Pre-configured utility comparisons are set up for the US (Georgia). "
+                f"To review your utilities in {c_info['flag']} {c_info['name']}, add your local provider from Settings — "
+                f"or use PLOS AI Deal Finder for country-specific savings."
+            ),
+        }
+    return {
+        "utilities": SEED_UTILITIES,
+        "country": country_code,
+        "country_name": c_info["name"],
+        "currency": c_info["currency"],
+    }
 
 
 @api_router.post("/shopping/utilities/{utility_id}/find-better")
-async def find_better_rate(utility_id: str, user_id: str = Depends(get_current_user_id)):
+async def find_better_rate(utility_id: str, country: str = "US", user_id: str = Depends(get_current_user_id)):
     u = next((x for x in SEED_UTILITIES if x["id"] == utility_id), None)
     if not u:
         raise HTTPException(status_code=404, detail="Utility not found")
+    c_info = get_country(country)
+    country_block = country_prompt_block(country)
     chat = LlmChat(
         api_key=EMERGENT_LLM_KEY,
-        session_id=f"util-{user_id}-{utility_id}",
-        system_message=PLOS_SYSTEM_PROMPT,
+        session_id=f"util-{user_id}-{utility_id}-{country}",
+        system_message=(
+            "You are PLOS AI — a personal utilities advisor. "
+            f"{country_block}\n\n"
+            f"Adapt your recommendations to providers, tariffs, and switching mechanisms "
+            f"available in {c_info['name']}. Use {c_info['currency']} ({c_info['currency_symbol']}) for all price references."
+        ),
     ).with_model("anthropic", "claude-sonnet-4-5-20250929")
-    r = await chat.send_message(UserMessage(text=u["claude_prompt"] + "\n\nIMPORTANT: Be CONCISE. Limit response to UNDER 500 words. Use bullet points only. Skip preamble."))
+    localized_prompt = (
+        f"{u['claude_prompt']}\n\n"
+        f"IMPORTANT LOCALISATION: The user is in {c_info['name']}. "
+        f"If the utility category exists in {c_info['name']}, recommend real providers there. "
+        f"If the specific provider '{u['provider']}' does not operate in {c_info['name']}, "
+        f"acknowledge that briefly and pivot to the closest equivalent local providers. "
+        f"Use {c_info['currency']} for all monetary values. "
+        "Be CONCISE. Limit response to UNDER 500 words. Use bullet points only. Skip preamble."
+    )
+    r = await chat.send_message(UserMessage(text=localized_prompt))
     text = r if isinstance(r, str) else str(r)
-    return {"utility_id": utility_id, "provider": u["provider"], "recommendation": text}
+    return {"utility_id": utility_id, "provider": u["provider"], "recommendation": text, "country": country.upper(), "country_name": c_info["name"], "currency": c_info["currency"]}
 
 
 @api_router.get("/shopping/registered-products")
@@ -6054,33 +6115,43 @@ async def list_legal_categories():
 
 
 @api_router.post("/legal/topic/{slug}")
-async def legal_topic(slug: str, force_refresh: bool = False, user_id: str = Depends(get_current_user_id)):
+async def legal_topic(slug: str, force_refresh: bool = False, country: str = "US", user_id: str = Depends(get_current_user_id)):
     cat = LEGAL_CATEGORY_BY_SLUG.get(slug)
     if not cat:
         raise HTTPException(status_code=404, detail="Unknown category")
 
+    country_code = (country or "US").upper()
+    c_info = get_country(country_code)
+
     if not force_refresh:
-        cached = await db.legal_topic_cache.find_one({"user_id": user_id, "slug": slug}, {"_id": 0})
+        cached = await db.legal_topic_cache.find_one({"user_id": user_id, "slug": slug, "country": country_code}, {"_id": 0})
         if cached and cached.get("response"):
             try:
                 age_days = (datetime.now(timezone.utc) - datetime.fromisoformat(cached["generated_at"].replace("Z", "+00:00"))).days
                 if age_days < 7:
-                    return {"slug": slug, "title": cat["title"], "response": cached["response"], "cached": True, "disclaimer": LEGAL_DISCLAIMER}
+                    return {"slug": slug, "title": cat["title"], "response": cached["response"], "cached": True, "disclaimer": LEGAL_DISCLAIMER, "country": country_code, "country_name": c_info["name"], "flag": c_info["flag"]}
             except Exception:
                 pass
 
-    prompt = f"Generate the overview for category: {cat['title']}. Description: {cat['description']}. User is in Georgia."
-    # Route to Mistral (european_legal) for non-US jurisdiction topics; Claude (financial_advice) for US
-    is_non_us = any(k in (cat.get("title", "") + " " + cat.get("description", "")).lower()
-                    for k in ("philippine", "gdpr", "european", "eu ", "international",
-                              "cross-border", "belgium", "germany", "france", "uk law"))
+    country_block = country_prompt_block(country_code)
+    prompt = (
+        f"Generate the overview for category: {cat['title']}. Description: {cat['description']}.\n\n"
+        f"{country_block}\n\n"
+        f"The user is currently located in / requesting advice for {c_info['name']}. "
+        f"Base your ENTIRE response on the laws, rights, procedures, and consumer protections of {c_info['name']}. "
+        f"If Georgia-specific US information does not apply, replace it with the local {c_info['name']} equivalent."
+    )
+    is_non_us = country_code != "US"
     task = "european_legal" if is_non_us else "financial_advice"
+    resources_header = f"## {c_info['name']} Resources" if is_non_us else "## Georgia Resources"
     legal_system = (
-        "You are a legal information assistant for PLOS users based in Atlanta, Georgia. "
-        "Provide accurate, plain-English overviews of US/Georgia law. Use markdown structure: "
-        "## Overview of Key Rights, ## Common Situations, ## When to Consult an Attorney, "
-        "## Georgia Resources. Keep total response UNDER 600 words, focused on actionable info. "
-        "ALWAYS end with: '⚖️ This is general legal information only and not legal advice. For specific legal situations, consult a licensed attorney in your jurisdiction.'"
+        f"You are PLOS AI — a legal information assistant. The user is in {c_info['flag']} {c_info['name']}. "
+        f"Provide accurate, plain-English overviews of {c_info['jurisdiction']}. "
+        f"Cite {c_info['consumer_law_ref']} where relevant, and point to regulators like {c_info['regulator']}. "
+        "Use markdown structure: "
+        f"## Overview of Key Rights, ## Common Situations, ## When to Consult an Attorney, {resources_header}. "
+        "Keep total response UNDER 600 words, focused on actionable info. "
+        f"ALWAYS end with: '⚖️ This is general legal information only and not legal advice. For specific legal situations, consult a licensed attorney in {c_info['name']}.'"
     )
     try:
         routed = await ai_router.route_ai_task(
@@ -6093,11 +6164,11 @@ async def legal_topic(slug: str, force_refresh: bool = False, user_id: str = Dep
         raise HTTPException(status_code=500, detail=f"Legal topic failed: {e}")
 
     await db.legal_topic_cache.update_one(
-        {"user_id": user_id, "slug": slug},
-        {"$set": {"response": text, "generated_at": iso(now_utc())}},
+        {"user_id": user_id, "slug": slug, "country": country_code},
+        {"$set": {"response": text, "generated_at": iso(now_utc()), "country": country_code}},
         upsert=True,
     )
-    return {"slug": slug, "title": cat["title"], "response": text, "cached": False, "disclaimer": LEGAL_DISCLAIMER}
+    return {"slug": slug, "title": cat["title"], "response": text, "cached": False, "disclaimer": LEGAL_DISCLAIMER, "country": country_code, "country_name": c_info["name"], "flag": c_info["flag"]}
 
 
 class LegalDocIn(BaseModel):
@@ -6173,8 +6244,27 @@ async def delete_legal_doc(doc_id: str, user_id: str = Depends(get_current_user_
 
 
 @api_router.get("/legal/debt-rights")
-async def debt_rights():
-    return {**GA_DEBT_RIGHTS, "disclaimer": LEGAL_DISCLAIMER}
+async def debt_rights(country: str = "US"):
+    country_code = (country or "US").upper()
+    c_info = get_country(country_code)
+    if country_code == "US":
+        return {**GA_DEBT_RIGHTS, "disclaimer": LEGAL_DISCLAIMER, "country": "US", "country_name": "United States"}
+    # For non-US countries, return a localised skeleton with the AI-enrichment hint
+    return {
+        "country": country_code,
+        "country_name": c_info["name"],
+        "flag": c_info["flag"],
+        "jurisdiction": c_info["jurisdiction"],
+        "regulator": c_info["regulator"],
+        "consumer_law_ref": c_info["consumer_law_ref"],
+        "localised": True,
+        "notice": (
+            f"Debt & Credit Rights are pre-mapped for the US (Georgia). "
+            f"For {c_info['flag']} {c_info['name']}, tap any Legal Topic above — PLOS AI will generate a "
+            f"detailed overview using {c_info['jurisdiction']} and {c_info['regulator']} as reference."
+        ),
+        "disclaimer": LEGAL_DISCLAIMER,
+    }
 
 
 # ====================================================================

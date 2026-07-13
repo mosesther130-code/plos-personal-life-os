@@ -90,7 +90,7 @@ export default function QuoteResultScreen() {
         <Header title="Generating quote..." onBack={() => router.back()} />
         <View style={styles.loadingBox}>
           <ActivityIndicator color={colors.primaryGlow} size="large" />
-          <Text style={styles.loadingText}>Claude 4.5 is analyzing your profile...</Text>
+          <Text style={styles.loadingText}>PLOS AI is analyzing your profile...</Text>
           <Text style={styles.loadingSub}>Applying Georgia-specific rating factors</Text>
         </View>
       </SafeAreaView>

@@ -28,8 +28,12 @@ import {
 } from "lucide-react-native";
 import { shoppingApi } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
+import { CountrySelectorChip } from "@/src/components/CountrySelector";
+import { useCountry } from "@/src/lib/country-context";
 
-const fmtUSD = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
+const currencySymbol = (cur: string) =>
+  cur === "USD" ? "$" : cur === "EUR" ? "€" : cur === "GBP" ? "£" : cur === "PHP" ? "₱" : cur === "CAD" ? "C$" : cur === "AUD" ? "A$" : "$";
+const fmtMoney = (n: number, cur: string) => `${currencySymbol(cur)}${Math.round(n).toLocaleString("en-US")}`;
 
 const categoryMeta = (c: string) => {
   switch (c) {
@@ -49,20 +53,25 @@ const categoryLabel = (c: string) => {
 
 export default function Deals() {
   const router = useRouter();
+  const { country, countryCode } = useCountry();
   const [deals, setDeals] = useState<any[]>([]);
   const [totalSavings, setTotalSavings] = useState(0);
+  const [notice, setNotice] = useState<string>("");
+  const [currency, setCurrency] = useState<string>(country.currency);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await shoppingApi.deals();
+      const r = await shoppingApi.deals(countryCode);
       setDeals(r?.deals || []);
       setTotalSavings(r?.total_savings_this_month || 0);
+      setNotice(r?.notice || "");
+      setCurrency(r?.currency || country.currency);
     } catch (_e) {}
     setLoading(false);
-  }, []);
+  }, [countryCode, country.currency]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -96,7 +105,7 @@ export default function Deals() {
           <ArrowLeft color={colors.textPrimary} size={20} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Active Deals</Text>
-        <View style={{ width: 36 }} />
+        <CountrySelectorChip />
       </View>
 
       <ScrollView
@@ -104,15 +113,22 @@ export default function Deals() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primaryGlow} />}
       >
         <View style={styles.savingsCard} testID="deals-savings">
-          <Text style={styles.savingsLabel}>POTENTIAL MONTHLY SAVINGS</Text>
-          <Text style={styles.savingsValue}>{fmtUSD(totalSavings)}</Text>
-          <Text style={styles.savingsSub}>across {deals.length} active deal{deals.length === 1 ? "" : "s"}</Text>
+          <Text style={styles.savingsLabel}>POTENTIAL MONTHLY SAVINGS · {country.flag} {country.name}</Text>
+          <Text style={styles.savingsValue}>{fmtMoney(totalSavings, currency)}</Text>
+          <Text style={styles.savingsSub}>across {deals.length} active deal{deals.length === 1 ? "" : "s"} · {currency}</Text>
         </View>
 
-        <View style={styles.noteRow}>
-          <Info size={12} color={colors.textTertiary} />
-          <Text style={styles.noteText}>Curated demo set. Live deals pipeline will require Kroger/Costco affiliate keys.</Text>
-        </View>
+        {notice ? (
+          <View style={[styles.noteRow, { alignItems: "flex-start" }]}>
+            <Info size={12} color={colors.primaryGlow} />
+            <Text style={[styles.noteText, { color: colors.textPrimary }]}>{notice}</Text>
+          </View>
+        ) : (
+          <View style={styles.noteRow}>
+            <Info size={12} color={colors.textTertiary} />
+            <Text style={styles.noteText}>Curated demo set. Live deals pipeline will require Kroger/Costco affiliate keys.</Text>
+          </View>
+        )}
 
         {loading ? (
           <ActivityIndicator color={colors.primaryGlow} style={{ marginTop: 40 }} />

@@ -116,7 +116,7 @@ export function TripSearchResults({ tripId, destination, onSavedToBudget }: Prop
           <Sparkles size={16} color={colors.primaryGlow} />
         </View>
         <Text style={styles.loadingStep}>{LOADING_STEPS[step]}</Text>
-        <Text style={styles.loadingMeta}>Claude Sonnet 4.5 · 25-40s typical</Text>
+        <Text style={styles.loadingMeta}>PLOS AI · 25-40s typical</Text>
       </View>
     );
   }

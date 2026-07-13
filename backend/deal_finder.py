@@ -1,7 +1,7 @@
 """
 PLOS — Enhancement 9: Shopping & Deals — AI Product Deal Finder
 - CRUD for saved searches
-- POST /find  → Claude returns recommended deals across retailers for a product
+- POST /find  → PLOS AI returns recommended deals across retailers for a product
 - POST /searches/{id}/refresh → re-run AI for an existing search
 """
 from __future__ import annotations
@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from emergentintegrations.llm.chat import LlmChat, UserMessage
+from country_context import get_country, country_prompt_block
 
 EMERGENT_LLM_KEY = os.getenv("EMERGENT_LLM_KEY", "")
 
@@ -32,6 +33,7 @@ class DealSearchIn(BaseModel):
     urgency: str = "anytime"  # "today" | "this_week" | "this_month" | "anytime"
     quality_preference: str = "balanced"  # "budget" | "balanced" | "premium"
     notes: Optional[str] = None
+    country: Optional[str] = "US"
 
 
 class DealSearch(DealSearchIn):
@@ -63,30 +65,45 @@ def _strip(d: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
 async def _run_claude_finder(
     user_id: str, search: Dict[str, Any]
 ) -> Dict[str, Any]:
-    """Calls Claude to produce a list of recommended deals for `search`."""
+    """Calls PLOS AI to produce a list of recommended deals for `search`."""
+    country_code = (search.get("country") or "US").upper()
+    c_info = get_country(country_code)
+    currency = c_info["currency"]
+    symbol = c_info["currency_symbol"]
+
     prompt_data = {
         "product": search["product"],
-        "max_price_usd": search.get("max_price_usd"),
-        "target_price_usd": search.get("target_price_usd"),
+        f"max_price_{currency.lower()}": search.get("max_price_usd"),
+        f"target_price_{currency.lower()}": search.get("target_price_usd"),
         "preferred_retailers": search.get("preferred_retailers") or [],
         "urgency": search.get("urgency", "anytime"),
         "quality_preference": search.get("quality_preference", "balanced"),
         "notes": search.get("notes") or "",
+        "country": country_code,
+        "country_name": c_info["name"],
+        "currency": currency,
     }
 
+    country_block = country_prompt_block(country_code)
+
     prompt = (
-        "You are an expert deal hunter helping a personal life OS user find the "
-        "best price for a product. Given the search criteria, suggest 4-6 "
+        "You are PLOS AI — an expert deal hunter helping a personal life OS user find the "
+        f"best price for a product in {c_info['flag']} {c_info['name']}. Given the search criteria, suggest 4-6 "
         "REALISTIC deal recommendations. Use your knowledge of typical pricing "
-        "(June 2026) across major US retailers. For each deal include: "
-        "retailer, model/variant, est_price_usd (number), original_price_usd "
-        "(number if applicable), savings_pct (number), pros (short), cons "
+        f"(June 2026) across MAJOR RETAILERS AVAILABLE IN {c_info['name'].upper()} "
+        f"(examples: {c_info['retailers']}). "
+        f"For each deal include: "
+        f"retailer, model/variant, est_price_{currency.lower()} (number in {currency}), "
+        f"original_price_{currency.lower()} (number in {currency} if applicable), "
+        "savings_pct (number), pros (short), cons "
         "(short), and a confidence rating ('high','medium','low').\n\n"
+        f"{country_block}\n\n"
         f"SEARCH:\n{json.dumps(prompt_data, indent=2)}\n\n"
         "OUTPUT JSON ONLY (no markdown fences):\n"
-        '{ "summary": "2-3 sentence verdict and best pick", '
+        f'{{ "summary": "2-3 sentence verdict and best pick — mention {c_info["name"]} availability", '
+        f'"currency": "{currency}", '
         '"deals": [ { "retailer": "...", "model": "...", '
-        '"est_price_usd": 0, "original_price_usd": 0, "savings_pct": 0, '
+        f'"est_price_{currency.lower()}": 0, "original_price_{currency.lower()}": 0, "savings_pct": 0, '
         '"pros": "...", "cons": "...", "confidence": "high|medium|low", '
         '"buy_url_hint": "shop.brand.com/path-or-search-string" }, ... ] }'
     )
@@ -96,9 +113,10 @@ async def _run_claude_finder(
         task_type="real_time_research",
         payload={
             "system": (
-                "You are a careful product deal expert. Output ONLY valid JSON. "
+                f"You are PLOS AI — a careful product deal expert focused on {c_info['name']}. "
+                "Output ONLY valid JSON. "
                 "Never fabricate URLs that include fake tracking; if unsure, return "
-                "a brand-domain hint instead."
+                f"a brand-domain hint instead. All prices MUST be in {currency} ({symbol})."
             ),
             "prompt": prompt,
         },
@@ -114,9 +132,15 @@ async def _run_claude_finder(
             parsed = {}
 
     deals = parsed.get("deals") or []
-    summary = parsed.get("summary") or "Top picks compiled from recent market pricing."
-    # Normalize numeric fields
+    summary = parsed.get("summary") or f"Top picks compiled from recent {c_info['name']} market pricing."
+    # Normalize numeric fields — map any currency-suffixed keys back to _usd names for frontend compatibility
+    cur_lower = currency.lower()
     for d in deals:
+        # Support both "est_price_php" and legacy "est_price_usd"
+        for src_k, dst_k in ((f"est_price_{cur_lower}", "est_price_usd"),
+                              (f"original_price_{cur_lower}", "original_price_usd")):
+            if src_k in d and dst_k not in d:
+                d[dst_k] = d.pop(src_k)
         for k in ("est_price_usd", "original_price_usd", "savings_pct"):
             v = d.get(k)
             if isinstance(v, str):
@@ -127,7 +151,14 @@ async def _run_claude_finder(
         d.setdefault("confidence", "medium")
     # Sort by est_price ascending
     deals.sort(key=lambda d: (d.get("est_price_usd") or 1e9))
-    return {"deals": deals, "summary": summary}
+    return {
+        "deals": deals,
+        "summary": summary,
+        "currency": currency,
+        "currency_symbol": symbol,
+        "country": country_code,
+        "country_name": c_info["name"],
+    }
 
 
 # --------------------------- Factory ----------------------------------

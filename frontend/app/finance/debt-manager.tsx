@@ -450,7 +450,7 @@ export default function DebtManager() {
             </View>
           ) : (
             <Text style={styles.aiEmpty}>
-              Tap Generate to get Claude&apos;s personalized recommendation.
+              Tap Generate to get PLOS AI&apos;s personalized recommendation.
             </Text>
           )}
         </View>

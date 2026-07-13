@@ -14,6 +14,8 @@ import {
 import { legalApi } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
 import { EditModal, type Field } from "@/src/components/EditModal";
+import { CountrySelectorChip, CountryContextBanner } from "@/src/components/CountrySelector";
+import { useCountry } from "@/src/lib/country-context";
 
 const ICONS: Record<string, any> = {
   home: Home, briefcase: Briefcase, "credit-card": CreditCard, globe: Globe,
@@ -50,6 +52,7 @@ function notify(title: string, message?: string) {
 
 export default function LegalHub() {
   const router = useRouter();
+  const { country } = useCountry();
   const [categories, setCategories] = useState<any[]>([]);
   const [documents, setDocuments] = useState<any[]>([]);
   const [disclaimer, setDisclaimer] = useState("");
@@ -107,7 +110,7 @@ export default function LegalHub() {
           <ArrowLeft color={colors.textPrimary} size={20} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Legal Advisor</Text>
-        <View style={{ width: 36 }} />
+        <CountrySelectorChip />
       </View>
 
       {loading ? (
@@ -121,8 +124,10 @@ export default function LegalHub() {
             </View>
           ) : null}
 
+          <CountryContextBanner />
+
           <Text style={styles.sectionLabel}>LEGAL TOPICS</Text>
-          <Text style={styles.intro}>Tap a topic. Claude 4.5 generates a Georgia-specific overview with key rights, common situations, when to consult an attorney, and resources.</Text>
+          <Text style={styles.intro}>Tap a topic. PLOS AI generates a {country.flag} {country.name}-specific overview using {country.jurisdiction}, covering key rights, common situations, when to consult an attorney, and local resources.</Text>
           <View style={styles.grid}>
             {categories.map((c) => {
               const Icon = ICONS[c.icon] || Scroll;

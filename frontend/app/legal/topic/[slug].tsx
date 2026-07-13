@@ -1,4 +1,4 @@
-// Legal Topic detail (Claude-generated overview)
+// Legal Topic detail (PLOS AI-generated overview)
 import React, { useCallback, useEffect, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl,
@@ -8,10 +8,13 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { ArrowLeft, RefreshCw, ShieldAlert } from "lucide-react-native";
 import { legalApi } from "@/src/lib/api";
 import { colors, spacing, radius } from "@/src/lib/theme";
+import { CountrySelectorChip } from "@/src/components/CountrySelector";
+import { useCountry } from "@/src/lib/country-context";
 
 export default function LegalTopic() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
   const router = useRouter();
+  const { country, countryCode } = useCountry();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [response, setResponse] = useState<string>("");
@@ -23,7 +26,7 @@ export default function LegalTopic() {
     if (!slug) return;
     setLoading(true);
     try {
-      const r = await legalApi.topic(slug, force);
+      const r = await legalApi.topic(slug, force, countryCode);
       setResponse(r?.response || "");
       setTitle(r?.title || "");
       setDisclaimer(r?.disclaimer || "");
@@ -32,7 +35,7 @@ export default function LegalTopic() {
       setResponse("Could not load topic. Please retry.");
     }
     setLoading(false);
-  }, [slug]);
+  }, [slug, countryCode]);
 
   useEffect(() => { load(false); }, [load]);
 
@@ -45,9 +48,12 @@ export default function LegalTopic() {
           <ArrowLeft color={colors.textPrimary} size={20} />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>{title || slug}</Text>
-        <TouchableOpacity style={styles.iconBtn} onPress={() => load(true)} testID="topic-refresh" disabled={loading}>
-          <RefreshCw color={colors.textPrimary} size={18} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <CountrySelectorChip onChange={() => load(true)} />
+          <TouchableOpacity style={styles.iconBtn} onPress={() => load(true)} testID="topic-refresh" disabled={loading}>
+            <RefreshCw color={colors.textPrimary} size={18} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.primaryGlow} />}>
@@ -60,7 +66,7 @@ export default function LegalTopic() {
         {loading ? (
           <View style={{ alignItems: "center", paddingTop: 40, gap: spacing.md }}>
             <ActivityIndicator size="large" color={colors.primaryGlow} />
-            <Text style={styles.body}>Asking Claude 4.5 about {title || slug}…</Text>
+            <Text style={styles.body}>Asking PLOS AI about {title || slug} in {country.flag} {country.name}…</Text>
           </View>
         ) : (
           <>
