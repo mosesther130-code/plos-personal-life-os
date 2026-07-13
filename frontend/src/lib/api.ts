@@ -1537,3 +1537,18 @@ export const careerPrefsApi = {
     }),
 };
 
+
+// ----------------- Navigation Module -----------------
+export const navigationApi = {
+  places: () => request<{ presets: any[]; user_places: any[]; total: number }>("/navigation/places"),
+  addPlace: (data: any) => request<any>("/navigation/places", { method: "POST", body: data }),
+  deletePlace: (id: string) => request<any>(`/navigation/places/${id}`, { method: "DELETE" }),
+  route: (data: { origin: { lat: number; lng: number }; destination: { lat: number; lng: number }; mode: string; waypoints?: any[]; avoid_tolls?: boolean; avoid_highways?: boolean }) =>
+    request<any>("/navigation/route", { method: "POST", body: data }),
+  compare: (data: { origin: { lat: number; lng: number }; destination: { lat: number; lng: number } }) =>
+    request<any>("/navigation/compare", { method: "POST", body: data }),
+  logHistory: (data: any) => request<any>("/navigation/history", { method: "POST", body: data }),
+  history: () => request<{ history: any[]; count: number }>("/navigation/history"),
+  analytics: () => request<{ week_km: number; week_miles: number; sessions: number; top_mode?: string; top_destination?: string }>("/navigation/analytics"),
+  seed: () => request<any>("/navigation/seed", { method: "POST" }),
+};

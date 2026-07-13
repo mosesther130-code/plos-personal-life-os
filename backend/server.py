@@ -6421,6 +6421,11 @@ from insurance_quotes import make_quotes_router  # noqa: E402
 
 app.include_router(make_quotes_router(db, get_current_user_id))
 
+# Navigation module — routing + saved places + history (Phase 1)
+from navigation_service import make_navigation_router  # noqa: E402
+
+app.include_router(make_navigation_router(db, get_current_user_id))
+
 # ---------------------------------------------------------------------------
 # AI Router — multi-model dispatch layer
 # ---------------------------------------------------------------------------

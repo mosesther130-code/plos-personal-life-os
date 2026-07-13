@@ -23,6 +23,7 @@ import {
   Scale,
   HeartPulse,
   Shield,
+  Compass,
 } from "lucide-react-native";
 
 import { useAuth } from "@/src/lib/auth-context";
@@ -42,6 +43,7 @@ const fmtUSD = (n: number, compact = false) => {
 const MODULES = [
   { key: "finance", title: "Finances", icon: Wallet, color: colors.success, route: "/(tabs)/finance" },
   { key: "career", title: "Career", icon: Briefcase, color: colors.primaryGlow, route: "/(tabs)/career" },
+  { key: "navigation", title: "Navigation", icon: Compass, color: "#0EA5E9", route: "/navigation" },
   { key: "investments", title: "Investments", icon: TrendingUp, color: "#10B981", route: "/investments" },
   { key: "debt", title: "Debt", icon: CreditCard, color: colors.warning, route: "/(tabs)/finance" },
   { key: "deals", title: "Deals", icon: Tag, color: "#EC4899", route: "/shopping" },
