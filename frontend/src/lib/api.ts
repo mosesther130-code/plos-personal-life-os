@@ -399,6 +399,25 @@ export const insuranceApi = {
   detail: (id: string) => request<any>(`/insurance/deals/${id}`),
   refresh: () => request<any>("/insurance/deals/refresh", { method: "POST" }),
   seed: () => request<any>("/insurance/deals/seed", { method: "POST" }),
+
+  // Quote Profile
+  getProfile: () => request<any>("/insurance/quote-profile"),
+  saveProfile: (data: any) => request<any>("/insurance/quote-profile", { method: "PUT", body: data }),
+  deleteProfile: () => request<any>("/insurance/quote-profile", { method: "DELETE" }),
+
+  // Quote generation
+  generateQuote: (insurer_name: string, insurance_type: string, deal_id?: string) =>
+    request<any>("/insurance/quote", { method: "POST", body: { insurer_name, insurance_type, deal_id } }),
+  compareAll: (insurance_type: "auto" | "home" | "bundle" = "auto") =>
+    request<any>(`/insurance/quote/compare?insurance_type=${insurance_type}`, { method: "POST" }),
+
+  // Quote history
+  listQuotes: (insurance_type?: string) => {
+    const qs = insurance_type ? `?insurance_type=${insurance_type}` : "";
+    return request<{ quotes: any[]; count: number }>(`/insurance/quote-history${qs}`);
+  },
+  getQuote: (qid: string) => request<any>(`/insurance/quote-history/${qid}`),
+  deleteQuote: (qid: string) => request<any>(`/insurance/quote-history/${qid}`, { method: "DELETE" }),
 };
 
 // ----------------- Student Loans (Enhancement 2) -----------------

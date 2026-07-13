@@ -37,6 +37,10 @@ import {
   ArrowDownRight,
   Minus,
   Sparkles,
+  Calculator,
+  UserCog,
+  GitCompare,
+  History,
 } from "lucide-react-native";
 import { colors, spacing, radius } from "@/src/lib/theme";
 import { insuranceApi } from "@/src/lib/api";
@@ -251,6 +255,19 @@ export default function InsuranceDealsShop() {
     Linking.openURL(url).catch(() => Alert.alert("Unable to open", url));
   };
 
+  // Get My Quote — in-app quote generation
+  const getMyQuote = (deal: Deal) => {
+    router.push({
+      pathname: "/shopping/insurance/quote/[qid]",
+      params: {
+        qid: "new",
+        insurer_name: deal.company_name,
+        insurance_type: deal.insurance_type,
+        deal_id: deal.id,
+      },
+    } as any);
+  };
+
   const openAgentMap = (deal: Deal) => {
     if (deal.find_agent_url) Linking.openURL(deal.find_agent_url).catch(() => {});
   };
@@ -348,6 +365,34 @@ export default function InsuranceDealsShop() {
         </TouchableOpacity>
       </View>
 
+      {/* Quote engine controls */}
+      <View style={styles.controlsRow}>
+        <TouchableOpacity
+          style={[styles.filterBtn, { borderWidth: 1, borderColor: colors.primaryGlow, backgroundColor: "rgba(59,130,246,0.12)" }]}
+          onPress={() => router.push("/shopping/insurance/profile" as any)}
+          testID="profile-btn"
+        >
+          <UserCog color={colors.primaryGlow} size={14} />
+          <Text style={[styles.controlText, { color: colors.primaryGlow }]}>My Quote Profile</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.filterBtn, { borderWidth: 1, borderColor: colors.success, backgroundColor: "rgba(16,185,129,0.12)" }]}
+          onPress={() => router.push({ pathname: "/shopping/insurance/compare" as any, params: { insurance_type: activeTab } })}
+          testID="compare-all-btn"
+        >
+          <GitCompare color={colors.success} size={14} />
+          <Text style={[styles.controlText, { color: colors.success }]}>Compare All</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.filterBtn}
+          onPress={() => router.push("/shopping/insurance/history" as any)}
+          testID="history-btn"
+        >
+          <History color={colors.textSecondary} size={14} />
+          <Text style={styles.controlText}>My Quotes</Text>
+        </TouchableOpacity>
+      </View>
+
       <ScrollView
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primaryGlow} />}
@@ -386,6 +431,7 @@ export default function InsuranceDealsShop() {
               onQuote={() => openQuote(deal)}
               onQuoteAuto={() => openQuote(deal, "auto")}
               onQuoteHome={() => openQuote(deal, "home")}
+              onGetMyQuote={() => getMyQuote(deal)}
               onAgent={() => openAgentMap(deal)}
               onShare={() => shareDeal(deal)}
               compared={compareIds.includes(deal.id)}
@@ -642,6 +688,7 @@ function DealCard({
   onQuote,
   onQuoteAuto,
   onQuoteHome,
+  onGetMyQuote,
   onAgent,
   onShare,
   compared,
@@ -653,6 +700,7 @@ function DealCard({
   onQuote: () => void;
   onQuoteAuto: () => void;
   onQuoteHome: () => void;
+  onGetMyQuote: () => void;
   onAgent: () => void;
   onShare: () => void;
   compared: boolean;
@@ -800,21 +848,33 @@ function DealCard({
       </View>
 
       {isBundle ? (
-        <View style={{ flexDirection: "row", gap: 8 }}>
-          <TouchableOpacity style={[styles.quoteBtn, { flex: 1, backgroundColor: colors.primaryGlow }]} onPress={onQuoteAuto} testID={`quote-auto-${deal.id}`}>
-            <ExternalLink color="#fff" size={14} />
-            <Text style={styles.quoteBtnText}>Auto Quote</Text>
+        <>
+          <TouchableOpacity style={[styles.quoteBtn, { backgroundColor: colors.primaryGlow }]} onPress={onGetMyQuote} testID={`get-my-quote-${deal.id}`}>
+            <Calculator color="#fff" size={14} />
+            <Text style={styles.quoteBtnText}>Get My Quote</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.quoteBtn, { flex: 1, backgroundColor: colors.success }]} onPress={onQuoteHome} testID={`quote-home-${deal.id}`}>
-            <ExternalLink color="#fff" size={14} />
-            <Text style={styles.quoteBtnText}>Home Quote</Text>
-          </TouchableOpacity>
-        </View>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <TouchableOpacity style={[styles.smallBtn, { flex: 1 }]} onPress={onQuoteAuto} testID={`quote-auto-${deal.id}`}>
+              <ExternalLink color={colors.primaryGlow} size={14} />
+              <Text style={styles.smallBtnText}>Auto Website</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.smallBtn, { flex: 1 }]} onPress={onQuoteHome} testID={`quote-home-${deal.id}`}>
+              <ExternalLink color={colors.success} size={14} />
+              <Text style={styles.smallBtnText}>Home Website</Text>
+            </TouchableOpacity>
+          </View>
+        </>
       ) : (
-        <TouchableOpacity style={styles.quoteBtn} onPress={onQuote} testID={`quote-${deal.id}`}>
-          <ExternalLink color="#fff" size={14} />
-          <Text style={styles.quoteBtnText}>Get Quote</Text>
-        </TouchableOpacity>
+        <>
+          <TouchableOpacity style={styles.quoteBtn} onPress={onGetMyQuote} testID={`get-my-quote-${deal.id}`}>
+            <Calculator color="#fff" size={14} />
+            <Text style={styles.quoteBtnText}>Get My Quote</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.smallBtn} onPress={onQuote} testID={`visit-website-${deal.id}`}>
+            <ExternalLink color={colors.textPrimary} size={12} />
+            <Text style={styles.smallBtnText}>Visit Website for Direct Quote</Text>
+          </TouchableOpacity>
+        </>
       )}
 
       <View style={styles.secondaryRow}>

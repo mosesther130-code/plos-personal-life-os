@@ -6416,6 +6416,11 @@ from insurance_deals import make_insurance_router  # noqa: E402
 
 app.include_router(make_insurance_router(db, get_current_user_id))
 
+# Insurance Quote Generation Engine (Claude Sonnet 4.5)
+from insurance_quotes import make_quotes_router  # noqa: E402
+
+app.include_router(make_quotes_router(db, get_current_user_id))
+
 # ---------------------------------------------------------------------------
 # AI Router — multi-model dispatch layer
 # ---------------------------------------------------------------------------
