@@ -44,6 +44,7 @@ import {
 } from "lucide-react-native";
 import { colors, spacing, radius } from "@/src/lib/theme";
 import { insuranceApi } from "@/src/lib/api";
+import { openExternalUrl } from "@/src/lib/open-url";
 
 // ------------------------- Types -------------------------
 type InsType = "auto" | "home" | "bundle";
@@ -269,13 +270,11 @@ export default function InsuranceDealsShop() {
   };
 
   const openAgentMap = (deal: Deal) => {
-    if (deal.find_agent_url) Linking.openURL(deal.find_agent_url).catch(() => {});
+    if (deal.find_agent_url) openExternalUrl(deal.find_agent_url);
   };
 
   const openGeneralAgentSearch = () => {
-    Linking.openURL(
-      "https://www.google.com/maps/search/insurance+agent+near+Stone+Mountain+GA+30083"
-    ).catch(() => {});
+    openExternalUrl("https://www.google.com/maps/search/insurance+agent+near+Stone+Mountain+GA+30083");
   };
 
   const shareDeal = async (deal: Deal) => {

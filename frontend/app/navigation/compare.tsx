@@ -1,12 +1,16 @@
 // PLOS — Route Comparison
 // Route: /navigation/compare?origin_lat=..&origin_lng=..&dest_lat=..&dest_lng=..&dest_name=..
 import React, { useCallback, useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Linking } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { ArrowLeft, ExternalLink, MapPin, Trophy, Clock } from "lucide-react-native";
 import { colors, spacing, radius } from "@/src/lib/theme";
 import { navigationApi } from "@/src/lib/api";
+import { openExternalUrl } from "@/src/lib/open-url";
+
+// (Local openExternal replaced by shared /src/lib/open-url helper — fixes
+// ERR_BLOCKED_BY_RESPONSE when Google Maps refuses to iframe-embed on web.)
 
 const MODE_META: Record<string, { label: string; emoji: string; color: string }> = {
   driving: { label: "Drive",   emoji: "🚗", color: "#3B82F6" },
@@ -55,7 +59,7 @@ export default function CompareRoutes() {
 
   const openGoogleMaps = (m: any) => {
     const url = m?.google_maps_link || `https://www.google.com/maps/dir/?api=1&origin=${params.origin_lat},${params.origin_lng}&destination=${params.dest_lat},${params.dest_lng}`;
-    Linking.openURL(url).catch(() => {});
+    openExternalUrl(url);
   };
 
   // Determine fastest mode
