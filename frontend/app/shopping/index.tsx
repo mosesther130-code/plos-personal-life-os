@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
-import { ArrowLeft, Tag, Zap, Package, ChevronRight, Wallet, Sparkles } from "lucide-react-native";
+import { ArrowLeft, Tag, Zap, Package, ChevronRight, Wallet, Sparkles, ShieldCheck } from "lucide-react-native";
 import { colors, spacing, radius } from "@/src/lib/theme";
 import { shoppingApi } from "@/src/lib/api";
 
@@ -61,6 +61,32 @@ export default function ShoppingHub() {
           <ChevronRight size={16} color={colors.textTertiary} />
         </TouchableOpacity>
 
+        <TouchableOpacity style={[styles.tile, { borderColor: "rgba(16,185,129,0.35)" }]} onPress={() => router.push("/shopping/insurance")} testID="hub-insurance" activeOpacity={0.85}>
+          <View style={[styles.tileIcon, { backgroundColor: "rgba(16,185,129,0.15)" }]}><ShieldCheck color={colors.success} size={22} /></View>
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Text style={styles.tileTitle}>Insurance Deals</Text>
+              <View style={styles.newDot} />
+              <View style={styles.verifiedPill}>
+                <Text style={styles.verifiedPillText}>VERIFIED ONLY</Text>
+              </View>
+            </View>
+            <Text style={styles.tileSub}>Best verified rates for auto, home, and bundles — no personal info required</Text>
+            <View style={styles.chipsRow}>
+              <TouchableOpacity onPress={(e) => { e.stopPropagation?.(); router.push("/shopping/insurance?tab=auto"); }} style={styles.miniChip} testID="hub-insurance-auto">
+                <Text style={styles.miniChipText}>Auto</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={(e) => { e.stopPropagation?.(); router.push("/shopping/insurance?tab=home"); }} style={styles.miniChip} testID="hub-insurance-home">
+                <Text style={styles.miniChipText}>Home</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={(e) => { e.stopPropagation?.(); router.push("/shopping/insurance?tab=bundle"); }} style={styles.miniChip} testID="hub-insurance-bundle">
+                <Text style={styles.miniChipText}>Bundle</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          <ChevronRight size={16} color={colors.textTertiary} />
+        </TouchableOpacity>
+
         <TouchableOpacity style={styles.tile} onPress={() => router.push("/shopping/deals")} testID="hub-deals" activeOpacity={0.85}>
           <View style={[styles.tileIcon, { backgroundColor: "rgba(236,72,153,0.15)" }]}><Tag color="#EC4899" size={22} /></View>
           <View style={{ flex: 1 }}>
@@ -107,4 +133,10 @@ const styles = StyleSheet.create({
   tileIcon: { width: 44, height: 44, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
   tileTitle: { color: colors.textPrimary, fontWeight: "700", fontSize: 15 },
   tileSub: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
+  newDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.success },
+  verifiedPill: { backgroundColor: "rgba(16,185,129,0.18)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  verifiedPillText: { color: colors.success, fontSize: 9, fontWeight: "800", letterSpacing: 0.6 },
+  chipsRow: { flexDirection: "row", gap: 6, marginTop: 8 },
+  miniChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: "rgba(16,185,129,0.3)", backgroundColor: "rgba(16,185,129,0.08)" },
+  miniChipText: { color: colors.success, fontSize: 11, fontWeight: "700" },
 });

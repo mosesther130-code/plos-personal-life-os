@@ -6411,6 +6411,11 @@ from family_locations_router import make_router as make_family_locations_router 
 
 app.include_router(make_family_locations_router(db, get_current_user_id))
 
+# Insurance Deals Shop — verified auto/home/bundle deals (Phase 1: seed-based)
+from insurance_deals import make_insurance_router  # noqa: E402
+
+app.include_router(make_insurance_router(db, get_current_user_id))
+
 # ---------------------------------------------------------------------------
 # AI Router — multi-model dispatch layer
 # ---------------------------------------------------------------------------

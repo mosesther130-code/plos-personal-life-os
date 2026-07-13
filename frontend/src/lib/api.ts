@@ -375,6 +375,32 @@ export const shoppingApi = {
   unregisterProduct: (id: string) => request<any>(`/shopping/registered-products/${id}`, { method: "DELETE" }),
 };
 
+// ----------------- Insurance Deals Shop -----------------
+export const insuranceApi = {
+  averages: () => request<{ auto_monthly: number; home_monthly: number; bundle_monthly: number; state: string; as_of: string }>("/insurance/averages"),
+  list: (params: {
+    insurance_type?: "auto" | "home" | "bundle" | "all";
+    sort?: "best_deal" | "lowest_rate" | "highest_rated" | "most_recent";
+    min_rate?: number;
+    max_rate?: number;
+    am_best_min?: string;
+    discounts?: string;
+    military_ok?: boolean;
+    min_trust?: number;
+  } = {}) => {
+    const qs = Object.entries(params)
+      .filter(([, v]) => v !== undefined && v !== null && v !== "")
+      .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
+      .join("&");
+    return request<{ deals: any[]; total: number; total_all: number; last_updated: string; averages: any }>(
+      `/insurance/deals${qs ? `?${qs}` : ""}`
+    );
+  },
+  detail: (id: string) => request<any>(`/insurance/deals/${id}`),
+  refresh: () => request<any>("/insurance/deals/refresh", { method: "POST" }),
+  seed: () => request<any>("/insurance/deals/seed", { method: "POST" }),
+};
+
 // ----------------- Student Loans (Enhancement 2) -----------------
 export const studentLoansApi = {
   listLoans: () => request<{ loans: any[]; totals: any }>("/student-loans/list"),
