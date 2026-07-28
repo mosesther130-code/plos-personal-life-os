@@ -17,8 +17,7 @@ import { Fingerprint, ScanFace, ShieldCheck } from "lucide-react-native";
 
 import { useAuth } from "@/src/lib/auth-context";
 import { colors, spacing, radius } from "@/src/lib/theme";
-import { Button } from "@/src/components/Button";
-import {
+import { Button } from "@/src/components/Button";import {
   authenticate as bioAuthenticate,
   detectBiometricCapability,
   enableBiometricLogin,
@@ -38,11 +37,12 @@ const mask = (email: string) => {
 
 export default function Login() {
   const router = useRouter();
-  const { signIn } = useAuth();
+  const { signIn, signInWithGoogle } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
 
   const [cap, setCap] = useState<BiometricCapability>({
     hardware: false,
@@ -151,6 +151,24 @@ export default function Login() {
     router.replace("/(tabs)");
   };
 
+  const doGoogleSignIn = async () => {
+    setError(null);
+    setGoogleLoading(true);
+    try {
+      await signInWithGoogle();
+      // On mobile, if flow completes successfully, AuthContext sets user →
+      // root layout redirects to tabs. Fallback: manually push.
+      // On web, this call causes a full-page redirect; we don't reach here.
+      setTimeout(() => {
+        if (Platform.OS !== "web") router.replace("/(tabs)");
+      }, 400);
+    } catch (e: any) {
+      setError(e?.message || "Google sign-in failed");
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
   // Pick the right icon for the biometric type
   const BioIcon = cap.label === "Face ID" || cap.label === "Face Unlock" ? ScanFace : Fingerprint;
 
@@ -225,6 +243,29 @@ export default function Login() {
               testID="login-submit-button"
               style={{ marginTop: spacing.lg }}
             />
+
+            {/* Divider */}
+            <View style={styles.divider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>OR</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            {/* Continue with Google (Emergent-managed) */}
+            <TouchableOpacity
+              style={styles.googleBtn}
+              onPress={doGoogleSignIn}
+              disabled={googleLoading || loading}
+              testID="google-signin-button"
+              activeOpacity={0.85}
+            >
+              <View style={styles.googleIconWrap}>
+                <Text style={styles.googleIconText}>G</Text>
+              </View>
+              <Text style={styles.googleBtnText}>
+                {googleLoading ? "Connecting…" : "Continue with Google"}
+              </Text>
+            </TouchableOpacity>
 
             <TouchableOpacity
               onPress={() => router.push("/(auth)/register")}
@@ -373,4 +414,19 @@ const styles = StyleSheet.create({
   modalPrimaryText: { color: "#fff", fontWeight: "700", fontSize: 14 },
   modalSecondary: { paddingVertical: 8, alignItems: "center", width: "100%" },
   modalSecondaryText: { color: colors.textSecondary, fontWeight: "600", fontSize: 13 },
+
+  divider: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: spacing.lg, marginBottom: spacing.md },
+  dividerLine: { flex: 1, height: 1, backgroundColor: colors.borderSubtle },
+  dividerText: { color: colors.textTertiary, fontSize: 11, fontWeight: "700", letterSpacing: 1 },
+  googleBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
+    backgroundColor: "#fff", borderRadius: radius.md, paddingVertical: 12, paddingHorizontal: spacing.lg,
+    borderWidth: 1, borderColor: "#dadce0",
+  },
+  googleIconWrap: {
+    width: 22, height: 22, borderRadius: 11, alignItems: "center", justifyContent: "center",
+    backgroundColor: "#fff",
+  },
+  googleIconText: { color: "#4285F4", fontSize: 16, fontWeight: "900", fontFamily: Platform.OS === "ios" ? "System" : "sans-serif" },
+  googleBtnText: { color: "#3c4043", fontSize: 15, fontWeight: "700" },
 });

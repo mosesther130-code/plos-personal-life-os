@@ -65,6 +65,13 @@ export const authApi = {
       body: { email, password },
       auth: false,
     }),
+  googleSession: (session_id: string) =>
+    request<AuthUser>("/auth/google/session", {
+      method: "POST",
+      body: { session_id },
+      auth: false,
+    }),
+  logout: () => request<any>("/auth/logout", { method: "POST" }).catch(() => ({ ok: true })),
   me: () => request<any>("/auth/me"),
 };
 

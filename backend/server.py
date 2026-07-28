@@ -80,16 +80,31 @@ def create_jwt(user_id: str) -> str:
 async def get_current_user_id(
     creds: HTTPAuthorizationCredentials = Depends(security),
 ) -> str:
+    token = creds.credentials
+    # Try JWT first (existing password auth)
     try:
-        payload = pyjwt.decode(creds.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        payload = pyjwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user_id = payload.get("user_id")
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Invalid token")
-        return user_id
+        if user_id:
+            return user_id
     except pyjwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except pyjwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        # Fall through to Google session lookup
+        pass
+    # Try Google-session token (Emergent-managed)
+    try:
+        sess = await db.user_sessions.find_one({"session_token": token}, {"_id": 0})
+        if sess:
+            exp = sess.get("expires_at")
+            if isinstance(exp, datetime):
+                if exp.tzinfo is None:
+                    exp = exp.replace(tzinfo=timezone.utc)
+                if exp > datetime.now(timezone.utc):
+                    return sess["user_id"]
+    except Exception:
+        pass
+    raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 
 def clean_doc(doc: Optional[dict]) -> Optional[dict]:
@@ -642,6 +657,111 @@ async def login(payload: LoginRequest):
         email=user["email"],
         full_name=user["full_name"],
     )
+
+
+# --------------- Emergent Google Auth (Emergent-managed) ---------------
+class GoogleSessionRequest(BaseModel):
+    session_id: str
+
+
+@api_router.post("/auth/google/session", response_model=AuthResponse)
+async def google_session(payload: GoogleSessionRequest):
+    """
+    Exchange the one-time `session_id` produced by Emergent's hosted Google flow
+    for a persistent session_token (7-day validity). Upserts the user by email
+    so repeat logins keep the same user_id.
+    """
+    if not payload.session_id or len(payload.session_id) < 6:
+        raise HTTPException(status_code=400, detail="Missing session_id")
+
+    # 1) Verify with Emergent
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as c:
+            r = await c.get(
+                "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
+                headers={"X-Session-ID": payload.session_id},
+            )
+        if r.status_code != 200:
+            raise HTTPException(status_code=401, detail="Invalid session_id")
+        data = r.json() or {}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Auth provider error: {e}")
+
+    email = (data.get("email") or "").lower().strip()
+    name = data.get("name") or email.split("@")[0]
+    picture = data.get("picture") or ""
+    session_token = data.get("session_token")
+    if not email or not session_token:
+        raise HTTPException(status_code=502, detail="Auth provider returned incomplete data")
+
+    # 2) Upsert user
+    existing = await db.users.find_one({"email": email})
+    if existing:
+        user_id = existing["user_id"]
+        full_name = existing.get("full_name") or name
+    else:
+        user_id = f"user_{uuid.uuid4().hex[:12]}"
+        full_name = name
+        user_doc = {
+            "user_id": user_id,
+            "email": email,
+            "full_name": full_name,
+            "password_hash": "",  # Google-only user
+            "auth_provider": "google",
+            "picture": picture,
+            "created_at": iso(now_utc()),
+        }
+        await db.users.insert_one(user_doc)
+        # seed a default profile for parity with password signup
+        try:
+            profile_doc = {
+                "user_id": user_id,
+                "email": email,
+                "full_name": full_name,
+                "created_at": iso(now_utc()),
+            }
+            await db.user_profile.update_one(
+                {"user_id": user_id}, {"$setOnInsert": profile_doc}, upsert=True
+            )
+        except Exception:
+            pass
+
+    # 3) Store session (7 days, TZ-aware)
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    await db.user_sessions.update_one(
+        {"session_token": session_token},
+        {
+            "$set": {
+                "session_token": session_token,
+                "user_id": user_id,
+                "email": email,
+                "created_at": datetime.now(timezone.utc),
+                "expires_at": expires_at,
+                "provider": "google",
+                "picture": picture,
+            }
+        },
+        upsert=True,
+    )
+
+    return AuthResponse(
+        token=session_token,
+        user_id=user_id,
+        email=email,
+        full_name=full_name,
+    )
+
+
+@api_router.post("/auth/logout")
+async def logout(creds: HTTPAuthorizationCredentials = Depends(security)):
+    """Best-effort logout: delete session_token from user_sessions (JWT logouts are client-side)."""
+    try:
+        await db.user_sessions.delete_one({"session_token": creds.credentials})
+    except Exception:
+        pass
+    return {"ok": True}
 
 
 @api_router.get("/auth/me", response_model=UserProfile)
@@ -6416,6 +6536,20 @@ async def _init_cache_indexes():
         await ensure_indexes(db)
     except Exception as _e:
         pass
+
+
+@app.on_event("startup")
+async def _init_auth_indexes():
+    """Ensure indexes for Emergent Google Auth session storage."""
+    try:
+        await db.users.create_index("email", unique=True)
+        await db.users.create_index("user_id", unique=True)
+        await db.user_sessions.create_index("session_token", unique=True)
+        await db.user_sessions.create_index("user_id")
+        # TTL — MongoDB auto-purges sessions after expires_at
+        await db.user_sessions.create_index("expires_at", expireAfterSeconds=0)
+    except Exception as _e:
+        logging.getLogger(__name__).warning("Auth index init: %s", _e)
 
 
 @app.on_event("startup")
