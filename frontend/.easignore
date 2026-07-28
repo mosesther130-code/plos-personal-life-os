@@ -33,3 +33,6 @@ Thumbs.db
 # Env / secrets — EAS should use its own secrets store
 .env.local
 .env*.local
+
+# Defensive: block npm lockfile so EAS doesn't detect mixed package managers
+package-lock.json
